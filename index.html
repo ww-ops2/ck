@@ -359,53 +359,98 @@
           </div>
         </div>
 
-        <!-- ===== 入库管理模块 ===== -->
+        <!-- ===== 入库管理模块（混合视图） ===== -->
         <div id="module-stock-in" class="module-pane">
-          <!-- 月度概览 + 时间筛选 -->
-          <div class="panel" style="margin-bottom:16px;">
+          <!-- KPI 概览行 -->
+          <div class="panel" style="margin-bottom:12px;">
             <div class="panel-header" style="border-bottom:none;padding-bottom:8px;">
-              <div class="panel-title">月度入库概览</div>
+              <div class="panel-title">入库管理</div>
               <div class="panel-actions">
                 <input type="month" id="stockin-month" value="">
                 <button class="btn btn-sm" id="stockin-month-this">本月</button>
                 <button class="btn btn-sm" id="stockin-month-last">上月</button>
               </div>
             </div>
-            <div class="kpi-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
-              <div class="kpi-card"><div class="kpi-label">入库单数</div><div class="kpi-value" id="si-kpi-count">0</div></div>
-              <div class="kpi-card"><div class="kpi-label">入库总量</div><div class="kpi-value" id="si-kpi-qty">0</div></div>
+            <div class="kpi-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">
+              <div class="kpi-card"><div class="kpi-label">待入库采购单</div><div class="kpi-value" id="si-kpi-pending">0</div></div>
+              <div class="kpi-card"><div class="kpi-label">部分入库</div><div class="kpi-value" id="si-kpi-partial">0</div></div>
+              <div class="kpi-card"><div class="kpi-label">本月入库单数</div><div class="kpi-value" id="si-kpi-count">0</div></div>
+              <div class="kpi-card"><div class="kpi-label">本月入库总量</div><div class="kpi-value" id="si-kpi-qty">0</div></div>
               <div class="kpi-card"><div class="kpi-label">已完成</div><div class="kpi-value" id="si-kpi-completed">0</div></div>
-              <div class="kpi-card"><div class="kpi-label">待确认</div><div class="kpi-value" id="si-kpi-pending">0</div></div>
             </div>
           </div>
-          <div class="panel">
-            <div class="panel-header">
-              <div class="panel-title">入库单列表</div>
-              <div class="panel-actions">
-                <select id="filter-stockin-status">
-                  <option value="">全部状态</option>
-                  <option value="pending">待确认</option>
-                  <option value="completed">已完成</option>
-                </select>
+
+          <!-- 主体：左右分栏 -->
+          <div class="stockin-hybrid">
+            <!-- 左侧：PO看板 -->
+            <div class="stockin-board">
+              <div class="stockin-board-header">
+                <span class="stockin-board-title">采购单看板</span>
+                <div class="stockin-board-actions">
+                  <input type="text" class="stockin-board-search" id="stockin-board-search" placeholder="搜索采购单号..." style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;width:140px;background:var(--bg-input);color:var(--text-primary);">
+                </div>
+              </div>
+              <div class="stockin-board-tabs">
+                <button class="stockin-tab active" data-filter="all">全部</button>
+                <button class="stockin-tab" data-filter="pending_stockin">待入库</button>
+                <button class="stockin-tab" data-filter="partially_stockin">部分入库</button>
+                <button class="stockin-tab" data-filter="stockin_completed">已完成</button>
+              </div>
+              <div class="stockin-card-list" id="stockin-card-list">
+                <div class="stockin-loading">加载中...</div>
               </div>
             </div>
-            <div class="table-scroll">
-              <table class="data-table" id="stockin-table">
-                <thead>
-                  <tr>
-                    <th>入库单号</th>
-                    <th>关联采购单</th>
-                    <th>入库日期</th>
-                    <th>物品数量</th>
-                    <th>批次号</th>
-                    <th>状态</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody id="stockin-tbody">
-                  <tr><td colspan="7" class="empty-state">暂无入库记录</td></tr>
-                </tbody>
-              </table>
+
+            <!-- 右侧：入库收件箱 -->
+            <div class="stockin-inbox">
+              <div class="stockin-inbox-toolbar">
+                <div class="stockin-inbox-filters">
+                  <select id="stockin-filter-po" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg-input);color:var(--text-primary);">
+                    <option value="">全部采购单</option>
+                  </select>
+                  <select id="stockin-filter-status" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg-input);color:var(--text-primary);">
+                    <option value="">全部状态</option>
+                    <option value="pending">待入库</option>
+                    <option value="partial">部分入库</option>
+                    <option value="completed">已完成</option>
+                  </select>
+                </div>
+                <div class="stockin-inbox-info" id="stockin-inbox-info">已选 0 项</div>
+              </div>
+              <div class="table-scroll stockin-inbox-table-wrap">
+                <table class="data-table stockin-inbox-table" id="stockin-inbox-table">
+                  <thead>
+                    <tr>
+                      <th style="width:36px;"><input type="checkbox" id="stockin-select-all"></th>
+                      <th style="width:120px;">采购单号</th>
+                      <th style="width:140px;">物品名称</th>
+                      <th style="width:80px;">品牌</th>
+                      <th style="width:80px;">型号</th>
+                      <th style="width:70px;" class="cell-number">采购数量</th>
+                      <th style="width:70px;" class="cell-number">已入库</th>
+                      <th style="width:70px;" class="cell-number">待入库</th>
+                      <th style="width:80px;" class="cell-number">本次入库</th>
+                      <th style="width:50px;">单位</th>
+                      <th style="width:70px;" class="cell-number">单价</th>
+                      <th style="width:60px;">状态</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stockin-inbox-tbody">
+                    <tr><td colspan="12" class="empty-state">请先在左侧选择采购单</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- 底部操作栏 -->
+          <div class="stockin-actionbar" id="stockin-actionbar" style="display:none;">
+            <div class="stockin-actionbar-left">
+              <span id="stockin-actionbar-count">已选择 0 项</span>
+            </div>
+            <div class="stockin-actionbar-right">
+              <button class="btn btn-sm" id="stockin-reset-btn" style="border:1px solid var(--border);">重置数量</button>
+              <button class="btn btn-sm btn-accent" id="stockin-confirm-btn" style="font-weight:600;">确认入库</button>
             </div>
           </div>
         </div>
@@ -1235,50 +1280,39 @@
       <div class="modal-body">
         <div class="stockin-info">
           <div class="info-row">
-            <span class="info-label">采购单号：</span>
-            <span class="info-value" id="confirm-purchase-code">-</span>
+            <span class="info-label">来源：</span>
+            <span class="info-value" id="confirm-stockin-source">手动入库</span>
           </div>
           <div class="info-row">
-            <span class="info-label">采购日期：</span>
-            <span class="info-value" id="confirm-purchase-date">-</span>
+            <span class="info-label">入库日期：</span>
+            <span class="info-value"><input type="date" id="stockin-date" required style="padding:5px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px;"></span>
           </div>
           <div class="info-row">
-            <span class="info-label">采购人：</span>
-            <span class="info-value" id="confirm-purchaser">-</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">供应商：</span>
-            <span class="info-value" id="confirm-supplier">-</span>
+            <span class="info-label">批次号：</span>
+            <span class="info-value"><input type="text" id="stockin-batch" placeholder="自动生成或手动输入" style="padding:5px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px;width:200px;"></span>
           </div>
         </div>
 
-        <div class="form-group" style="margin-top:20px;">
-          <label>入库日期 *</label>
-          <input type="date" id="stockin-date" required>
-        </div>
-
-        <div class="form-group">
-          <label>批次号</label>
-          <input type="text" id="stockin-batch" placeholder="自动生成或手动输入">
-        </div>
-
-        <div class="form-group">
-          <label>入库明细（请核对数量和价格）</label>
+        <div class="form-group" style="margin-top:16px;">
+          <label>入库明细 <span style="font-size:11px;color:var(--text-muted);font-weight:normal;">（共 <span id="confirm-stockin-item-count">0</span> 项，可修改实收数量）</span></label>
           <div class="table-scroll">
-            <table class="data-table" id="stockin-items-table">
+            <table class="data-table">
               <thead>
                 <tr>
+                  <th>采购单号</th>
                   <th>物品名称</th>
                   <th>品牌</th>
                   <th>型号</th>
                   <th>采购数量</th>
-                  <th>实收数量</th>
+                  <th>已入库</th>
+                  <th>待入库</th>
+                  <th>本次实收 *</th>
                   <th>单位</th>
                   <th>单价</th>
                   <th>金额</th>
                 </tr>
               </thead>
-              <tbody id="stockin-items-tbody">
+              <tbody id="stockin-confirm-tbody">
               </tbody>
             </table>
           </div>

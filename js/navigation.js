@@ -119,7 +119,9 @@ function loadModuleData(moduleName) {
       if (typeof _bfUpdatePurchaseKPI === 'function') _bfUpdatePurchaseKPI();
       break;
     case 'stock-in':
-      if (typeof loadStockInRecords === 'function') {
+      if (typeof loadHybridStockInData === 'function') {
+        loadHybridStockInData();
+      } else if (typeof loadStockInRecords === 'function') {
         loadStockInRecords();
       }
       if (typeof _bfUpdateStockInKPI === 'function') _bfUpdateStockInKPI();

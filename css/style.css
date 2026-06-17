@@ -2257,3 +2257,316 @@ input[type="number"]::-webkit-inner-spin-button {
 .prompt-dialog {
   text-align: left;
 }
+
+/* ===== 入库管理 - 混合视图 ===== */
+.stockin-hybrid {
+  display: flex;
+  gap: 12px;
+  height: calc(100vh - 280px);
+  min-height: 400px;
+}
+
+/* 左侧 - 采购单看板 */
+.stockin-board {
+  width: 320px;
+  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--sketch-sm);
+  overflow: hidden;
+}
+
+.stockin-board-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.stockin-board-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.stockin-board-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border-light);
+  padding: 0 4px;
+  background: var(--bg-secondary);
+}
+
+.stockin-tab {
+  flex: 1;
+  padding: 7px 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  border-bottom: 2px solid transparent;
+  text-align: center;
+}
+
+.stockin-tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-card-hover);
+}
+
+.stockin-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.stockin-card-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.stockin-card-list::-webkit-scrollbar {
+  width: 4px;
+}
+.stockin-card-list::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
+/* PO 卡片 */
+.stockin-card {
+  background: var(--bg-primary);
+  border: 1.5px solid var(--border-light);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.stockin-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow);
+}
+
+.stockin-card.active {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+  box-shadow: 0 0 0 1px var(--border-accent);
+}
+
+.stockin-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.stockin-card-code {
+  font-family: monospace;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.stockin-card-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.stockin-card-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.stockin-progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-secondary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.stockin-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+  min-width: 0;
+}
+
+.stockin-progress-fill.complete {
+  background: var(--success);
+}
+
+.stockin-progress-text {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  min-width: 32px;
+  text-align: right;
+}
+
+.stockin-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.stockin-card-stat {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.stockin-card-action {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.stockin-card-done {
+  font-size: 11px;
+  color: var(--success);
+  font-weight: 500;
+}
+
+/* 右侧 - 入库收件箱 */
+.stockin-inbox {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--sketch-sm);
+  overflow: hidden;
+}
+
+.stockin-inbox-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-light);
+  gap: 10px;
+}
+
+.stockin-inbox-filters {
+  display: flex;
+  gap: 8px;
+}
+
+.stockin-inbox-info {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.stockin-inbox-table-wrap {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.stockin-inbox-table {
+  width: 100%;
+  min-width: 900px;
+}
+
+.stockin-inbox-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-elevated);
+}
+
+.stockin-inbox-table td {
+  padding: 7px 8px;
+  font-size: 13px;
+}
+
+.stockin-row-done {
+  opacity: 0.5;
+}
+
+.stockin-row-done td {
+  text-decoration: line-through;
+}
+
+/* 底部操作栏 */
+.stockin-actionbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--sketch-sm) var(--sketch-sm);
+  margin-top: -1px;
+}
+
+.stockin-actionbar-left {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.stockin-actionbar-right {
+  display: flex;
+  gap: 8px;
+}
+
+/* 看板空状态 */
+.stockin-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.stockin-loading {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* 单元格对齐类 */
+.cell-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 确认弹窗中的信息行 */
+.stockin-info .info-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 24px;
+  margin-bottom: 6px;
+  padding: 4px 0;
+  border-bottom: none;
+  width: auto;
+}
+.stockin-info .info-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  width: auto;
+  font-weight: 400;
+}
+.stockin-info .info-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  flex: none;
+}

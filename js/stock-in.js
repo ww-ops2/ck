@@ -1,225 +1,992 @@
 /**
- * 入库管理模块 - 处理入库记录的查看和管理
+ * 入库管理模块 - 混合视图（采购单看板 + 入库收件箱）
+ * 支持分批/部分入库，多采购单并行处理
  */
 
-/**
- * 初始化入库管理模块
- */
+// ============================================================
+// 状态管理（使用 var 定义全局变量，供 purchase.js 等模块访问）
+// ============================================================
+var _siData = {
+  purchaseOrders: [],     // 所有关联的采购单（含 items）
+  stockInRecords: [],     // 所有入库记录
+  receivedMap: {},        // { "poId_itemCode": receivedQty }
+  inboxItems: [],         // 收件箱展示数据
+  selectedItems: new Set(), // 选中的行 index
+  currentPOFilter: '',
+  currentStatusFilter: '',
+  currentBoardFilter: 'all',
+  boardSearchKeyword: '',
+  selectedPOId: null,     // 当前选中的 PO（看板点击）
+};
+
+// ============================================================
+// 初始化
+// ============================================================
 function initStockInModule() {
-  // 绑定状态筛选
-  const filterSelect = document.getElementById('filter-stockin-status');
-  if (filterSelect) {
-    filterSelect.addEventListener('change', loadStockInRecords);
+  console.log('[StockIn] 初始化混合入库视图...');
+
+  // 绑定月度切换
+  const monthInput = document.getElementById('stockin-month');
+  if (monthInput) {
+    // 设置默认月份
+    var now = new Date();
+    monthInput.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    monthInput.addEventListener('change', loadHybridStockInData);
   }
 
-  // 加载入库记录
-  loadStockInRecords();
+  const thisMonthBtn = document.getElementById('stockin-month-this');
+  if (thisMonthBtn) thisMonthBtn.addEventListener('click', function() {
+    var d = new Date();
+    document.getElementById('stockin-month').value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    loadHybridStockInData();
+  });
+
+  const lastMonthBtn = document.getElementById('stockin-month-last');
+  if (lastMonthBtn) lastMonthBtn.addEventListener('click', function() {
+    var d = new Date();
+    d.setMonth(d.getMonth() - 1);
+    document.getElementById('stockin-month').value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    loadHybridStockInData();
+  });
+
+  // 绑定看板 tab
+  document.querySelectorAll('.stockin-tab').forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      document.querySelectorAll('.stockin-tab').forEach(function(t) { t.classList.remove('active'); });
+      this.classList.add('active');
+      _siData.currentBoardFilter = this.getAttribute('data-filter');
+      renderStockInBoard();
+      renderStockInInbox();
+    });
+  });
+
+  // 绑定看板搜索
+  const searchInput = document.getElementById('stockin-board-search');
+  if (searchInput) {
+    var searchTimer = null;
+    searchInput.addEventListener('input', function() {
+      if (searchTimer) clearTimeout(searchTimer);
+      searchTimer = setTimeout(function() {
+        _siData.boardSearchKeyword = searchInput.value.trim().toLowerCase();
+        renderStockInBoard();
+      }, 200);
+    });
+  }
+
+  // 绑定收件箱筛选
+  const poFilter = document.getElementById('stockin-filter-po');
+  if (poFilter) poFilter.addEventListener('change', function() {
+    _siData.currentPOFilter = this.value;
+    renderStockInInbox();
+  });
+
+  const statusFilter = document.getElementById('stockin-filter-status');
+  if (statusFilter) statusFilter.addEventListener('change', function() {
+    _siData.currentStatusFilter = this.value;
+    renderStockInInbox();
+  });
+
+  // 绑定全选
+  const selectAll = document.getElementById('stockin-select-all');
+  if (selectAll) selectAll.addEventListener('change', function() {
+    var checked = this.checked;
+    var checkboxes = document.querySelectorAll('.stockin-item-check');
+    checkboxes.forEach(function(cb) { cb.checked = checked; });
+    updateSelection();
+  });
+
+  // 绑定底部操作按钮
+  const confirmBtn = document.getElementById('stockin-confirm-btn');
+  if (confirmBtn) confirmBtn.addEventListener('click', openStockInConfirmModal);
+
+  const resetBtn = document.getElementById('stockin-reset-btn');
+  if (resetBtn) resetBtn.addEventListener('click', function() {
+    var inputs = document.querySelectorAll('.stockin-qty-input');
+    inputs.forEach(function(inp) {
+      inp.value = inp.getAttribute('data-remaining') || '0';
+    });
+  });
+
+  // 首次加载数据
+  loadHybridStockInData();
+}
+
+// ============================================================
+// 数据加载
+// ============================================================
+async function loadHybridStockInData() {
+  try {
+    // 从 _appCache 获取采购单
+    var pos = (_appCache && _appCache.purchaseOrders) ? _appCache.purchaseOrders.slice() : [];
+    // 只取待入库、部分入库和已入库的
+    _siData.purchaseOrders = pos.filter(function(o) {
+      return ['pending_stockin', 'partially_stockin', 'stockin_completed'].indexOf(o.status) >= 0;
+    });
+
+    // 从 _appCache 获取入库记录
+    _siData.stockInRecords = (_appCache && _appCache.stockInRecords) ? _appCache.stockInRecords.slice() : [];
+
+    // 如果数据为空，尝试从 Supabase 加载
+    if (_siData.purchaseOrders.length === 0 || _siData.stockInRecords.length === 0) {
+      try {
+        if (typeof SupaDB !== 'undefined') {
+          var [dbPOs, dbSIRecords] = await Promise.all([
+            SupaDB.getPurchaseOrders().catch(function() { return []; }),
+            SupaDB.getStockInRecords().catch(function() { return []; })
+          ]);
+          if (dbPOs && dbPOs.length > 0) {
+            // 转换成本地格式
+            _siData.purchaseOrders = dbPOs.map(function(po) {
+              return formatPOFromDB(po);
+            });
+            if (typeof _appCache !== 'undefined') _appCache.purchaseOrders = _siData.purchaseOrders.slice();
+          }
+          if (dbSIRecords && dbSIRecords.length > 0) {
+            _siData.stockInRecords = dbSIRecords.map(function(si) {
+              return formatSIRecordFromDB(si);
+            });
+            if (typeof _appCache !== 'undefined') _appCache.stockInRecords = _siData.stockInRecords.slice();
+          }
+        }
+      } catch (e) {
+        console.warn('[StockIn] Supabase 加载失败:', e.message);
+      }
+    }
+
+    // 计算已入库数量映射
+    computeReceivedMap();
+
+    // 构建收件箱数据
+    buildInboxItems();
+
+    // 渲染
+    updateStockInKPI();
+    renderStockInBoard();
+    renderStockInInbox();
+    populatePOFilter();
+
+    console.log('[StockIn] 数据加载完成, POs:', _siData.purchaseOrders.length, '入库记录:', _siData.stockInRecords.length);
+  } catch (e) {
+    console.error('[StockIn] 加载失败:', e);
+  }
 }
 
 /**
- * 加载入库记录列表
+ * 计算每个 PO 每个 item 已入库数量
  */
-function loadStockInRecords() {
-  let records = _appCache.stockInRecords || [];
+function computeReceivedMap() {
+  _siData.receivedMap = {};
+  _siData.stockInRecords.forEach(function(si) {
+    (si.items || []).forEach(function(item) {
+      var key = si.purchase_order_id + '_' + (item.item_code || item.code || item.name);
+      _siData.receivedMap[key] = (_siData.receivedMap[key] || 0) + (item.actual_quantity || 0);
+    });
+  });
+}
 
-  // 同时加载待入库的采购单（status === 'pending_stockin'）
-  let pendingOrders = [];
-  try {
-    let allPOs = _appCache.purchaseOrders || [];
-    pendingOrders = allPOs.filter(function(o) { return o.status === 'pending_stockin'; }).map(function(o) {
-        return {
-          _isPending: true,
-          code: o.code,
-          purchase_order_code: o.code,
-          stockin_date: o.purchase_date || o.created_at || '',
-          items: o.items || [],
-          total_quantity: (o.items || []).reduce(function(sum, item) { return sum + (item.quantity || 0); }, 0),
-          batch_code: '-',
-          status: 'pending',
-          created_at: o.created_at || '',
-          orderId: o.id,
-          purchaser: o.purchaser || ''
-        };
+/**
+ * 构建收件箱数据列表
+ */
+function buildInboxItems() {
+  _siData.inboxItems = [];
+  _siData.purchaseOrders.forEach(function(po) {
+    (po.items || []).forEach(function(item) {
+      var key = po.id + '_' + (item.code || item.name);
+      var received = _siData.receivedMap[key] || 0;
+      var ordered = item.quantity || 0;
+      var remaining = Math.max(0, ordered - received);
+      _siData.inboxItems.push({
+        poId: po.id,
+        poCode: po.code,
+        poStatus: po.status || 'pending_stockin',
+        poDate: po.purchase_date || '',
+        supplier: (po.suppliers && po.suppliers[0]) || (po.supplier) || '',
+        itemCode: item.code || '',
+        itemName: item.name,
+        brand: item.brand || '',
+        model: item.model || '',
+        orderedQty: ordered,
+        receivedQty: received,
+        remainingQty: remaining,
+        unit: item.unit || '',
+        price: item.price || 0,
+        amount: (item.amount || item.quantity * item.price || 0),
+        category: item.category || '',
+        // 用于传递到 confirm 的数据
+        _originalItem: item
       });
-    } catch(e) { /* 静默 */ }
+    });
+  });
+}
 
-  // 合并：待入库在前，已完成在后
-  var merged = pendingOrders.concat(records);
+/**
+ * 将 Supabase PO 格式转为本地格式
+ */
+function formatPOFromDB(po) {
+  var items = [];
+  if (po.purchase_order_items && Array.isArray(po.purchase_order_items)) {
+    items = po.purchase_order_items.map(function(poi) {
+      return {
+        id: poi.id,
+        code: poi.item_code || poi.code || '',
+        name: poi.name || '',
+        brand: poi.brand || '',
+        model: poi.model || '',
+        quantity: poi.quantity || 0,
+        unit: poi.unit || '',
+        price: poi.price || 0,
+        amount: poi.amount || 0,
+        category: poi.category_name || '',
+        supplier: poi.supplier || '',
+        sort_order: poi.sort_order || 0
+      };
+    });
+  } else if (po.items && Array.isArray(po.items)) {
+    items = po.items;
+  }
+  return {
+    id: po.id,
+    code: po.code || '',
+    purchase_date: po.purchase_date || '',
+    purchaser: po.purchaser || '',
+    supplier: (typeof po.suppliers === 'string' ? JSON.parse(po.suppliers || '[]')[0] : (po.suppliers ? po.suppliers[0] : '')) || po.supplier || '',
+    suppliers: typeof po.suppliers === 'string' ? JSON.parse(po.suppliers || '[]') : (po.suppliers || []),
+    status: po.status || 'pending_stockin',
+    total_amount: po.total_amount || 0,
+    remark: po.remark || '',
+    created_at: po.created_at || '',
+    items: items
+  };
+}
 
-  // 同时加载待入库的采购单（status === 'pending_stockin'）
-  const poData = localStorage.getItem('purchaseOrders');
-  let pendingOrders = [];
-  if (poData) {
-    try {
-      var allPOs = JSON.parse(poData);
-      pendingOrders = allPOs.filter(function(o) { return o.status === 'pending_stockin'; }).map(function(o) {
-        return {
-          _isPending: true,
-          code: o.code,
-          purchase_order_code: o.code,
-          stockin_date: o.purchase_date || o.created_at || '',
-          items: o.items || [],
-          total_quantity: (o.items || []).reduce(function(sum, item) { return sum + (item.quantity || 0); }, 0),
-          batch_code: '-',
-          status: 'pending',
-          created_at: o.created_at || '',
-          orderId: o.id,
-          purchaser: o.purchaser || ''
-        };
-      });
-    } catch(e) { /* 静默 */ }
+/**
+ * 将 Supabase 入库记录转为本地格式
+ */
+function formatSIRecordFromDB(si) {
+  var items = [];
+  if (si.stock_in_items && Array.isArray(si.stock_in_items)) {
+    items = si.stock_in_items.map(function(sii) {
+      return {
+        id: sii.id,
+        code: sii.item_code || sii.code || '',
+        name: sii.name || '',
+        brand: sii.brand || '',
+        model: sii.model || '',
+        quantity: sii.quantity || 0,
+        actual_quantity: sii.actual_quantity || 0,
+        unit: sii.unit || '',
+        price: sii.price || 0,
+        amount: sii.amount || 0,
+        category: sii.category_name || '',
+        sort_order: sii.sort_order || 0
+      };
+    });
+  } else if (si.items && Array.isArray(si.items)) {
+    items = si.items;
+  }
+  return {
+    id: si.id,
+    code: si.code || '',
+    purchase_order_id: si.purchase_order_id,
+    purchase_order_code: si.purchase_order_code || '',
+    stockin_date: si.stockin_date || '',
+    batch_code: si.batch_code || '',
+    total_quantity: si.total_quantity || 0,
+    total_amount: si.total_amount || 0,
+    status: si.status || 'completed',
+    confirmed_by: si.confirmed_by || '',
+    confirmed_at: si.confirmed_at || '',
+    remark: si.remark || '',
+    created_at: si.created_at || '',
+    items: items
+  };
+}
+
+// ============================================================
+// 渲染函数
+// ============================================================
+
+/**
+ * 更新 KPI 指标
+ */
+function updateStockInKPI() {
+  var pending = _siData.purchaseOrders.filter(function(o) { return o.status === 'pending_stockin'; }).length;
+  var partial = _siData.purchaseOrders.filter(function(o) { return o.status === 'partially_stockin'; }).length;
+  var completed = _siData.purchaseOrders.filter(function(o) { return o.status === 'stockin_completed'; }).length;
+
+  // 本月数据
+  var monthVal = document.getElementById('stockin-month')?.value || '';
+  var monthRecords = [];
+  if (monthVal) {
+    monthRecords = _siData.stockInRecords.filter(function(r) {
+      return r.stockin_date && r.stockin_date.indexOf(monthVal) === 0;
+    });
+  } else {
+    monthRecords = _siData.stockInRecords;
   }
 
-  // 合并：待入库在前，已完成在后
-  var merged = pendingOrders.concat(records);
+  var count = monthRecords.length;
+  var totalQty = monthRecords.reduce(function(s, r) { return s + (r.total_quantity || 0); }, 0);
 
-  // 按状态筛选
-  const filterStatus = document.getElementById('filter-stockin-status')?.value || '';
-  if (filterStatus) {
-    merged = merged.filter(function(r) { return r.status === filterStatus; });
+  setText('si-kpi-pending', pending);
+  setText('si-kpi-partial', partial);
+  setText('si-kpi-count', count);
+  setText('si-kpi-qty', totalQty);
+  setText('si-kpi-completed', completed);
+}
+
+function setText(id, val) {
+  var el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
+/**
+ * 渲染采购单看板（左侧）
+ */
+function renderStockInBoard() {
+  var container = document.getElementById('stockin-card-list');
+  if (!container) return;
+
+  var filtered = _siData.purchaseOrders.slice();
+
+  // 按 tab 筛选
+  if (_siData.currentBoardFilter !== 'all') {
+    if (_siData.currentBoardFilter === 'pending_stockin') {
+      filtered = filtered.filter(function(o) { return o.status === 'pending_stockin' || o.status === 'partially_stockin'; });
+    } else {
+      filtered = filtered.filter(function(o) { return o.status === _siData.currentBoardFilter; });
+    }
   }
 
-  // 按日期倒序排列
-  merged.sort(function(a, b) { return new Date(b.created_at) - new Date(a.created_at); });
+  // 按搜索关键字筛选
+  if (_siData.boardSearchKeyword) {
+    filtered = filtered.filter(function(o) {
+      return o.code.toLowerCase().indexOf(_siData.boardSearchKeyword) >= 0;
+    });
+  }
 
-  const tbody = document.getElementById('stockin-tbody');
-  if (!tbody) return;
+  // 按状态排序：待入库 > 部分入库 > 已完成
+  var statusOrder = { pending_stockin: 0, partially_stockin: 1, stockin_completed: 2 };
+  filtered.sort(function(a, b) {
+    var oa = statusOrder[a.status] !== undefined ? statusOrder[a.status] : 99;
+    var ob = statusOrder[b.status] !== undefined ? statusOrder[b.status] : 99;
+    if (oa !== ob) return oa - ob;
+    return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+  });
 
-  if (merged.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无入库记录</td></tr>';
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="stockin-empty">暂无匹配的采购单</div>';
     return;
   }
 
-  tbody.innerHTML = merged.map(function(record) {
-    var code = record._isPending ? record.code : record.code;
-    var poCode = record.purchase_order_code || '-';
-    var date = record.stockin_date || '-';
-    var qty = (record.items || []).length + ' 种';
-    if (record.total_quantity) qty += ' / ' + record.total_quantity + ' 件';
-    var batch = record.batch_code || '-';
+  var poStats = {};
+  filtered.forEach(function(po) {
+    var totalItems = (po.items || []).length;
+    var totalOrdered = (po.items || []).reduce(function(s, item) { return s + (item.quantity || 0); }, 0);
+    var totalReceived = 0;
+    var completedItems = 0;
+    (po.items || []).forEach(function(item) {
+      var key = po.id + '_' + (item.code || item.name);
+      var received = _siData.receivedMap[key] || 0;
+      totalReceived += received;
+      if (received >= (item.quantity || 0)) completedItems++;
+    });
+    var progress = totalOrdered > 0 ? Math.round(totalReceived / totalOrdered * 100) : 0;
+    var itemsProgress = totalItems > 0 ? Math.round(completedItems / totalItems * 100) : 0;
+    poStats[po.id] = { totalItems: totalItems, totalOrdered: totalOrdered, totalReceived: totalReceived, completedItems: completedItems, progress: progress, itemsProgress: itemsProgress };
+  });
 
-    if (record._isPending) {
-      // 待入库行
-      var statusHtml = '<span class="status-badge warning">待入库</span>';
-      var actionHtml = '<button class="btn btn-sm" onclick="confirmStockIn(' + record.orderId + ')" style="background:var(--success);border-color:var(--success);color:#fff;">入库</button>';
-      return '<tr>' +
-        '<td>' + code + '</td>' +
-        '<td>' + poCode + '</td>' +
-        '<td>' + date + '</td>' +
-        '<td>' + qty + '</td>' +
-        '<td>' + batch + '</td>' +
-        '<td>' + statusHtml + '</td>' +
-        '<td>' + actionHtml + '</td>' +
-        '</tr>';
-    } else {
-      // 已完成入库行
-      var statusHtml = '<span class="status-badge success">已完成</span>';
-      var actionHtml = '<button class="btn btn-sm" onclick="viewStockInDetail(\'' + code + '\')">查看详情</button>';
-      return '<tr>' +
-        '<td>' + code + '</td>' +
-        '<td>' + poCode + '</td>' +
-        '<td>' + date + '</td>' +
-        '<td>' + qty + '</td>' +
-        '<td>' + batch + '</td>' +
-        '<td>' + statusHtml + '</td>' +
-        '<td>' + actionHtml + '</td>' +
-        '</tr>';
-    }
+  var statusText = { pending_stockin: '待入库', partially_stockin: '部分入库', stockin_completed: '已完成' };
+  var statusClass = { pending_stockin: 'warning', partially_stockin: 'accent', stockin_completed: 'success' };
+
+  container.innerHTML = filtered.map(function(po) {
+    var stats = poStats[po.id] || { totalItems: 0, totalOrdered: 0, totalReceived: 0, completedItems: 0, progress: 0, itemsProgress: 0 };
+    var st = statusText[po.status] || po.status;
+    var sc = statusClass[po.status] || '';
+    var supplierNames = (po.suppliers && po.suppliers.length > 0) ? po.suppliers.join(', ') : (po.supplier || '-');
+    var isActive = _siData.selectedPOId === po.id;
+    var remainingCount = stats.totalItems - stats.completedItems;
+
+    return '<div class="stockin-card' + (isActive ? ' active' : '') + '" data-po-id="' + po.id + '" onclick="selectStockInPO(' + po.id + ')">' +
+      '<div class="stockin-card-header">' +
+        '<span class="stockin-card-code">' + po.code + '</span>' +
+        '<span class="status-badge ' + sc + '" style="font-size:10px;padding:1px 6px;">' + st + '</span>' +
+      '</div>' +
+      '<div class="stockin-card-meta">' +
+        '<span>' + supplierNames + '</span>' +
+        '<span>' + (po.purchase_date || '') + '</span>' +
+      '</div>' +
+      '<div class="stockin-card-progress">' +
+        '<div class="stockin-progress-bar">' +
+          '<div class="stockin-progress-fill' + (stats.progress >= 100 ? ' complete' : '') + '" style="width:' + stats.progress + '%;"></div>' +
+        '</div>' +
+        '<span class="stockin-progress-text">' + stats.progress + '%</span>' +
+      '</div>' +
+      '<div class="stockin-card-footer">' +
+        '<span class="stockin-card-stat">' + stats.completedItems + '/' + stats.totalItems + ' 项</span>' +
+        (po.status !== 'stockin_completed' ? '<span class="stockin-card-action">' + (stats.completedItems > 0 ? '继续入库 →' : '开始入库 →') + '</span>' : '<span class="stockin-card-done">✓ 已完成</span>') +
+      '</div>' +
+    '</div>';
   }).join('');
 }
 
 /**
- * 查看入库详情
+ * 点击选择 PO
+ */
+function selectStockInPO(poId) {
+  _siData.selectedPOId = poId;
+  // 高亮选中的卡片
+  document.querySelectorAll('.stockin-card').forEach(function(card) {
+    card.classList.toggle('active', parseInt(card.getAttribute('data-po-id')) === poId);
+  });
+  // 刷新收件箱
+  renderStockInInbox();
+}
+
+/**
+ * 渲染入库收件箱（右侧）
+ */
+function renderStockInInbox() {
+  var tbody = document.getElementById('stockin-inbox-tbody');
+  if (!tbody) return;
+
+  var items = _siData.inboxItems.slice();
+
+  // 按选中的 PO 筛选
+  if (_siData.selectedPOId) {
+    items = items.filter(function(item) { return item.poId === _siData.selectedPOId; });
+  }
+
+  // 按采购单筛选
+  if (_siData.currentPOFilter) {
+    items = items.filter(function(item) { return item.poCode === _siData.currentPOFilter; });
+  }
+
+  // 按状态筛选
+  if (_siData.currentStatusFilter) {
+    if (_siData.currentStatusFilter === 'pending') {
+      items = items.filter(function(item) { return item.remainingQty > 0 && item.receivedQty === 0; });
+    } else if (_siData.currentStatusFilter === 'partial') {
+      items = items.filter(function(item) { return item.remainingQty > 0 && item.receivedQty > 0; });
+    } else if (_siData.currentStatusFilter === 'completed') {
+      items = items.filter(function(item) { return item.remainingQty === 0; });
+    }
+  }
+
+  // 按状态排序：待入库 > 部分入库 > 已完成
+  items.sort(function(a, b) {
+    var sa = a.remainingQty > 0 ? (a.receivedQty > 0 ? 1 : 0) : 2;
+    var sb = b.remainingQty > 0 ? (b.receivedQty > 0 ? 1 : 0) : 2;
+    return sa - sb;
+  });
+
+  // 清空选中
+  _siData.selectedItems.clear();
+
+  if (items.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="12" class="empty-state">暂无待入库物品' + (_siData.selectedPOId ? '，请选择其他采购单' : '，请在左侧选择采购单') + '</td></tr>';
+    updateActionBar();
+    updateInboxInfo();
+    return;
+  }
+
+  tbody.innerHTML = items.map(function(item, idx) {
+    var statusLabel = item.remainingQty <= 0 ? '已完成' : (item.receivedQty > 0 ? '部分入库' : '待入库');
+    var statusCls = item.remainingQty <= 0 ? 'success' : (item.receivedQty > 0 ? 'warning' : '');
+    var remaining = item.remainingQty;
+    var disabled = remaining <= 0;
+
+    return '<tr class="' + (disabled ? 'stockin-row-done' : '') + '" data-index="' + idx + '">' +
+      '<td><input type="checkbox" class="stockin-item-check" data-index="' + idx + '" ' + (disabled ? 'disabled' : '') + ' onchange="updateSelection()"></td>' +
+      '<td><span style="font-family:monospace;font-size:12px;">' + item.poCode + '</span></td>' +
+      '<td><span style="font-weight:600;">' + item.itemName + '</span></td>' +
+      '<td>' + (item.brand || '-') + '</td>' +
+      '<td>' + (item.model || '-') + '</td>' +
+      '<td class="cell-number">' + item.orderedQty + '</td>' +
+      '<td class="cell-number">' + item.receivedQty + '</td>' +
+      '<td class="cell-number">' + remaining + '</td>' +
+      '<td class="cell-number">' +
+        '<input type="number" class="stockin-qty-input" data-index="' + idx + '" data-remaining="' + remaining + '" value="' + remaining + '" min="0" max="' + remaining + '" step="1" ' + (disabled ? 'disabled' : '') + ' style="width:64px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:13px;text-align:center;">' +
+      '</td>' +
+      '<td>' + (item.unit || '-') + '</td>' +
+      '<td class="cell-number">¥' + (item.price || 0).toFixed(2) + '</td>' +
+      '<td><span class="status-badge ' + statusCls + '" style="font-size:10px;padding:1px 6px;">' + statusLabel + '</span></td>' +
+    '</tr>';
+  }).join('');
+
+  updateActionBar();
+  updateInboxInfo();
+
+  // 绑定数量输入事件
+  tbody.querySelectorAll('.stockin-qty-input').forEach(function(inp) {
+    inp.addEventListener('change', function() {
+      var max = parseInt(this.getAttribute('data-remaining')) || 0;
+      var val = parseInt(this.value) || 0;
+      if (val < 0) this.value = 0;
+      if (val > max) this.value = max;
+    });
+  });
+}
+
+/**
+ * 更新选中状态
+ */
+function updateSelection() {
+  _siData.selectedItems.clear();
+  document.querySelectorAll('.stockin-item-check:checked').forEach(function(cb) {
+    _siData.selectedItems.add(parseInt(cb.getAttribute('data-index')));
+  });
+  updateActionBar();
+  updateInboxInfo();
+}
+
+/**
+ * 更新底部操作栏
+ */
+function updateActionBar() {
+  var bar = document.getElementById('stockin-actionbar');
+  var countEl = document.getElementById('stockin-actionbar-count');
+  if (!bar || !countEl) return;
+
+  var count = _siData.selectedItems.size;
+  if (count > 0) {
+    bar.style.display = 'flex';
+    countEl.textContent = '已选择 ' + count + ' 项';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+/**
+ * 更新收件箱信息
+ */
+function updateInboxInfo() {
+  var infoEl = document.getElementById('stockin-inbox-info');
+  if (!infoEl) return;
+
+  var totalEl = document.querySelectorAll('#stockin-inbox-tbody tr:not(.empty-state)').length;
+  var doneEl = document.querySelectorAll('#stockin-inbox-tbody tr.stockin-row-done').length;
+  infoEl.textContent = '共 ' + totalEl + ' 项（' + doneEl + ' 项已完成）';
+}
+
+/**
+ * 填充采购单筛选下拉
+ */
+function populatePOFilter() {
+  var select = document.getElementById('stockin-filter-po');
+  if (!select) return;
+
+  var currentVal = select.value;
+  var codes = [];
+  _siData.purchaseOrders.forEach(function(po) {
+    if (codes.indexOf(po.code) < 0) codes.push(po.code);
+  });
+
+  select.innerHTML = '<option value="">全部采购单</option>' +
+    codes.map(function(c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
+
+  if (currentVal) select.value = currentVal;
+}
+
+// ============================================================
+// 入库确认
+// ============================================================
+
+/**
+ * 打开入库确认弹窗
+ */
+function openStockInConfirmModal() {
+  var count = _siData.selectedItems.size;
+  if (count === 0) {
+    showToast('请先选择要入库的物品', 'warning');
+    return;
+  }
+
+  // 收集选中的数据
+  var selectedRows = [];
+  _siData.selectedItems.forEach(function(idx) {
+    var item = _siData.inboxItems[idx];
+    if (item && item.remainingQty > 0) {
+      selectedRows.push(item);
+    }
+  });
+
+  if (selectedRows.length === 0) {
+    showToast('所选物品均已入库完成', 'warning');
+    return;
+  }
+
+  // 填充弹窗
+  var today = new Date().toISOString().split('T')[0];
+  document.getElementById('stockin-date').value = today;
+  document.getElementById('stockin-batch').value = 'BATCH' + Date.now();
+  document.getElementById('stockin-remark').value = '';
+  document.getElementById('confirm-stockin-item-count').textContent = selectedRows.length;
+  document.getElementById('confirm-stockin-source').textContent = '采购单 ' + selectedRows[0].poCode + (selectedRows.length > 1 ? ' 等' : '');
+
+  var tbody = document.getElementById('stockin-confirm-tbody');
+  if (!tbody) return;
+
+  tbody.innerHTML = selectedRows.map(function(item, idx) {
+    var remaining = item.remainingQty;
+    return '<tr>' +
+      '<td><span style="font-family:monospace;font-size:12px;">' + item.poCode + '</span></td>' +
+      '<td style="font-weight:600;">' + item.itemName + '</td>' +
+      '<td>' + (item.brand || '-') + '</td>' +
+      '<td>' + (item.model || '-') + '</td>' +
+      '<td>' + item.orderedQty + '</td>' +
+      '<td>' + item.receivedQty + '</td>' +
+      '<td>' + remaining + '</td>' +
+      '<td><input type="number" class="confirm-qty" data-remaining="' + remaining + '" value="' + remaining + '" min="0" max="' + remaining + '" step="1" style="width:70px;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;text-align:center;"></td>' +
+      '<td>' + (item.unit || '-') + '</td>' +
+      '<td>¥' + (item.price || 0).toFixed(2) + '</td>' +
+      '<td class="cell-number confirm-amount">¥' + (remaining * (item.price || 0)).toFixed(2) + '</td>' +
+    '</tr>';
+  }).join('');
+
+  // 绑定数量变更事件（更新金额）
+  setTimeout(function() {
+    tbody.querySelectorAll('.confirm-qty').forEach(function(inp) {
+      inp.addEventListener('input', function() {
+        var row = this.closest('tr');
+        var price = parseFloat(row.querySelectorAll('td')[9].textContent.replace('¥', '')) || 0;
+        var qty = parseInt(this.value) || 0;
+        var max = parseInt(this.getAttribute('data-remaining')) || 0;
+        if (qty > max) { this.value = max; qty = max; }
+        if (qty < 0) { this.value = 0; qty = 0; }
+        var amtEl = row.querySelector('.confirm-amount');
+        if (amtEl) amtEl.textContent = '¥' + (qty * price).toFixed(2);
+      });
+    });
+  }, 50);
+
+  // 绑定确认按钮
+  var confirmBtn = document.getElementById('confirm-stockin-btn');
+  if (confirmBtn) {
+    var newBtn = confirmBtn.cloneNode(true);
+    confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
+    newBtn.addEventListener('click', executePartialStockIn);
+  }
+
+  openModal('modal-stockin-confirm');
+}
+
+/**
+ * 执行分批入库
+ */
+async function executePartialStockIn() {
+  var stockinDate = document.getElementById('stockin-date').value;
+  var batchCode = document.getElementById('stockin-batch').value;
+  var remark = document.getElementById('stockin-remark').value;
+
+  if (!stockinDate) {
+    showToast('请选择入库日期', 'warning');
+    return;
+  }
+
+  // 收集入库数据
+  var rows = document.querySelectorAll('#stockin-confirm-tbody tr');
+  var stockInItems = [];
+  var poMap = {};
+
+  rows.forEach(function(row) {
+    var cells = row.querySelectorAll('td');
+    var poCode = cells[0].textContent.trim();
+    var itemName = cells[1].textContent.trim();
+    var brand = cells[2].textContent.trim();
+    var model = cells[3].textContent.trim();
+    var orderedQty = parseInt(cells[4].textContent) || 0;
+    var actualQty = parseInt(row.querySelector('.confirm-qty').value) || 0;
+    var unit = cells[8].textContent.trim();
+    var priceText = cells[9].textContent.trim().replace('¥', '');
+    var price = parseFloat(priceText) || 0;
+
+    if (actualQty <= 0) return;
+
+    // 从 _siData 找原始 item
+    var inboxItem = null;
+    _siData.inboxItems.forEach(function(ii) {
+      if (ii.poCode === poCode && ii.itemName === itemName && ii.brand === brand && ii.model === model) {
+        inboxItem = ii;
+      }
+    });
+
+    // 收集 PO ID
+    if (inboxItem) {
+      if (!poMap[inboxItem.poId]) {
+        poMap[inboxItem.poId] = { poId: inboxItem.poId, poCode: poCode, items: [] };
+      }
+      poMap[inboxItem.poId].items.push({
+        name: itemName,
+        code: inboxItem.itemCode,
+        brand: brand,
+        model: model,
+        category: inboxItem.category,
+        quantity: orderedQty,
+        actual_quantity: actualQty,
+        unit: unit,
+        price: price,
+        amount: actualQty * price,
+        supplier: inboxItem.supplier || '',
+        sort_order: 0
+      });
+      stockInItems.push({
+        name: itemName,
+        code: inboxItem.itemCode,
+        brand: brand,
+        model: model,
+        category: inboxItem.category,
+        quantity: orderedQty,
+        actual_quantity: actualQty,
+        unit: unit,
+        price: price,
+        amount: actualQty * price,
+        supplier: inboxItem.supplier || '',
+        sort_order: 0
+      });
+    }
+  });
+
+  if (stockInItems.length === 0) {
+    showToast('没有有效的入库数量', 'warning');
+    return;
+  }
+
+  var totalQty = stockInItems.reduce(function(s, i) { return s + (i.actual_quantity || 0); }, 0);
+  var totalAmt = stockInItems.reduce(function(s, i) { return s + ((i.actual_quantity || 0) * (i.price || 0)); }, 0);
+
+  showButtonLoading('confirm-stockin-btn', '入库中...');
+  try {
+    // 按 PO 分组分批调用
+    var poIds = Object.keys(poMap);
+    for (var p = 0; p < poIds.length; p++) {
+      var poId = parseInt(poIds[p]);
+      var poData = poMap[poId];
+      var payload = {
+        stockin_date: stockinDate,
+        batch_code: batchCode,
+        items: poData.items,
+        total_quantity: poData.items.reduce(function(s, i) { return s + (i.actual_quantity || 0); }, 0),
+        total_amount: poData.items.reduce(function(s, i) { return s + ((i.actual_quantity || 0) * (i.price || 0)); }, 0),
+        remark: remark
+      };
+
+      // 优先用 Supabase
+      if (typeof SupaDB !== 'undefined' && SupaDB.partialConfirmStockIn) {
+        try {
+          await SupaDB.partialConfirmStockIn(poId, payload);
+        } catch (e) {
+          console.warn('[StockIn] Supabase 入库失败，回退本地:', e.message);
+          // 本地处理
+          saveLocalStockIn(poId, poData.poCode, payload);
+        }
+      } else {
+        // 本地处理
+        saveLocalStockIn(poId, poData.poCode, payload);
+      }
+    }
+
+    // 刷新数据
+    await loadHybridStockInData();
+
+    closeModal();
+    showToast('入库成功！共 ' + stockInItems.length + ' 项，' + totalQty + ' 件', 'success', 4000);
+  } catch (e) {
+    console.error('[StockIn] 入库失败:', e);
+    showToast('入库失败: ' + e.message, 'error');
+  } finally {
+    hideButtonLoading('confirm-stockin-btn');
+  }
+}
+
+/**
+ * 本地保存入库记录（Supabase 不可用时的回退）
+ */
+function saveLocalStockIn(poId, poCode, payload) {
+  var record = {
+    id: Date.now() + Math.random(),
+    code: 'SI' + Date.now(),
+    purchase_order_id: poId,
+    purchase_order_code: poCode,
+    stockin_date: payload.stockin_date,
+    batch_code: payload.batch_code,
+    items: payload.items.map(function(item) {
+      return {
+        name: item.name,
+        code: item.code || '',
+        brand: item.brand || '',
+        model: item.model || '',
+        quantity: item.quantity || 0,
+        actual_quantity: item.actual_quantity || 0,
+        unit: item.unit || '',
+        price: item.price || 0,
+        amount: (item.actual_quantity || 0) * (item.price || 0)
+      };
+    }),
+    total_quantity: payload.total_quantity,
+    total_amount: payload.total_amount,
+    status: 'completed',
+    confirmed_by: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.name : '',
+    confirmed_at: new Date().toISOString(),
+    remark: payload.remark || '',
+    created_at: new Date().toISOString()
+  };
+
+  // 添加到缓存
+  if (typeof _appCache !== 'undefined') {
+    if (!Array.isArray(_appCache.stockInRecords)) _appCache.stockInRecords = [];
+    _appCache.stockInRecords.unshift(record);
+  }
+
+  // 更新采购单状态
+  if (typeof _appCache !== 'undefined' && Array.isArray(_appCache.purchaseOrders)) {
+    _appCache.purchaseOrders = _appCache.purchaseOrders.map(function(po) {
+      if (po.id === poId) {
+        // 检查是否全部完成
+        var allDone = true;
+        (po.items || []).forEach(function(item) {
+          var key = poId + '_' + (item.code || item.name);
+          var totalReceived = (payload.items || []).reduce(function(s, pi) {
+            return s + ((pi.code === item.code || pi.name === item.name) ? (pi.actual_quantity || 0) : 0);
+          }, 0);
+          // 加上之前的
+          var prevReceived = _siData.receivedMap[key] || 0;
+          if ((prevReceived + totalReceived) < (item.quantity || 0)) allDone = false;
+        });
+        return Object.assign({}, po, { status: allDone ? 'stockin_completed' : 'partially_stockin' });
+      }
+      return po;
+    });
+  }
+
+  // 更新库存
+  var inventory = (typeof _appCache !== 'undefined' && _appCache.inventory) ? _appCache.inventory.slice() : [];
+  payload.items.forEach(function(item) {
+    if (item.actual_quantity <= 0) return;
+    var existing = inventory.find(function(inv) {
+      return inv.name === item.name && inv.brand === item.brand && inv.model === item.model;
+    });
+    if (existing) {
+      existing.stock = (existing.stock || 0) + item.actual_quantity;
+      existing.last_stockin_date = payload.stockin_date;
+      existing.last_stockin_batch = payload.batch_code;
+    } else {
+      inventory.push({
+        id: Date.now() + Math.random(),
+        code: item.code || 'ITEM' + String(inventory.length + 1).padStart(3, '0'),
+        name: item.name,
+        brand: item.brand || '',
+        model: item.model || '',
+        category: item.category || '未分类',
+        stock: item.actual_quantity,
+        unit: item.unit,
+        safety_stock: 10,
+        last_stockin_date: payload.stockin_date,
+        last_stockin_batch: payload.batch_code,
+        source: 'purchase',
+        created_at: new Date().toISOString()
+      });
+    }
+  });
+  if (typeof _appCache !== 'undefined') _appCache.inventory = inventory;
+}
+
+// ============================================================
+// 遗留兼容函数（旧版入库列表查看详情仍可用）
+// ============================================================
+
+/**
+ * 查看入库详情（兼容旧版）
  */
 function viewStockInDetail(recordCode) {
-  let records = _appCache.stockInRecords || [];
+  var records = _siData.stockInRecords || [];
 
-  const record = records.find(r => r.code === recordCode);
+  var record = null;
+  for (var i = 0; i < records.length; i++) {
+    if (records[i].code === recordCode) { record = records[i]; break; }
+  }
+
   if (!record) {
     showToast('未找到该入库记录', 'error');
     return;
   }
 
-  const body = document.getElementById('stockin-detail-body');
+  var body = document.getElementById('stockin-detail-body');
   if (!body) { showToast('弹窗容器未找到', 'error'); return; }
 
-  // 构建详情 HTML
-  let html = `
-    <div class="detail-info-grid">
-      <div class="detail-info-item">
-        <span class="detail-info-label">入库单号</span>
-        <span class="detail-info-value" style="font-family:monospace;">${record.code}</span>
-      </div>
-      <div class="detail-info-item">
-        <span class="detail-info-label">关联采购单</span>
-        <span class="detail-info-value" style="font-family:monospace;">${record.purchase_order_code || '-'}</span>
-      </div>
-      <div class="detail-info-item">
-        <span class="detail-info-label">入库日期</span>
-        <span class="detail-info-value">${record.stockin_date || '-'}</span>
-      </div>
-      <div class="detail-info-item">
-        <span class="detail-info-label">批次号</span>
-        <span class="detail-info-value" style="font-family:monospace;">${record.batch_code || '-'}</span>
-      </div>
-      <div class="detail-info-item">
-        <span class="detail-info-label">确认人</span>
-        <span class="detail-info-value">${record.confirmed_by || '-'}</span>
-      </div>
-      <div class="detail-info-item">
-        <span class="detail-info-label">确认时间</span>
-        <span class="detail-info-value">${record.confirmed_at ? new Date(record.confirmed_at).toLocaleString() : '-'}</span>
-      </div>
-      <div class="detail-info-item">
-        <span class="detail-info-label">总数量</span>
-        <span class="detail-info-value" style="color:var(--success);font-size:18px;">${record.total_quantity || 0} 件</span>
-      </div>
-      <div class="detail-info-item">
-        <span class="detail-info-label">总金额</span>
-        <span class="detail-info-value" style="color:var(--accent);font-size:18px;">¥${(record.total_amount || 0).toFixed(2)}</span>
-      </div>
-    </div>`;
+  var html = '\
+    <div class="detail-info-grid">\
+      <div class="detail-info-item">\
+        <span class="detail-info-label">入库单号</span>\
+        <span class="detail-info-value" style="font-family:monospace;">' + record.code + '</span>\
+      </div>\
+      <div class="detail-info-item">\
+        <span class="detail-info-label">关联采购单</span>\
+        <span class="detail-info-value" style="font-family:monospace;">' + (record.purchase_order_code || '-') + '</span>\
+      </div>\
+      <div class="detail-info-item">\
+        <span class="detail-info-label">入库日期</span>\
+        <span class="detail-info-value">' + (record.stockin_date || '-') + '</span>\
+      </div>\
+      <div class="detail-info-item">\
+        <span class="detail-info-label">批次号</span>\
+        <span class="detail-info-value" style="font-family:monospace;">' + (record.batch_code || '-') + '</span>\
+      </div>\
+      <div class="detail-info-item">\
+        <span class="detail-info-label">确认人</span>\
+        <span class="detail-info-value">' + (record.confirmed_by || '-') + '</span>\
+      </div>\
+      <div class="detail-info-item">\
+        <span class="detail-info-label">确认时间</span>\
+        <span class="detail-info-value">' + (record.confirmed_at ? new Date(record.confirmed_at).toLocaleString() : '-') + '</span>\
+      </div>\
+      <div class="detail-info-item">\
+        <span class="detail-info-label">总数量</span>\
+        <span class="detail-info-value" style="color:var(--success);font-size:18px;">' + (record.total_quantity || 0) + ' 件</span>\
+      </div>\
+      <div class="detail-info-item">\
+        <span class="detail-info-label">总金额</span>\
+        <span class="detail-info-value" style="color:var(--accent);font-size:18px;">¥' + (record.total_amount || 0).toFixed(2) + '</span>\
+      </div>\
+    </div>';
 
   if (record.remark) {
-    html += `<div style="margin-bottom:16px;font-size:13px;color:var(--text-secondary);">
-      <strong>备注：</strong>${record.remark}
-    </div>`;
+    html += '<div style="margin-bottom:16px;font-size:13px;color:var(--text-secondary);"><strong>备注：</strong>' + record.remark + '</div>';
   }
 
-  // 入库明细表格
-  html += `<div class="detail-section-title">入库明细</div>
-    <div class="table-scroll">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>物品名称</th>
-            <th>品牌</th>
-            <th>型号</th>
-            <th>采购数量</th>
-            <th>实收数量</th>
-            <th>单位</th>
-            <th>单价</th>
-            <th>金额</th>
-          </tr>
-        </thead>
-        <tbody>`;
+  html += '<div class="detail-section-title" style="margin-bottom:8px;">入库明细</div>\
+    <div class="table-scroll">\
+      <table class="data-table">\
+        <thead>\
+          <tr>\
+            <th>#</th>\
+            <th>物品名称</th>\
+            <th>品牌</th>\
+            <th>型号</th>\
+            <th>采购数量</th>\
+            <th>实收数量</th>\
+            <th>单位</th>\
+            <th>单价</th>\
+            <th>金额</th>\
+          </tr>\
+        </thead>\
+        <tbody>';
 
-  (record.items || []).forEach((item, idx) => {
-    const amount = (item.actual_quantity || 0) * (item.price || 0);
-    const diff = (item.actual_quantity || 0) - (item.quantity || 0);
-    const diffClass = diff < 0 ? 'stock-low' : (diff > 0 ? 'stock-ok' : '');
-    html += `<tr>
-      <td>${idx + 1}</td>
-      <td style="font-weight:600;">${item.name || '-'}</td>
-      <td>${item.brand || '-'}</td>
-      <td>${item.model || '-'}</td>
-      <td>${item.quantity || 0}</td>
-      <td style="font-weight:600;">${item.actual_quantity || 0}${diff !== 0 ? ` <span class="${diffClass}" style="font-size:11px;">(${diff > 0 ? '+' : ''}${diff})</span>` : ''}</td>
-      <td>${item.unit || '-'}</td>
-      <td>¥${(item.price || 0).toFixed(2)}</td>
-      <td style="font-weight:600;">¥${amount.toFixed(2)}</td>
-    </tr>`;
+  (record.items || []).forEach(function(item, idx) {
+    var amount = (item.actual_quantity || 0) * (item.price || 0);
+    var diff = (item.actual_quantity || 0) - (item.quantity || 0);
+    var diffClass = diff < 0 ? 'stock-low' : (diff > 0 ? 'stock-ok' : '');
+    html += '<tr>\
+      <td>' + (idx + 1) + '</td>\
+      <td style="font-weight:600;">' + (item.name || '-') + '</td>\
+      <td>' + (item.brand || '-') + '</td>\
+      <td>' + (item.model || '-') + '</td>\
+      <td>' + (item.quantity || 0) + '</td>\
+      <td style="font-weight:600;">' + (item.actual_quantity || 0) + (diff !== 0 ? ' <span class="' + diffClass + '" style="font-size:11px;">(' + (diff > 0 ? '+' : '') + diff + ')</span>' : '') + '</td>\
+      <td>' + (item.unit || '-') + '</td>\
+      <td>¥' + (item.price || 0).toFixed(2) + '</td>\
+      <td style="font-weight:600;">¥' + amount.toFixed(2) + '</td>\
+    </tr>';
   });
 
   html += '</tbody></table></div>';
@@ -232,6 +999,7 @@ function viewStockInDetail(recordCode) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     initStockInModule,
-    loadStockInRecords
+    loadHybridStockInData,
+    viewStockInDetail
   };
 }

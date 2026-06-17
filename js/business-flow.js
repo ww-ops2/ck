@@ -28,7 +28,7 @@ function initBusinessFlow() {
       onFilter: () => { _bfPurchaseMonth = _bfGetMonthRange('purchase-month', 'purchase-month-end'); _bfUpdatePurchaseKPI(); } },
     { pickerId: 'stockin-month',    endId: 'stockin-month-end',    filterId: 'stockin-month-filter',
       thisBtnId: 'stockin-month-this', lastBtnId: 'stockin-month-last',
-      onFilter: () => { _bfStockInMonth = _bfGetMonthRange('stockin-month', 'stockin-month-end'); _bfUpdateStockInKPI(); if (typeof loadStockInRecords === 'function') loadStockInRecords(); } },
+      onFilter: () => { _bfStockInMonth = _bfGetMonthRange('stockin-month', 'stockin-month-end'); _bfUpdateStockInKPI(); if (typeof loadHybridStockInData === 'function') loadHybridStockInData(); } },
     { pickerId: 'requisition-month', endId: 'requisition-month-end', filterId: 'requisition-month-filter',
       thisBtnId: 'req-month-this', lastBtnId: 'req-month-last',
       onFilter: () => { _bfReqMonth = _bfGetMonthRange('requisition-month', 'requisition-month-end'); _bfUpdateRequisitionKPI(); } },

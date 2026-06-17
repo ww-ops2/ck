@@ -960,6 +960,7 @@ function loadPurchaseOrders() {
 function getStatusText(status) {
   const statusMap = {
     'pending_stockin': '待入库',
+    'partially_stockin': '部分入库',
     'stockin_completed': '已入库',
     'cancelled': '已取消'
   };
@@ -972,6 +973,7 @@ function getStatusText(status) {
 function getStatusClass(status) {
   const classMap = {
     'pending_stockin': 'warning',
+    'partially_stockin': 'accent',
     'stockin_completed': 'success',
     'cancelled': 'danger'
   };
@@ -1193,61 +1195,39 @@ function editPurchaseOrder(orderId) {
 }
 
 /**
- * 确认入库（打开入库确认模态框）
+ * 确认入库（跳转到入库管理模块的新混合视图）
  */
 function confirmStockIn(orderId) {
-  const order = purchaseOrders.find(o => o.id === orderId);
-  if (!order) return;
-
   // 检查权限
   if (!hasPermission('confirm_stockin')) {
     showToast('只有仓库管理员可以确认入库', 'warning');
     return;
   }
 
-  // 填充采购单信息
-  document.getElementById('confirm-purchase-code').textContent = order.code;
-  document.getElementById('confirm-purchase-date').textContent = order.purchase_date;
-  document.getElementById('confirm-purchaser').textContent = order.purchaser;
-  document.getElementById('confirm-supplier').textContent = order.supplier || '-';
-
-  // 设置默认入库日期为今天
-  const today = new Date().toISOString().split('T')[0];
-  document.getElementById('stockin-date').value = today;
-
-  // 生成批次号
-  const batchCode = `BATCH${Date.now()}`;
-  document.getElementById('stockin-batch').value = batchCode;
-
-  // 填充入库明细
-  const tbody = document.getElementById('stockin-items-tbody');
-  if (tbody) {
-    tbody.innerHTML = order.items.map(item => `
-      <tr>
-        <td>${item.name}</td>
-        <td>${item.brand || '-'}</td>
-        <td>${item.model || '-'}</td>
-        <td>${item.quantity}</td>
-        <td><input type="number" class="actual-quantity" value="${item.quantity}" min="0" step="0.01" style="width:80px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);color:var(--text-primary);font-size:13px;"></td>
-        <td>${item.unit}</td>
-        <td>¥${item.price.toFixed(2)}</td>
-        <td>¥${(item.quantity * item.price).toFixed(2)}</td>
-      </tr>
-    `).join('');
+  // 切换到入库管理模块
+  var navItem = document.querySelector('[data-module="stock-in"]');
+  if (navItem) {
+    // 触发导航切换
+    var navEvent = new Event('click');
+    // 如果存在导航切换函数则调用
+    if (typeof switchModule === 'function') {
+      switchModule('stock-in');
+    } else {
+      navItem.dispatchEvent(navEvent);
+    }
   }
 
-  // 绑定确认入库按钮
-  const confirmBtn = document.getElementById('confirm-stockin-btn');
-  if (confirmBtn) {
-    // 移除旧的事件监听器
-    const newConfirmBtn = confirmBtn.cloneNode(true);
-    confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
-    
-    newConfirmBtn.addEventListener('click', () => executeStockIn(order));
+  // 设置选中的 PO，以便入库模块自动筛选
+  _siData.selectedPOId = orderId;
+
+  // 刷新入库模块数据
+  if (typeof loadHybridStockInData === 'function') {
+    setTimeout(function() {
+      loadHybridStockInData();
+    }, 100);
   }
 
-  // 打开模态框
-  openModal('modal-stockin-confirm');
+  showToast('已切换到入库管理，请确认入库数量', 'info');
 }
 
 /**

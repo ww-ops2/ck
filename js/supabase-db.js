@@ -489,6 +489,112 @@ const SupaDB = {
     return insertedRecord;
   },
 
+  // ---- 分批/部分入库 ----
+  async partialConfirmStockIn(orderId, stockInData) {
+    const sb = getSupabase();
+    const order = await this.getPurchaseOrder(orderId);
+    if (!order) throw new Error('采购单不存在');
+
+    const siCode = await getNextCode('stock_in', 'SI', 5);
+
+    // 计算本次入库总数量和总金额
+    const totalQty = (stockInData.items || []).reduce((s, i) => s + (i.actual_quantity || 0), 0);
+    const totalAmt = (stockInData.items || []).reduce((s, i) => s + ((i.actual_quantity || 0) * (i.price || 0)), 0);
+
+    // 创建入库记录
+    const record = {
+      code: siCode,
+      purchase_order_id: order.id,
+      purchase_order_code: order.code,
+      stockin_date: stockInData.stockin_date,
+      batch_code: stockInData.batch_code,
+      total_quantity: totalQty,
+      total_amount: totalAmt,
+      status: 'completed',
+      confirmed_by: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.name : '',
+      confirmed_at: new Date().toISOString(),
+      remark: stockInData.remark || ''
+    };
+
+    const { data: insertedRecord, error: recError } = await sb
+      .from('stock_in_records')
+      .insert(record)
+      .select()
+      .single();
+
+    if (recError) throw new Error('入库记录创建失败: ' + recError.message);
+
+    // 插入入库明细并更新库存
+    for (const item of (stockInData.items || [])) {
+      const actualQty = item.actual_quantity || 0;
+      if (actualQty <= 0) continue;
+
+      await _sbQuery(sb.from('stock_in_items').insert({
+        stock_in_record_id: insertedRecord.id,
+        supplier: item.supplier || '',
+        category_name: item.category || '',
+        item_code: item.code || '',
+        name: item.name,
+        brand: item.brand || '',
+        model: item.model || '',
+        quantity: item.quantity || 0,
+        actual_quantity: actualQty,
+        unit: item.unit || '',
+        price: item.price || 0,
+        amount: actualQty * (item.price || 0),
+        sort_order: item.sort_order || 0
+      }));
+
+      // 更新库存: 找到对应物品增加库存
+      const invItems = await _sbQuery(
+        sb.from('inventory_items').select('*').eq('code', item.code).limit(1)
+      );
+      if (invItems.length > 0) {
+        await sb.from('inventory_items')
+          .update({
+            stock: invItems[0].stock + actualQty,
+            last_stockin_date: stockInData.stockin_date,
+            last_stockin_batch: stockInData.batch_code
+          })
+          .eq('id', invItems[0].id);
+      }
+    }
+
+    // 判断采购单是否全部入库完成
+    // 获取该采购单所有已入库的 actual_quantity
+    const allSiRecords = await _sbQuery(
+      sb.from('stock_in_records')
+        .select('*, stock_in_items(*)')
+        .eq('purchase_order_id', order.id)
+    );
+    const receivedMap = {};
+    for (const si of allSiRecords) {
+      for (const siItem of (si.stock_in_items || [])) {
+        const key = siItem.item_code || siItem.name;
+        receivedMap[key] = (receivedMap[key] || 0) + (siItem.actual_quantity || 0);
+      }
+    }
+    let allCompleted = true;
+    for (const poItem of (order.purchase_order_items || [])) {
+      const key = poItem.item_code || poItem.name;
+      const received = receivedMap[key] || 0;
+      if (received < (poItem.quantity || 0)) {
+        allCompleted = false;
+        break;
+      }
+    }
+
+    // 更新采购单状态
+    const newStatus = allCompleted ? 'stockin_completed' : 'partially_stockin';
+    await sb.from('purchase_orders')
+      .update({ status: newStatus })
+      .eq('id', orderId);
+
+    await writeAuditLog('STOCK_IN', 'purchase_orders', orderId, order.code, { ...stockInData, partial: true, finalStatus: newStatus });
+
+    return insertedRecord;
+  },
+
   // ---- 入库记录 ----
   async getStockInRecords() {
     const sb = getSupabase();
