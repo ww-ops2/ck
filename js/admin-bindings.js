@@ -62,6 +62,9 @@
     form.reset();
     form.elements['stock'].value = 0;
     form.elements['safety_stock'].value = 10;
+    // 隐藏删除按钮（新增模式）
+    var delBtn = document.getElementById('modal-item-delete-btn');
+    if (delBtn) delBtn.style.display = 'none';
     // 填充品类下拉
     if (typeof _populateCategorySelect === 'function') {
       _populateCategorySelect(form.elements['category']);
