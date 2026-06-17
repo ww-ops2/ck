@@ -46,6 +46,33 @@ function loadStockInRecords() {
   // 合并：待入库在前，已完成在后
   var merged = pendingOrders.concat(records);
 
+  // 同时加载待入库的采购单（status === 'pending_stockin'）
+  const poData = localStorage.getItem('purchaseOrders');
+  let pendingOrders = [];
+  if (poData) {
+    try {
+      var allPOs = JSON.parse(poData);
+      pendingOrders = allPOs.filter(function(o) { return o.status === 'pending_stockin'; }).map(function(o) {
+        return {
+          _isPending: true,
+          code: o.code,
+          purchase_order_code: o.code,
+          stockin_date: o.purchase_date || o.created_at || '',
+          items: o.items || [],
+          total_quantity: (o.items || []).reduce(function(sum, item) { return sum + (item.quantity || 0); }, 0),
+          batch_code: '-',
+          status: 'pending',
+          created_at: o.created_at || '',
+          orderId: o.id,
+          purchaser: o.purchaser || ''
+        };
+      });
+    } catch(e) { /* 静默 */ }
+  }
+
+  // 合并：待入库在前，已完成在后
+  var merged = pendingOrders.concat(records);
+
   // 按状态筛选
   const filterStatus = document.getElementById('filter-stockin-status')?.value || '';
   if (filterStatus) {
