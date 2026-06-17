@@ -351,11 +351,22 @@
           try {
             const sb = typeof getSupabase === 'function' ? getSupabase() : (typeof SupaDB !== 'undefined' ? SupaDB.getClient && SupaDB.getClient() : null);
             if (sb) {
+              // 兼容旧格式ID：将 'u' + 时间戳 转为纯数字
+              function toNumericId(id) {
+                var n = Number(id);
+                if (!isNaN(n) && String(n) === String(id)) return n;
+                if (typeof id === 'string' && id.charAt(0) === 'u') {
+                  var stripped = id.substring(1);
+                  var num = Number(stripped);
+                  if (!isNaN(num)) return num;
+                }
+                return id;
+              }
               // 逐条同步用户（避免批量时类型不匹配导致失败）
               for (var ui = 0; ui < updated.length; ui++) {
                 var uu = updated[ui];
                 await sb.from('users').upsert({
-                  id: uu.id, username: uu.username, name: uu.name, role: uu.role,
+                  id: toNumericId(uu.id), username: uu.username, name: uu.name, role: uu.role,
                   is_active: (uu.status === 'active')
                 }, { onConflict: 'username' });
               }
@@ -365,7 +376,7 @@
                 var perms_arr = s[uid] || [];
                 for (var pj = 0; pj < perms_arr.length; pj++) {
                   var { error: permErr } = await sb.from('user_permissions').upsert({
-                    user_id: uid, permission: perms_arr[pj]
+                    user_id: toNumericId(uid), permission: perms_arr[pj]
                   }, { onConflict: 'user_id,permission' });
                   if (permErr) console.warn('[UserAdmin] 权限同步跳过:', permErr.message);
                 }
