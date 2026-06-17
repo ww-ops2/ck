@@ -73,9 +73,10 @@
     const newSave = saveBtn.cloneNode(true);
     saveBtn.parentNode.replaceChild(newSave, saveBtn);
     newSave.addEventListener('click', async () => {
+      if (typeof showButtonLoading === 'function') showButtonLoading(newSave, '保存中...');
       try {
         const name = form.elements['name'].value.trim();
-        if (!name) { if (typeof showToast === 'function') showToast('请填写物品名称','warning'); else alert('请填写物品名称'); return; }
+        if (!name) { if (typeof showToast === 'function') showToast('请填写物品名称','warning'); else alert('请填写物品名称'); if (typeof hideButtonLoading === 'function') hideButtonLoading(newSave); return; }
         const code = form.elements['code'].value.trim() || null;
         const category = form.elements['category'].value || '未分类';
         const unit = form.elements['unit'].value || '';
@@ -125,6 +126,8 @@
       } catch (e) {
         console.error(e);
         if (typeof showToast === 'function') showToast('新增失败：' + e.message, 'error'); else alert('新增失败：' + e.message);
+      } finally {
+        if (typeof hideButtonLoading === 'function') hideButtonLoading(newSave);
       }
     });
   };
