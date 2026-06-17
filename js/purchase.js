@@ -503,6 +503,9 @@ async function submitPurchaseOrder() {
     return;
   }
 
+  showButtonLoading('submit-purchase-btn', '提交中...');
+  try {
+
   // 获取所有供应商分组
   const supplierGroups = document.querySelectorAll('.supplier-group');
   if (supplierGroups.length === 0) {
@@ -624,6 +627,9 @@ async function submitPurchaseOrder() {
   if (typeof refreshAllBusinessKPI === 'function') refreshAllBusinessKPI();
   showToast(`采购单 ${purchaseOrder.code} 已保存（本地）`, 'success');
   console.log('采购单创建成功（本地）:', purchaseOrder);
+  } finally {
+    hideButtonLoading('submit-purchase-btn');
+  }
 }
 
 /**
@@ -1254,6 +1260,9 @@ async function executeStockIn(order) {
     return;
   }
 
+  showButtonLoading('confirm-stockin-btn', '入库中...');
+  try {
+
   // 获取实际入库数量
   const rows = document.querySelectorAll('#stockin-items-tbody tr');
   const stockinItems = [];
@@ -1341,6 +1350,9 @@ async function executeStockIn(order) {
   showToast(`入库成功！批次号：${batchCode}，已自动生成库存明细（本地）`, 'success', 4000);
   
   console.log('入库完成（本地）:', stockInRecord);
+  } finally {
+    hideButtonLoading('confirm-stockin-btn');
+  }
 }
 
 /**
