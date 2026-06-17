@@ -82,14 +82,17 @@
         const unit = form.elements['unit'].value || '';
         const stock = Number(form.elements['stock'].value || 0);
         const safety = Number(form.elements['safety_stock'].value || 0);
+        const unitPrice = Number(form.elements['unit_price']?.value || 0);
 
         const newItem = {
           code: code,
           name: name,
           category_name: category,
+          category: category,  // 兼容前端
           unit: unit,
           stock: stock,
           safety_stock: safety,
+          unit_price: unitPrice,
           created_at: new Date().toISOString()
         };
 
