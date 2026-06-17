@@ -285,25 +285,31 @@ function loadRecentActivities() {
 let _invBatchMode = false;
 let _invSupplementMode = false;
 
-async function loadInventory() {
+async function loadInventory(skipSupabaseFetch) {
   const container = document.getElementById('inventory-container');
   if (!container) return;
 
-  // 尝试从 Supabase 拉取实时库存（云端优先），失败则回退到 localStorage 或 mockData
+  // 尝试从 Supabase 拉取实时库存（云端优先），失败则回退到缓存
+  // 参数 skipSupabaseFetch=true 时跳过云端拉取，直接使用 _appCache 缓存
   let items = [];
-  try {
-    if (typeof SupaDB !== 'undefined' && SupaDB.getInventory) {
-      const filterCat = document.getElementById('filter-category')?.value || '';
-      const filterStatus = document.getElementById('filter-status')?.value || '';
-      const filters = {};
-      if (filterCat) filters.category = filterCat;
-      // status 仍在客户端过滤以保持行为一致
-      items = await SupaDB.getInventory(filters);
-      console.log('从 Supabase 获取库存项:', items.length);
+  if (!skipSupabaseFetch) {
+    try {
+      if (typeof SupaDB !== 'undefined' && SupaDB.getInventory) {
+        const filterCat = document.getElementById('filter-category')?.value || '';
+        const filterStatus = document.getElementById('filter-status')?.value || '';
+        const filters = {};
+        if (filterCat) filters.category = filterCat;
+        items = await SupaDB.getInventory(filters);
+        console.log('从 Supabase 获取库存项:', items.length);
+        // 同步更新 _appCache.inventory，确保缓存与界面数据一致
+        if (items && items.length > 0) {
+          _appCache.inventory = JSON.parse(JSON.stringify(items));
+        }
+      }
+    } catch (e) {
+      console.warn('从 Supabase 获取库存失败，回退到本地缓存：', e.message);
+      items = [];
     }
-  } catch (e) {
-    console.warn('从 Supabase 获取库存失败，回退到本地缓存：', e.message);
-    items = [];
   }
 
   // 若云端没数据则读取 _appCache
@@ -461,90 +467,88 @@ async function loadInventory() {
   } catch(e) { /* ignore parse error */ }
 
   const checkboxTh = _invBatchMode ? '<th style="width:30px;"><input type="checkbox" id="inv-selectall" onchange="_invToggleAll(this.checked)" checked></th>' : '';
+  // 定义统一的表头列（用于单表模式）
+  var unifiedHeaders = '<tr>' + checkboxTh +
+    '<th>物品编号</th>' +
+    '<th>物品名称</th>' +
+    '<th>品牌</th>' +
+    '<th>型号</th>' +
+    '<th>单位</th>' +
+    '<th style="text-align:right;">单价</th>' +
+    '<th>库存</th>' +
+    '<th style="text-align:right;">金额</th>' +
+    '<th>状态</th>' +
+    '<th style="text-align:center;">采购中</th>' +
+    '<th>操作</th>' +
+  '</tr>';
 
-  container.innerHTML = categoryNames.map(catName => {
+  // 构建单表 HTML：用分类分隔行替代多个独立表格
+  var singleTableHtml = '<div class="inventory-unified-table"><table class="data-table">' +
+    '<colgroup>' +
+      (_invBatchMode ? '<col style="width:36px;">' : '') +
+      '<col style="width:11%;">' +
+      '<col style="width:17%;">' +
+      '<col style="width:8%;">' +
+      '<col style="width:9%;">' +
+      '<col style="width:6%;">' +
+      '<col style="width:9%;">' +
+      '<col style="width:7%;">' +
+      '<col style="width:9%;">' +
+      '<col style="width:8%;">' +
+      '<col style="width:8%;">' +
+      '<col style="width:8%;">' +
+    '</colgroup>' +
+    '<thead>' + unifiedHeaders + '</thead>' +
+    '<tbody>';
+
+  categoryNames.forEach(function(catName) {
     const catItems = grouped[catName];
     const totalStock = catItems.reduce((sum, it) => sum + (it.stock || 0), 0);
     const lowStockCount = catItems.filter(it => it.stock < (it.safety_stock || 10)).length;
     const icon = catIcons[catName] || '📁';
 
-    const rows = catItems.map(item => {
+    // 分类分隔行
+    singleTableHtml += '<tr class="category-separator-row"><td colspan="' + (_invBatchMode ? 12 : 11) + '">' +
+      '<div class="category-separator-inner">' +
+        '<span class="category-separator-icon">' + icon + '</span>' +
+        '<span class="category-separator-name">' + catName + '</span>' +
+        '<span class="category-separator-stats">' + catItems.length + ' 种物品 · 库存 ' + totalStock + ' 件</span>' +
+        (lowStockCount > 0 ? '<span class="status-badge warning" style="margin-left:8px;font-size:11px;">' + lowStockCount + ' 项低库存</span>' : '') +
+      '</div>' +
+    '</td></tr>';
+
+    catItems.forEach(function(item) {
       const status = getStockStatus(item);
       const canEdit = hasPermission('edit_inventory') || hasPermission('inventory.adjust') || hasPermission('inventory.edit');
       const unitPrice = item.unit_price || 0;
       const amount = (item.stock || 0) * unitPrice;
       const checkboxTd = _invBatchMode
-        ? `<td><input type="checkbox" class="inv-batch-cb" data-item-id="${item.id}" data-item-name="${(item.name || '').replace(/"/g, '&quot;')}" data-item-cat="${(item.category || '').replace(/"/g, '&quot;')}" data-item-brand="${(item.brand || '').replace(/"/g, '&quot;')}" data-item-model="${(item.model || '').replace(/"/g, '&quot;')}" data-item-unit="${item.unit || ''}" data-item-code="${item.code || ''}" data-item-safety="${item.safety_stock || 10}" data-item-stock="${item.stock || 0}" checked></td>`
+        ? '<td><input type="checkbox" class="inv-batch-cb" data-item-id="' + item.id + '" data-item-name="' + (item.name || '').replace(/"/g, '&quot;') + '" data-item-cat="' + (item.category || '').replace(/"/g, '&quot;') + '" data-item-brand="' + (item.brand || '').replace(/"/g, '&quot;') + '" data-item-model="' + (item.model || '').replace(/"/g, '&quot;') + '" data-item-unit="' + (item.unit || '') + '" data-item-code="' + (item.code || '') + '" data-item-safety="' + (item.safety_stock || 10) + '" data-item-stock="' + (item.stock || 0) + '" checked></td>'
         : '';
-      return `
-        <tr>
-          ${checkboxTd}
-          <td style="font-family:monospace;font-size:12px;color:var(--text-muted);">${item.code}</td>
-          <td style="font-weight:600;">${item.name}</td>
-          <td>${item.brand || '-'}</td>
-          <td>${item.model || '-'}</td>
-          <td>${item.unit}</td>
-          <td style="font-weight:500;text-align:right;">¥${Number(unitPrice).toFixed(2)}</td>
-          <td><span style="font-weight:600;color:${item.stock < (item.safety_stock || 10) ? 'var(--danger)' : 'var(--text-primary)'}">${item.stock}</span></td>
-          <td style="font-weight:600;color:var(--accent);">¥${amount.toFixed(2)}</td>
-          <td><span class="status-badge ${status.class}">${status.text}</span></td>
-          <td style="text-align:center;">${(() => {
-            const pending = _pendingMap[item.name];
-            if (!pending || pending.length === 0) return '<span style="color:var(--text-muted);font-size:12px;">-</span>';
-            const totalQty = pending.reduce((s, p) => s + p.quantity, 0);
-            return `<span class="pending-qty-badge" onclick="event.stopPropagation();_showPendingPopover(this,'${(item.name || '').replace(/'/g, "\\'")}')" title="点击查看采购明细">${totalQty}</span>`;
-          })()}</td>
-          <td>
-            ${ canEdit ? `<button class="btn btn-sm" onclick="editItem(${item.id})">编辑</button>` : '<span style="color:var(--text-muted);font-size:12px;">-</span>'}
-          </td>
-        </tr>`;
-    }).join('');
+      singleTableHtml += '<tr>' +
+        checkboxTd +
+        '<td style="font-family:monospace;font-size:12px;color:var(--text-muted);">' + item.code + '</td>' +
+        '<td style="font-weight:600;">' + item.name + '</td>' +
+        '<td>' + (item.brand || '-') + '</td>' +
+        '<td>' + (item.model || '-') + '</td>' +
+        '<td>' + item.unit + '</td>' +
+        '<td style="font-weight:500;text-align:right;">¥' + Number(unitPrice).toFixed(2) + '</td>' +
+        '<td><span style="font-weight:600;color:' + (item.stock < (item.safety_stock || 10) ? 'var(--danger)' : 'var(--text-primary)') + '">' + item.stock + '</span></td>' +
+        '<td style="font-weight:600;color:var(--accent);">¥' + amount.toFixed(2) + '</td>' +
+        '<td><span class="status-badge ' + status.class + '">' + status.text + '</span></td>' +
+        '<td style="text-align:center;">' + (function() {
+          const pending = _pendingMap[item.name];
+          if (!pending || pending.length === 0) return '<span style="color:var(--text-muted);font-size:12px;">-</span>';
+          const totalQty = pending.reduce(function(s, p) { return s + p.quantity; }, 0);
+          return '<span class="pending-qty-badge" onclick="event.stopPropagation();_showPendingPopover(this,\'' + (item.name || '').replace(/'/g, "\\'") + '\')" title="点击查看采购明细">' + totalQty + '</span>';
+        })() + '</td>' +
+        '<td>' + (canEdit ? '<button class="btn btn-sm" onclick="editItem(' + item.id + ')">编辑</button>' : '<span style="color:var(--text-muted);font-size:12px;">-</span>') + '</td>' +
+      '</tr>';
+    });
+  });
 
-    return `
-      <div class="inventory-category">
-        <div class="category-section-header">
-          <span class="category-section-icon">${icon}</span>
-          <span class="category-section-name">${catName}</span>
-          <span class="category-section-stats">${catItems.length} 种物品 · 库存 ${totalStock} 件</span>
-          ${lowStockCount > 0 ? `<span class="status-badge warning" style="margin-left:8px;font-size:11px;">${lowStockCount} 项低库存</span>` : ''}
-        </div>
-        <div class="table-scroll">
-          <table class="data-table">
-            <colgroup>
-              ${_invBatchMode ? '<col style="width:36px;">' : ''}
-              <col style="width:11%;">
-              <col style="width:17%;">
-              <col style="width:8%;">
-              <col style="width:9%;">
-              <col style="width:6%;">
-              <col style="width:9%;">
-              <col style="width:7%;">
-              <col style="width:9%;">
-              <col style="width:8%;">
-              <col style="width:8%;">
-              <col style="width:8%;">
-            </colgroup>
-            <thead>
-              <tr>
-                ${checkboxTh}
-                <th>物品编号</th>
-                <th>物品名称</th>
-                <th>品牌</th>
-                <th>型号</th>
-                <th>单位</th>
-                <th style="text-align:right;">单价</th>
-                <th>库存</th>
-                <th style="text-align:right;">金额</th>
-                <th>状态</th>
-                <th style="text-align:center;">采购中</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>
-      </div>`;
-  }).join('');
+  singleTableHtml += '</tbody></table></div>';
+  container.innerHTML = singleTableHtml;
 
   // 批量模式底部操作栏
   if (_invBatchMode) {
@@ -753,10 +757,10 @@ async function _saveInvSupplement() {
   var container = document.getElementById('inventory-container');
   if (!container) return;
 
-  var inventory = _appCache.inventory ? JSON.parse(JSON.stringify(_appCache.inventory)) : [];
-  var changedCount = 0;
-  var pendingUpdates = []; // 收集需要同步到 SupaDB 的更新
+  var changedItems = []; // 收集所有改动 { id, data }
+  var errors = [];
 
+  // 第一步：遍历 DOM，收集所有改动
   [].forEach.call(container.querySelectorAll('.supp-edit-cat'), function(catEl) {
     var itemId = parseFloat(catEl.dataset.itemId);
     var brandEl = container.querySelector('.supp-edit-brand[data-item-id="' + itemId + '"]');
@@ -764,71 +768,118 @@ async function _saveInvSupplement() {
     var unitEl = container.querySelector('.supp-edit-unit[data-item-id="' + itemId + '"]');
     var priceEl = container.querySelector('.supp-edit-price[data-item-id="' + itemId + '"]');
 
-    var item = inventory.find(function(i) { return Number(i.id) === Number(itemId); });
-    if (!item) return;
+    // 从缓存中获取原始值
+    var origItem = null;
+    if (container._suppOriginalItems) {
+      origItem = container._suppOriginalItems.find(function(i) { return Number(i.id) === Number(itemId); });
+    }
+    if (!origItem && _appCache.inventory) {
+      origItem = _appCache.inventory.find(function(i) { return Number(i.id) === Number(itemId); });
+    }
 
     var newCat = catEl.value.trim() || '未分类';
     var newBrand = brandEl ? brandEl.value.trim() : '';
     var newModel = modelEl ? modelEl.value.trim() : '';
     var newUnit = unitEl ? unitEl.value.trim() : '';
-    var newPrice = priceEl ? Number(priceEl.value || 0) : (item.unit_price || 0);
+    var newPrice = priceEl ? Number(priceEl.value || 0) : 0;
 
-    if (item.category !== newCat ||
-        (item.brand || '') !== newBrand ||
-        (item.model || '') !== newModel ||
-        (item.unit || '') !== newUnit ||
-        (item.unit_price || 0) !== newPrice) {
-      item.category = newCat;
-      item.category_name = newCat;  // 兼容 Supabase 字段名
-      item.brand = newBrand;
-      item.model = newModel;
-      item.unit = newUnit;
-      item.unit_price = newPrice;
-      changedCount++;
-      pendingUpdates.push({
-        id: itemId,
-        data: { category: newCat, category_name: newCat, brand: newBrand, model: newModel, unit: newUnit, unit_price: newPrice }
-      });
-    }
-  });
-
-  // 先写回 _appCache
-  if (changedCount > 0) {
-    _appCache.inventory = inventory;
-  }
-
-  // 再同步到 SupaDB（若可用）
-  var syncErrors = 0;
-  if (typeof SupaDB !== 'undefined' && SupaDB.updateInventoryItem && pendingUpdates.length > 0) {
-    for (var i = 0; i < pendingUpdates.length; i++) {
-      try {
-        await SupaDB.updateInventoryItem(pendingUpdates[i].id, pendingUpdates[i].data);
-      } catch (e) {
-        console.warn('同步到 SupaDB 失败（item ' + pendingUpdates[i].id + '）:', e.message);
-        syncErrors++;
+    // 判断是否有实质性修改
+    if (origItem) {
+      if (origItem.category === newCat &&
+          (origItem.brand || '') === newBrand &&
+          (origItem.model || '') === newModel &&
+          (origItem.unit || '') === newUnit &&
+          (origItem.unit_price || 0) === newPrice) {
+        return; // 无变化，跳过
       }
     }
-  }
 
-  // 从云端刷新缓存，确保数据一致
-  try {
-    if (typeof refreshData === 'function') {
-      await refreshData('inventory');
-    }
-  } catch (e) {
-    console.warn('刷新库存缓存失败', e.message);
-  }
+    changedItems.push({
+      id: itemId,
+      data: {
+        category_name: newCat,
+        brand: newBrand,
+        model: newModel,
+        unit: newUnit,
+        unit_price: newPrice
+      }
+    });
+  });
 
-  if (changedCount > 0) {
-    var msg = '已保存 ' + changedCount + ' 项补充信息，物品按新分类重新排列';
-    if (syncErrors > 0) msg += '，' + syncErrors + ' 项同步云端失败';
-    showToast(msg, syncErrors > 0 ? 'warning' : 'success');
-  } else {
+  if (changedItems.length === 0) {
     showToast('未检测到修改', 'info');
+    _invSupplementMode = false;
+    loadInventory(true);
+    return;
   }
+
+  // 第二步：逐个写入 Supabase 数据库（直接持久化）
+  var successCount = 0;
+  for (var i = 0; i < changedItems.length; i++) {
+    var ci = changedItems[i];
+    try {
+      if (typeof SupaDB !== 'undefined' && SupaDB.updateInventoryItem) {
+        console.log('写入数据库: itemId=' + ci.id, ci.data);
+        await SupaDB.updateInventoryItem(ci.id, ci.data);
+        successCount++;
+      } else {
+        // SupaDB 不可用，记录错误
+        errors.push('SupaDB 不可用');
+        break;
+      }
+    } catch (e) {
+      console.warn('写入数据库失败 itemId=' + ci.id + ': ' + e.message);
+      errors.push('物品#' + ci.id + ': ' + e.message);
+    }
+  }
+
+  // 第三步：更新本地缓存（仅对成功写入的数据）
+  if (successCount > 0 && _appCache.inventory) {
+    var inv = JSON.parse(JSON.stringify(_appCache.inventory));
+    changedItems.forEach(function(ci) {
+      var idx = inv.findIndex(function(i) { return Number(i.id) === Number(ci.id); });
+      if (idx >= 0) {
+        inv[idx].category_name = ci.data.category_name;
+        inv[idx].category = ci.data.category_name;  // 前端本地属性
+        inv[idx].brand = ci.data.brand;
+        inv[idx].model = ci.data.model;
+        inv[idx].unit = ci.data.unit;
+        inv[idx].unit_price = ci.data.unit_price;
+      }
+    });
+    _appCache.inventory = inv;
+  }
+
+  // 第四步：全部成功则从云端刷新，部分失败则保留本地缓存
+  var allSuccess = errors.length === 0;
+  if (allSuccess && successCount > 0) {
+    try {
+      if (typeof refreshData === 'function') {
+        await refreshData('inventory');
+        console.log('云端刷新完成');
+      }
+    } catch (e) {
+      console.warn('云端刷新失败: ' + e.message);
+    }
+  }
+
+  // 第五步：反馈 + 重新渲染
+  var msg;
+  if (allSuccess) {
+    msg = '已保存 ' + successCount + ' 项到数据库';
+    showToast(msg, 'success');
+  } else if (successCount > 0) {
+    msg = '部分保存成功: ' + successCount + ' 项写入数据库，' + errors.length + ' 项失败';
+    showToast(msg, 'warning');
+  } else {
+    msg = '保存失败，无法连接到数据库';
+    showToast(msg, 'error');
+  }
+  console.log(msg, errors.length > 0 ? errors : '');
 
   _invSupplementMode = false;
-  loadInventory();
+  // 全部成功 → 从云端渲染；部分失败 → 从本地缓存渲染（保留修改）
+  loadInventory(!allSuccess);
 }
 
 function _cancelInvSupplement() {

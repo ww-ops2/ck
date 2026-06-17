@@ -535,47 +535,89 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* ===== Inventory Category Blocks ===== */
-.inventory-category {
-  margin-bottom: 24px;
+/* ===== Inventory — 统一单表布局 ===== */
+.inventory-unified-table {
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 16px;
 }
-.inventory-category:last-child {
-  margin-bottom: 0;
+.inventory-unified-table .data-table {
+  margin: 0;
+  table-layout: fixed;
+  border: none;
+  width: 100%;
 }
-.category-section-header {
+/* 表头：带右侧虚线分割，背景更明显 */
+.inventory-unified-table .data-table thead th {
+  background: var(--bg-elevated);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 10px 10px;
+  border-right: 1px dotted var(--border-light);
+  border-bottom: 1.5px solid var(--border);
+  white-space: nowrap;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.inventory-unified-table .data-table thead th:last-child {
+  border-right: none;
+}
+/* 数据单元格：虚线网格 */
+.inventory-unified-table .data-table td {
+  padding: 10px 10px;
+  border-right: 1px dotted var(--border-light);
+  border-bottom: 1px dotted var(--border-light);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inventory-unified-table .data-table td:last-child {
+  border-right: none;
+}
+.inventory-unified-table .data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.inventory-unified-table .data-table tbody tr:hover td {
+  background: var(--bg-card-hover);
+}
+/* 分类分隔行：覆盖单元格边框 */
+.category-separator-row td {
+  padding: 0 !important;
+  background: transparent !important;
+  border-right: none !important;
+  border-bottom: none !important;
+}
+.category-separator-inner {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 16px;
+  padding: 10px 14px;
   background: var(--bg-elevated);
-  border: 1.5px solid var(--border);
   border-bottom: 2.5px solid var(--accent);
-  border-radius: var(--sketch-r1);
+  border-top: 1.5px solid var(--border);
+  margin-top: 6px;
 }
-.category-section-icon {
-  font-size: 20px;
+.category-separator-row:first-child .category-separator-inner {
+  margin-top: 0;
+  border-top: none;
 }
-.category-section-name {
-  font-size: 15px;
+.category-separator-icon {
+  font-size: 18px;
+}
+.category-separator-name {
+  font-size: 14px;
   font-weight: 700;
   color: var(--accent-dark);
   font-family: var(--font-hand);
 }
-.category-section-stats {
+.category-separator-stats {
   font-size: 12px;
   color: var(--text-muted);
   margin-left: auto;
   font-family: var(--font-hand);
-}
-.inventory-category .table-scroll {
-  border: 1.5px solid var(--border);
-  border-top: none;
-  border-radius: 0 0 8px 8px;
-  overflow: hidden;
-}
-.inventory-category .data-table {
-  margin: 0;
-  table-layout: fixed;
 }
 
 /* ===== KPI Cards ===== */
