@@ -32,7 +32,7 @@ function initBusinessFlow() {
 
   // 入库模块
   _bfBindMonthPicker('stockin-month', 'stockin-month-this', 'stockin-month-last',
-    thisMonth, lastMonth, () => { _bfStockInMonth = _bfGetMonthRange('stockin-month'); _bfUpdateStockInKPI(); });
+    thisMonth, lastMonth, () => { _bfStockInMonth = _bfGetMonthRange('stockin-month'); _bfUpdateStockInKPI(); if (typeof loadStockInRecords === 'function') loadStockInRecords(); });
 
   // 领用模块
   _bfBindMonthPicker('requisition-month', 'req-month-this', 'req-month-last',
@@ -105,10 +105,26 @@ function _bfUpdatePurchaseKPI() {
 // ============== 入库 KPI ==============
 
 function _bfUpdateStockInKPI() {
+  // 已完成入库记录
   const records = JSON.parse(localStorage.getItem('stockInRecords') || '[]');
+  // 待入库采购单
+  let pendingPOs = [];
+  try {
+    var allPOs = JSON.parse(localStorage.getItem('purchaseOrders') || '[]');
+    pendingPOs = allPOs.filter(function(o) { return o.status === 'pending_stockin'; }).map(function(o) {
+      return {
+        stockin_date: o.purchase_date || o.created_at || '',
+        total_quantity: (o.items || []).reduce(function(s, item) { return s + (item.quantity || 0); }, 0),
+        status: 'pending'
+      };
+    });
+  } catch(e) {}
+
+  // 合并后再按月份筛选
+  var combined = records.concat(pendingPOs);
   const filtered = _bfStockInMonth
-    ? records.filter(r => _bfInMonth(r.stockin_date || r.confirmed_at || r.created_at, _bfStockInMonth))
-    : records;
+    ? combined.filter(r => _bfInMonth(r.stockin_date || r.confirmed_at || r.created_at, _bfStockInMonth))
+    : combined;
 
   const count = filtered.length;
   const totalQty = filtered.reduce((s, r) => s + (r.total_quantity || 0), 0);
