@@ -36,7 +36,7 @@
       // update existing
       users = users.map(u => u.username === username ? Object.assign({}, u, { name, role, status, remark }) : u);
     } else {
-      users.push({ id: 'u' + Date.now(), username, name: name || username, role, status, remark });
+      users.push({ id: Date.now(), username, name: name || username, role, status, remark });
     }
     localStorage.setItem('users', JSON.stringify(users));
 
@@ -362,10 +362,10 @@
               // 逐条同步用户权限（每行一个 permission，非数组）
               for (var uid in s) {
                 if (!Object.prototype.hasOwnProperty.call(s, uid)) continue;
-                var perms = s[uid] || [];
-                for (var pj = 0; pj < perms.length; pj++) {
+                var perms_arr = s[uid] || [];
+                for (var pj = 0; pj < perms_arr.length; pj++) {
                   var { error: permErr } = await sb.from('user_permissions').upsert({
-                    user_id: uid, permission: perms[pj]
+                    user_id: uid, permission: perms_arr[pj]
                   }, { onConflict: 'user_id,permission' });
                   if (permErr) console.warn('[UserAdmin] 权限同步跳过:', permErr.message);
                 }
