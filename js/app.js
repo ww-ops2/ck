@@ -467,18 +467,18 @@ async function loadInventory(skipSupabaseFetch) {
   } catch(e) { /* ignore parse error */ }
 
   const checkboxTh = _invBatchMode ? '<th style="width:30px;"><input type="checkbox" id="inv-selectall" onchange="_invToggleAll(this.checked)" checked></th>' : '';
-  // 定义统一的表头列（用于单表模式）
+  // 定义统一的表头列（标题全部居中）
   var unifiedHeaders = '<tr>' + checkboxTh +
     '<th>物品编号</th>' +
     '<th>物品名称</th>' +
     '<th>品牌</th>' +
     '<th>型号</th>' +
     '<th>单位</th>' +
-    '<th style="text-align:right;">单价</th>' +
+    '<th>单价</th>' +
     '<th>库存</th>' +
-    '<th style="text-align:right;">金额</th>' +
+    '<th>金额</th>' +
     '<th>状态</th>' +
-    '<th style="text-align:center;">采购中</th>' +
+    '<th>采购中</th>' +
     '<th>操作</th>' +
   '</tr>';
 
@@ -527,16 +527,16 @@ async function loadInventory(skipSupabaseFetch) {
         : '';
       singleTableHtml += '<tr>' +
         checkboxTd +
-        '<td style="font-family:monospace;font-size:12px;color:var(--text-muted);">' + item.code + '</td>' +
-        '<td style="font-weight:600;">' + item.name + '</td>' +
+        '<td class="cell-code">' + item.code + '</td>' +
+        '<td class="cell-name">' + item.name + '</td>' +
         '<td>' + (item.brand || '-') + '</td>' +
         '<td>' + (item.model || '-') + '</td>' +
         '<td>' + item.unit + '</td>' +
-        '<td style="font-weight:500;text-align:right;">¥' + Number(unitPrice).toFixed(2) + '</td>' +
-        '<td><span style="font-weight:600;color:' + (item.stock < (item.safety_stock || 10) ? 'var(--danger)' : 'var(--text-primary)') + '">' + item.stock + '</span></td>' +
-        '<td style="font-weight:600;color:var(--accent);">¥' + amount.toFixed(2) + '</td>' +
+        '<td class="cell-number">¥' + Number(unitPrice).toFixed(2) + '</td>' +
+        '<td class="cell-number"><span style="font-weight:600;color:' + (item.stock < (item.safety_stock || 10) ? 'var(--danger)' : 'var(--text-primary)') + '">' + item.stock + '</span></td>' +
+        '<td class="cell-number" style="font-weight:600;color:var(--accent);">¥' + amount.toFixed(2) + '</td>' +
         '<td><span class="status-badge ' + status.class + '">' + status.text + '</span></td>' +
-        '<td style="text-align:center;">' + (function() {
+        '<td class="cell-center">' + (function() {
           const pending = _pendingMap[item.name];
           if (!pending || pending.length === 0) return '<span style="color:var(--text-muted);font-size:12px;">-</span>';
           const totalQty = pending.reduce(function(s, p) { return s + p.quantity; }, 0);

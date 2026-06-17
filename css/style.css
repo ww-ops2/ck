@@ -548,7 +548,7 @@ body {
   border: none;
   width: 100%;
 }
-/* 表头：带右侧虚线分割，背景更明显 */
+/* 表头：全部居中，带右侧虚线分割 */
 .inventory-unified-table .data-table thead th {
   background: var(--bg-elevated);
   position: sticky;
@@ -561,6 +561,7 @@ body {
   font-size: 11px;
   letter-spacing: 0.5px;
   text-transform: uppercase;
+  text-align: center;
 }
 .inventory-unified-table .data-table thead th:last-child {
   border-right: none;
@@ -582,6 +583,22 @@ body {
 }
 .inventory-unified-table .data-table tbody tr:hover td {
   background: var(--bg-card-hover);
+}
+/* 单元格对齐 */
+.inventory-unified-table .data-table .cell-code {
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.inventory-unified-table .data-table .cell-name {
+  font-weight: 600;
+}
+.inventory-unified-table .data-table .cell-number {
+  text-align: right;
+  font-weight: 500;
+}
+.inventory-unified-table .data-table .cell-center {
+  text-align: center;
 }
 /* 分类分隔行：覆盖单元格边框 */
 .category-separator-row td {
