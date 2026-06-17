@@ -749,12 +749,13 @@ function _suppUpdateChangeCount() {
   countEl.textContent = changed;
 }
 
-function _saveInvSupplement() {
+async function _saveInvSupplement() {
   var container = document.getElementById('inventory-container');
   if (!container) return;
 
   var inventory = _appCache.inventory ? JSON.parse(JSON.stringify(_appCache.inventory)) : [];
   var changedCount = 0;
+  var pendingUpdates = []; // 收集需要同步到 SupaDB 的更新
 
   [].forEach.call(container.querySelectorAll('.supp-edit-cat'), function(catEl) {
     var itemId = parseFloat(catEl.dataset.itemId);
@@ -784,12 +785,44 @@ function _saveInvSupplement() {
       item.unit = newUnit;
       item.unit_price = newPrice;
       changedCount++;
+      pendingUpdates.push({
+        id: itemId,
+        data: { category: newCat, category_name: newCat, brand: newBrand, model: newModel, unit: newUnit, unit_price: newPrice }
+      });
     }
   });
 
+  // 先写回 _appCache
   if (changedCount > 0) {
     _appCache.inventory = inventory;
-    showToast('已保存 ' + changedCount + ' 项补充信息，物品按新分类重新排列', 'success');
+  }
+
+  // 再同步到 SupaDB（若可用）
+  var syncErrors = 0;
+  if (typeof SupaDB !== 'undefined' && SupaDB.updateInventoryItem && pendingUpdates.length > 0) {
+    for (var i = 0; i < pendingUpdates.length; i++) {
+      try {
+        await SupaDB.updateInventoryItem(pendingUpdates[i].id, pendingUpdates[i].data);
+      } catch (e) {
+        console.warn('同步到 SupaDB 失败（item ' + pendingUpdates[i].id + '）:', e.message);
+        syncErrors++;
+      }
+    }
+  }
+
+  // 从云端刷新缓存，确保数据一致
+  try {
+    if (typeof refreshData === 'function') {
+      await refreshData('inventory');
+    }
+  } catch (e) {
+    console.warn('刷新库存缓存失败', e.message);
+  }
+
+  if (changedCount > 0) {
+    var msg = '已保存 ' + changedCount + ' 项补充信息，物品按新分类重新排列';
+    if (syncErrors > 0) msg += '，' + syncErrors + ' 项同步云端失败';
+    showToast(msg, syncErrors > 0 ? 'warning' : 'success');
   } else {
     showToast('未检测到修改', 'info');
   }
