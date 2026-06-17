@@ -155,7 +155,7 @@ function submitRegistration() {
   }
 
   const newUser = {
-    id: 'u' + Date.now(),
+    id: Date.now(),
     username: phone,
     name: name,
     role: role,
