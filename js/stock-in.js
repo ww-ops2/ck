@@ -26,36 +26,86 @@ function loadStockInRecords() {
     records = JSON.parse(data);
   }
 
+  // 同时加载待入库的采购单（status === 'pending_stockin'）
+  const poData = localStorage.getItem('purchaseOrders');
+  let pendingOrders = [];
+  if (poData) {
+    try {
+      var allPOs = JSON.parse(poData);
+      pendingOrders = allPOs.filter(function(o) { return o.status === 'pending_stockin'; }).map(function(o) {
+        return {
+          _isPending: true,
+          code: o.code,
+          purchase_order_code: o.code,
+          stockin_date: o.purchase_date || o.created_at || '',
+          items: o.items || [],
+          total_quantity: (o.items || []).reduce(function(sum, item) { return sum + (item.quantity || 0); }, 0),
+          batch_code: '-',
+          status: 'pending',
+          created_at: o.created_at || '',
+          orderId: o.id,
+          purchaser: o.purchaser || ''
+        };
+      });
+    } catch(e) { /* 静默 */ }
+  }
+
+  // 合并：待入库在前，已完成在后
+  var merged = pendingOrders.concat(records);
+
   // 按状态筛选
   const filterStatus = document.getElementById('filter-stockin-status')?.value || '';
   if (filterStatus) {
-    records = records.filter(r => r.status === filterStatus);
+    merged = merged.filter(function(r) { return r.status === filterStatus; });
   }
 
   // 按日期倒序排列
-  records.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  merged.sort(function(a, b) { return new Date(b.created_at) - new Date(a.created_at); });
 
   const tbody = document.getElementById('stockin-tbody');
   if (!tbody) return;
 
-  if (records.length === 0) {
+  if (merged.length === 0) {
     tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无入库记录</td></tr>';
     return;
   }
 
-  tbody.innerHTML = records.map(record => `
-    <tr>
-      <td>${record.code}</td>
-      <td>${record.purchase_order_code}</td>
-      <td>${record.stockin_date}</td>
-      <td>${record.items.length} 种 / ${record.total_quantity} 件</td>
-      <td>${record.batch_code}</td>
-      <td><span class="status-badge success">已完成</span></td>
-      <td>
-        <button class="btn btn-sm" onclick="viewStockInDetail('${record.code}')">查看详情</button>
-      </td>
-    </tr>
-  `).join('');
+  tbody.innerHTML = merged.map(function(record) {
+    var code = record._isPending ? record.code : record.code;
+    var poCode = record.purchase_order_code || '-';
+    var date = record.stockin_date || '-';
+    var qty = (record.items || []).length + ' 种';
+    if (record.total_quantity) qty += ' / ' + record.total_quantity + ' 件';
+    var batch = record.batch_code || '-';
+
+    if (record._isPending) {
+      // 待入库行
+      var statusHtml = '<span class="status-badge warning">待入库</span>';
+      var actionHtml = '<button class="btn btn-sm" onclick="confirmStockIn(' + record.orderId + ')" style="background:var(--success);border-color:var(--success);color:#fff;">入库</button>';
+      return '<tr>' +
+        '<td>' + code + '</td>' +
+        '<td>' + poCode + '</td>' +
+        '<td>' + date + '</td>' +
+        '<td>' + qty + '</td>' +
+        '<td>' + batch + '</td>' +
+        '<td>' + statusHtml + '</td>' +
+        '<td>' + actionHtml + '</td>' +
+        '</tr>';
+    } else {
+      // 已完成入库行
+      var statusHtml = '<span class="status-badge success">已完成</span>';
+      var actionHtml = '<button class="btn btn-sm" onclick="viewStockInDetail(\'' + code + '\')">查看详情</button>';
+      return '<tr>' +
+        '<td>' + code + '</td>' +
+        '<td>' + poCode + '</td>' +
+        '<td>' + date + '</td>' +
+        '<td>' + qty + '</td>' +
+        '<td>' + batch + '</td>' +
+        '<td>' + statusHtml + '</td>' +
+        '<td>' + actionHtml + '</td>' +
+        '</tr>';
+    }
+  }).join('');
 }
 
 /**
