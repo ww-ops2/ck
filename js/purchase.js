@@ -8,10 +8,11 @@ let currentImportStep = 1;
 let importData = [];
 
 // 类别和品牌型号历史数据
-let categories = [];  // [{code: 'SKU', name: '饮品', remark: ''}]
+let categories = [];  // [{code: 'XH', name: '循环使用类', scenario: '通用', remark: ''}]
 let brandHistory = {};  // {物品名称: [品牌列表]}
 let modelHistory = {};  // {物品名称: [型号列表]}
 let categoryCodeCounters = {};  // {类别编码: 计数器} 用于每个类别独立计数
+let consumptionStandards = [];  // [{item_name, scenario, max_per_tour}] 领用标准
 
 /**
  * 初始化采购单模块
@@ -489,7 +490,7 @@ function removePurchaseItemRow(btn) {
 /**
  * 提交采购单
  */
-function submitPurchaseOrder() {
+async function submitPurchaseOrder() {
   const form = document.getElementById('purchase-form');
   if (!form) return;
 
@@ -535,9 +536,8 @@ function submitPurchaseOrder() {
         const price = parseFloat(row.querySelector('.item-price').value) || 0;
         
         if (!category) {
-          showToast(`物品 "${nameInput.value}" 必须选择类别`, 'warning');
-          hasError = true;
-          return;
+          // 未选择类别时自动归为"未分类"
+          // 不做硬性阻断，允许采购时只填名称和数量
         }
         
         // 保存品牌型号历史
@@ -546,7 +546,7 @@ function submitPurchaseOrder() {
         
         allItems.push({
           supplier: supplierName,
-          category: category,
+          category: category || '未分类',
           code: itemCode,
           name: nameInput.value,
           brand: brand,
@@ -575,44 +575,55 @@ function submitPurchaseOrder() {
   
   // 创建采购单对象
   const purchaseOrder = {
-    id: _editingPurchaseOrderId || Date.now(),
-    code: _editingPurchaseOrderId ? (purchaseOrders.find(o => o.id === _editingPurchaseOrderId) || {}).code || orderCode : orderCode,
+    // 不再依赖本地 id，在云端创建后使用返回 id
+    code: orderCode,
     purchase_date: purchaseDate,
     purchaser: purchaser,
     suppliers: Array.from(supplierGroups).map(g => g.querySelector('.supplier-name-input').value.trim()),
     items: allItems,
     total_amount: totalAmount,
     status: 'pending_stockin', // 待入库
-    created_at: _editingPurchaseOrderId ? (purchaseOrders.find(o => o.id === _editingPurchaseOrderId) || {}).created_at || new Date().toISOString() : new Date().toISOString(),
+    created_at: new Date().toISOString(),
     remark: form.querySelector('[name="remark"]').value || ''
   };
 
-  // 如果是编辑模式，替换旧的采购单；否则新增
+  // 先尝试写入云端
+  if (typeof SupaDB !== 'undefined' && SupaDB.createPurchaseOrder) {
+    try {
+      const created = await SupaDB.createPurchaseOrder(purchaseOrder);
+      // 更新本地缓存与 UI
+      try {
+        let local = JSON.parse(localStorage.getItem('purchaseOrders') || '[]');
+        local.unshift(created);
+        localStorage.setItem('purchaseOrders', JSON.stringify(local));
+      } catch(e) { console.warn('更新本地 purchaseOrders 缓存失败', e.message); }
+
+      closeModal();
+      loadPurchaseOrders();
+      if (typeof refreshAllBusinessKPI === 'function') refreshAllBusinessKPI();
+      showToast(`采购单 ${created.code} 已创建并同步至云端`, 'success');
+      return;
+    } catch (e) {
+      console.warn('云端保存采购单失败，回退到本地：', e.message);
+      // 回退到本地保存
+    }
+  }
+
+  // 若 SupaDB 不可用或写入失败，回退到本地保存
+  purchaseOrder.id = _editingPurchaseOrderId || Date.now();
   if (_editingPurchaseOrderId) {
     const idx = purchaseOrders.findIndex(o => o.id === _editingPurchaseOrderId);
-    if (idx >= 0) {
-      purchaseOrders[idx] = purchaseOrder;
-    } else {
-      purchaseOrders.push(purchaseOrder);
-    }
+    if (idx >= 0) purchaseOrders[idx] = purchaseOrder; else purchaseOrders.push(purchaseOrder);
     _editingPurchaseOrderId = null;
   } else {
     purchaseOrders.push(purchaseOrder);
   }
   savePurchaseOrders();
-
-  // 关闭模态框
   closeModal();
-
-  // 刷新列表
-  console.log('即将刷新采购单列表...');
   loadPurchaseOrders();
-  console.log('采购单列表刷新完成');
-
-  // 显示成功提示
-  showToast(`采购单 ${orderCode} 已创建，已流转至仓库待入库`, 'success');
-  
-  console.log('采购单创建成功:', purchaseOrder);
+  if (typeof refreshAllBusinessKPI === 'function') refreshAllBusinessKPI();
+  showToast(`采购单 ${purchaseOrder.code} 已保存（本地）`, 'success');
+  console.log('采购单创建成功（本地）:', purchaseOrder);
 }
 
 /**
@@ -643,16 +654,47 @@ function loadCategoriesFromStorage() {
   if (data) {
     categories = JSON.parse(data);
   }
-  // 如果没有任何类别，初始化默认类别
+  // 如果没有任何类别，初始化默认类别（新体系：循环使用类/消耗类/其他）
   if (categories.length === 0) {
     categories = [
-      { code: 'SKU', name: '饮品', remark: '', created_at: new Date().toISOString() },
-      { code: 'SKP', name: '食品', remark: '', created_at: new Date().toISOString() },
-      { code: 'SKD', name: '日用品', remark: '', created_at: new Date().toISOString() },
-      { code: 'SK04', name: '办公用品', remark: '', created_at: new Date().toISOString() }
+      { code: 'XH', name: '循环使用类', scenario: '通用', remark: '可回收重复使用的物品', created_at: new Date().toISOString() },
+      { code: 'HM', name: '消耗类', scenario: '通用', remark: '一次性消耗品', created_at: new Date().toISOString() },
+      { code: 'QT', name: '其他', scenario: '通用', remark: '其他类别物品', created_at: new Date().toISOString() }
     ];
     localStorage.setItem('categories', JSON.stringify(categories));
+  } else {
+    // 迁移：旧体系（饮品/食品/日用品/办公用品）→ 新体系
+    const oldNames = ['饮品', '食品', '日用品', '办公用品'];
+    const hasOldDefaults = categories.some(c => oldNames.includes(c.name));
+    const hasNewDefaults = categories.some(c => ['循环使用类', '消耗类'].includes(c.name));
+    if (hasOldDefaults && !hasNewDefaults) {
+      // 保留用户自定义类别，追加新默认类别
+      const newDefaults = [
+        { code: 'XH', name: '循环使用类', scenario: '通用', remark: '可回收重复使用的物品', created_at: new Date().toISOString() },
+        { code: 'HM', name: '消耗类', scenario: '通用', remark: '一次性消耗品', created_at: new Date().toISOString() },
+        { code: 'QT', name: '其他', scenario: '通用', remark: '其他类别物品', created_at: new Date().toISOString() }
+      ];
+      newDefaults.forEach(nd => {
+        if (!categories.find(c => c.name === nd.name)) {
+          categories.push(nd);
+        }
+      });
+      // 给旧类别补充 scenario 字段
+      categories.forEach(c => {
+        if (!c.scenario) c.scenario = '通用';
+      });
+      localStorage.setItem('categories', JSON.stringify(categories));
+      console.log('品类体系已迁移：追加新默认类别');
+    } else if (!hasNewDefaults) {
+      // 没有旧默认也没有新默认（纯自定义），补充 scenario 字段
+      categories.forEach(c => {
+        if (!c.scenario) c.scenario = '通用';
+      });
+      localStorage.setItem('categories', JSON.stringify(categories));
+    }
   }
+  // 加载领用标准
+  loadConsumptionStandards();
 }
 
 /**
@@ -660,9 +702,14 @@ function loadCategoriesFromStorage() {
  */
 function renderCategoryList() {
   const container = document.getElementById('category-list');
-  if (!container) return;
+  if (!container) {
+    console.warn('[品类管理] #category-list 容器不存在');
+    return;
+  }
+  console.log('[品类管理] renderCategoryList 开始, categories:', categories.length, 'currentUser:', currentUser);
 
   loadCategoriesFromStorage();
+  console.log('[品类管理] loadCategoriesFromStorage 后 categories:', categories.length);
 
   // 新增品类按钮权限：仅管理员可见
   const addCatBtn = document.getElementById('add-category-btn');
@@ -690,8 +737,17 @@ function renderCategoryList() {
     itemCountMap[cat].stock += (item.stock || 0);
   });
 
+  // 场景标签样式映射
+  const scenarioBadgeStyle = {
+    '列车餐车': 'background:#e3f2fd;color:#1565c0;padding:2px 8px;border-radius:10px;font-size:11px;',
+    '列车客房': 'background:#fce4ec;color:#c62828;padding:2px 8px;border-radius:10px;font-size:11px;',
+    '通用': 'background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:10px;font-size:11px;',
+  };
+
   container.innerHTML = categories.map((cat, index) => {
     const info = itemCountMap[cat.name] || { count: 0, stock: 0 };
+    const scenario = cat.scenario || '通用';
+    const badge = scenarioBadgeStyle[scenario] || scenarioBadgeStyle['通用'];
     const adminActions = isAdmin ? `
       <div style="margin-top:10px;display:flex;gap:6px;">
         <button class="btn btn-sm" onclick="event.stopPropagation();editCategory(${index})" style="flex:1;">编辑</button>
@@ -701,14 +757,18 @@ function renderCategoryList() {
     <div class="category-card" onclick="_showCategoryItems('${cat.name}')" style="cursor:pointer;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <div class="category-name">${cat.name}</div>
-        <span style="font-size:11px;color:var(--text-muted);font-family:monospace;">${cat.code}</span>
+        <span style="${badge}">${scenario}</span>
       </div>
+      <div style="font-size:11px;color:var(--text-muted);font-family:monospace;margin-top:4px;">${cat.code}</div>
       <div class="category-count" style="margin-top:6px;">
         ${info.count} 种物品 · 库存 ${info.stock} 件
       </div>
       ${adminActions}
     </div>`;
   }).join('');
+
+  // 渲染领用标准配置面板
+  renderConsumptionStandardsPanel();
 }
 
 /**
@@ -1184,7 +1244,7 @@ function confirmStockIn(orderId) {
 /**
  * 执行入库操作
  */
-function executeStockIn(order) {
+async function executeStockIn(order) {
   const stockinDate = document.getElementById('stockin-date').value;
   const batchCode = document.getElementById('stockin-batch').value;
   const remark = document.getElementById('stockin-remark').value;
@@ -1208,6 +1268,39 @@ function executeStockIn(order) {
     });
   });
 
+  const stockInPayload = {
+    stockin_date: stockinDate,
+    batch_code: batchCode,
+    items: stockinItems,
+    total_quantity: stockinItems.reduce((sum, item) => sum + item.actual_quantity, 0),
+    total_amount: stockinItems.reduce((sum, item) => sum + (item.actual_quantity * item.price), 0),
+    remark: remark
+  };
+
+  // 优先尝试云端入库（SupaDB.confirmStockIn）
+  if (typeof SupaDB !== 'undefined' && SupaDB.confirmStockIn) {
+    try {
+      const inserted = await SupaDB.confirmStockIn(order.id, stockInPayload);
+      // 成功后刷新列表和记录
+      try {
+        // 更新本地缓存（乐观）
+        let localPOs = JSON.parse(localStorage.getItem('purchaseOrders') || '[]');
+        localPOs = localPOs.map(p => (p.code === order.code ? Object.assign({}, p, { status: 'stockin_completed' }) : p));
+        localStorage.setItem('purchaseOrders', JSON.stringify(localPOs));
+      } catch(e){console.warn('更新本地采购单缓存失败', e.message)}
+
+      closeModal();
+      loadPurchaseOrders();
+      if (typeof loadStockInRecords === 'function') loadStockInRecords();
+      showToast(`入库成功！批次号：${inserted.code || batchCode}，已同步至云端`, 'success', 4000);
+      return;
+    } catch (e) {
+      console.warn('云端入库失败，退回本地处理：', e.message);
+      // 继续本地处理
+    }
+  }
+
+  // 回退到本地处理（若云端不可用或失败）
   // 创建入库记录
   const stockInRecord = {
     id: Date.now(),
@@ -1245,9 +1338,9 @@ function executeStockIn(order) {
     loadStockInRecords();
   }
 
-  showToast(`入库成功！批次号：${batchCode}，已自动生成库存明细`, 'success', 4000);
+  showToast(`入库成功！批次号：${batchCode}，已自动生成库存明细（本地）`, 'success', 4000);
   
-  console.log('入库完成:', stockInRecord);
+  console.log('入库完成（本地）:', stockInRecord);
 }
 
 /**
@@ -1452,11 +1545,12 @@ function updateImportStep() {
  * 下载Excel模板
  */
 function downloadTemplate() {
-  // 创建模板数据
+  // 创建模板数据（类别使用新体系：循环使用类/消耗类）
   const templateData = [
-    ['采购日期', '采购人', '供应商', '物品名称', '品牌', '型号', '数量', '单位', '单价', '备注'],
-    ['2026-06-09', '张三', 'XX供应商', '矿泉水', '农夫山泉', '550ml', '100', '瓶', '2.5', ''],
-    ['2026-06-09', '张三', 'XX供应商', '方便面', '康师傅', '桶装', '50', '箱', '45.0', '']
+    ['采购日期', '采购人', '供应商', '类别', '物品名称', '品牌', '型号', '数量', '单位', '单价', '备注'],
+    ['2026-06-09', '张三', 'XX供应商', '消耗类', '一次性拖鞋', '洁丽雅', '均码', '200', '双', '3.5', '列车客房用'],
+    ['2026-06-09', '张三', 'XX供应商', '循环使用类', '不锈钢托盘', '顺发', '中号', '20', '个', '25.0', '列车餐车用'],
+    ['2026-06-09', '张三', 'XX供应商', '消耗类', '矿泉水', '农夫山泉', '550ml', '100', '瓶', '2.5', '']
   ];
 
   // 创建工作簿
@@ -1502,6 +1596,52 @@ function handleFileUpload(file) {
 /**
  * 解析导入数据
  */
+// 解析 Excel 中可能的日期类型（支持数字序列、ISO、常见分隔符）
+function parseExcelDateValue(v) {
+  if (!v) return '';
+  // Excel 数值序列（常见）：将其转换为 JS 日期
+  if (typeof v === 'number') {
+    // Excel epoch -> JS epoch: (v - 25569) * 86400 * 1000
+    try {
+      const ms = Math.round((v - 25569) * 86400 * 1000);
+      const d = new Date(ms);
+      if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+    } catch (e) { /* ignore */ }
+  }
+
+  // 如果是日期字符串，尝试标准化
+  if (typeof v === 'string') {
+    let s = v.trim();
+    // 常见 Excel 导出会用 '/' 或 '.' 或 '-' 分隔
+    s = s.replace(/^\s+|\s+$/g, '');
+    s = s.replace(/\./g, '-').replace(/\//g, '-');
+
+    // 如果格式是 dd-mm-yyyy 或 d-m-yyyy，转换为 yyyy-mm-dd
+    const parts = s.split('-');
+    if (parts.length === 3) {
+      // 判断是否为 yyyy-mm-dd
+      if (parts[0].length === 4) {
+        const d = new Date(s);
+        if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+      } else {
+        // 假设 dd-mm-yyyy
+        const dd = parts[0].padStart(2, '0');
+        const mm = parts[1].padStart(2, '0');
+        const yyyy = parts[2];
+        const iso = `${yyyy}-${mm}-${dd}`;
+        const d = new Date(iso);
+        if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+      }
+    }
+
+    // 最后尝试 Date.parse
+    const d2 = new Date(s);
+    if (!isNaN(d2.getTime())) return d2.toISOString().split('T')[0];
+  }
+
+  return '';
+}
+
 function parseImportData(data) {
   if (data.length < 2) {
     showToast('文件中没有有效数据', 'warning');
@@ -1514,13 +1654,26 @@ function parseImportData(data) {
   const errors = [];
 
   rows.forEach((row, index) => {
-    if (row.length < 6) {
+    // 现在模板包含 11 列：采购日期, 采购人, 供应商, 类别, 物品名称, 品牌, 型号, 数量, 单位, 单价, 备注
+    if (row.length < 8) {
       errors.push(`第${index + 2}行：数据列数不足`);
       return;
     }
 
-    const quantity = parseFloat(row[6]) || 0;
-    const price = parseFloat(row[8]) || 0;
+    // 解析采购日期，支持数字序列或字符串
+    const rawDate = row[0];
+    const purchaseDate = parseExcelDateValue(rawDate) || '';
+
+    const purchaser = row[1] || '';
+    const supplier = row[2] || '';
+    const category = row[3] || '';
+    const itemName = row[4] || '';
+    const brand = row[5] || '';
+    const model = row[6] || '';
+
+    const quantity = parseFloat(row[7]) || 0;
+    const unit = row[8] || '';
+    const price = parseFloat(row[9]) || 0;
     const amount = quantity * price;
 
     if (quantity <= 0) {
@@ -1530,17 +1683,18 @@ function parseImportData(data) {
 
     importData.push({
       row_number: index + 2,
-      purchase_date: row[0] || '',
-      purchaser: row[1] || '',
-      supplier: row[2] || '',
-      item_name: row[3] || '',
-      brand: row[4] || '',
-      model: row[5] || '',
+      purchase_date: purchaseDate,
+      purchaser: purchaser,
+      supplier: supplier,
+      category: category,
+      item_name: itemName,
+      brand: brand,
+      model: model,
       quantity: quantity,
-      unit: row[7] || '',
+      unit: unit,
       price: price,
       amount: amount,
-      remark: row[9] || '',
+      remark: row[10] || '',
       valid: true
     });
   });
@@ -1573,6 +1727,7 @@ function displayImportPreview(errors) {
       <td>${item.row_number}</td>
       <td>${item.purchase_date}</td>
       <td>${item.purchaser}</td>
+      <td>${item.category || '-'}</td>
       <td>${item.item_name}</td>
       <td>${item.brand || '-'}</td>
       <td>${item.model || '-'}</td>
@@ -1599,6 +1754,44 @@ function executeImport() {
     return;
   }
 
+  // 预处理：确保类别/品牌/型号存在于系统中；若系统内无该物品则创建空库存记录（stock=0）以便后续同步
+  try {
+    let inventory = JSON.parse(localStorage.getItem('inventory') || '[]');
+
+    importData.forEach(it => {
+      // 类别自动创建
+      if (it.category && !categories.find(c => c.name === it.category)) {
+        autoCreateCategory(it.category);
+      }
+      // 品牌/型号历史记录
+      if (it.brand) addBrandToHistory(it.item_name, it.brand);
+      if (it.model) addModelToHistory(it.item_name, it.model);
+
+      // 若系统中不存在该物品（按 name+brand+model），则创建一条库存占位（stock 0）
+      const exists = inventory.find(inv => inv.name === it.item_name && (inv.brand || '') === (it.brand || '') && (inv.model || '') === (it.model || ''));
+      if (!exists) {
+        const newInv = {
+          id: Date.now() + Math.random(),
+          code: `ITEM${String(inventory.length + 1).padStart(3, '0')}`,
+          name: it.item_name,
+          brand: it.brand || '',
+          model: it.model || '',
+          category: it.category || '未分类',
+          stock: 0,
+          unit: it.unit || '',
+          safety_stock: 10,
+          created_at: new Date().toISOString(),
+          source: 'import-placeholder'
+        };
+        inventory.push(newInv);
+      }
+    });
+
+    // 保存可能新增的类别和 inventory
+    localStorage.setItem('categories', JSON.stringify(categories));
+    localStorage.setItem('inventory', JSON.stringify(inventory));
+  } catch (e) { console.warn('预创建条目失败', e); }
+
   // 按采购日期和采购人分组
   const groups = {};
   importData.forEach(item => {
@@ -1615,6 +1808,7 @@ function executeImport() {
       name: item.item_name,
       brand: item.brand,
       model: item.model,
+      category: item.category,
       quantity: item.quantity,
       unit: item.unit,
       price: item.price,
@@ -1709,22 +1903,23 @@ function getCategoryOptions() {
  * 自动创建新类别（生成类别编码前缀）
  */
 function autoCreateCategory(categoryName) {
-  // 根据类别名称生成编码前缀
+  // 根据类别名称生成编码前缀（新体系）
   let codePrefix;
-  if (categoryName.includes('饮品') || categoryName.toLowerCase().includes('drink')) {
-    codePrefix = 'SKU';
-  } else if (categoryName.includes('食品') || categoryName.toLowerCase().includes('food')) {
-    codePrefix = 'SKP';
-  } else if (categoryName.includes('日用') || categoryName.toLowerCase().includes('daily')) {
-    codePrefix = 'SKD';
+  if (categoryName.includes('循环') || categoryName.toLowerCase().includes('reuse')) {
+    codePrefix = 'XH';
+  } else if (categoryName.includes('消耗') || categoryName.toLowerCase().includes('consum')) {
+    codePrefix = 'HM';
+  } else if (categoryName.includes('其他') || categoryName.toLowerCase().includes('other')) {
+    codePrefix = 'QT';
   } else {
-    // 默认使用前三个字符的大写拼音首字母或简写
+    // 默认使用 SK + 序号
     codePrefix = 'SK' + String(categories.length + 1).padStart(2, '0');
   }
   
   categories.push({
     code: codePrefix,
     name: categoryName,
+    scenario: '通用',
     remark: '自动创建',
     created_at: new Date().toISOString()
   });
@@ -1755,6 +1950,10 @@ function openCategoryModal(event) {
   document.getElementById('new-category-name').value = '';
   document.getElementById('new-category-remark').value = '';
   
+  // 重置场景选择
+  const scenarioSelect = document.getElementById('new-category-scenario');
+  if (scenarioSelect) scenarioSelect.value = '通用';
+  
   openModal('modal-category');
 }
 
@@ -1766,6 +1965,15 @@ function bindCategoryEvents() {
   if (saveBtn) {
     saveBtn.addEventListener('click', saveNewCategory);
   }
+
+  // 顶部新增品类按钮绑定，保证点击生效
+  const addCatBtn = document.getElementById('add-category-btn');
+  if (addCatBtn && !addCatBtn._bound) {
+    addCatBtn._bound = true;
+    addCatBtn.addEventListener('click', (e) => { e.preventDefault(); openCategoryModal(e); });
+    // 根据权限控制可见性（若有 hasPermission）
+    try { if (typeof hasPermission === 'function') addCatBtn.style.display = hasPermission('create_category') ? '' : 'none'; } catch(e) { /* ignore */ }
+  }
 }
 
 /**
@@ -1775,6 +1983,8 @@ function saveNewCategory() {
   const name = document.getElementById('new-category-name').value.trim();
   const code = document.getElementById('new-category-code').value.trim();
   const remark = document.getElementById('new-category-remark').value.trim();
+  const scenarioEl = document.getElementById('new-category-scenario');
+  const scenario = scenarioEl ? scenarioEl.value : '通用';
   
   if (!name) {
     showToast('请输入类别名称', 'warning');
@@ -1791,6 +2001,7 @@ function saveNewCategory() {
   categories.push({
     code: code,
     name: name,
+    scenario: scenario,
     remark: remark,
     created_at: new Date().toISOString()
   });
@@ -1836,24 +2047,10 @@ function syncCategoryToInventory(code, name) {
 }
 
 /**
- * 加载类别数据
+ * 加载类别数据（兼容旧接口，委托给 loadCategoriesFromStorage）
  */
 function loadCategories() {
-  const data = localStorage.getItem('categories');
-  if (data) {
-    categories = JSON.parse(data);
-  }
-  
-  // 如果没有类别，添加默认类别
-  if (categories.length === 0) {
-    categories = [
-      { code: 'CAT001', name: '饮品', remark: '' },
-      { code: 'CAT002', name: '食品', remark: '' },
-      { code: 'CAT003', name: '日用品', remark: '' },
-      { code: 'CAT004', name: '办公用品', remark: '' }
-    ];
-    localStorage.setItem('categories', JSON.stringify(categories));
-  }
+  loadCategoriesFromStorage();
 }
 
 /**
@@ -1961,10 +2158,279 @@ function addModelToHistory(itemName, model) {
   }
 }
 
+// ============== 领用标准管理 ==============
+
+/**
+ * 加载领用标准
+ */
+function loadConsumptionStandards() {
+  const data = localStorage.getItem('consumptionStandards');
+  if (data) {
+    consumptionStandards = JSON.parse(data);
+  }
+}
+
+/**
+ * 保存领用标准到 localStorage
+ */
+function saveConsumptionStandards() {
+  localStorage.setItem('consumptionStandards', JSON.stringify(consumptionStandards));
+}
+
+/**
+ * 添加或更新领用标准
+ */
+function upsertConsumptionStandard(itemName, scenario, maxPerTour) {
+  const idx = consumptionStandards.findIndex(
+    s => s.item_name === itemName && s.scenario === scenario
+  );
+  if (idx >= 0) {
+    consumptionStandards[idx].max_per_tour = maxPerTour;
+  } else {
+    consumptionStandards.push({
+      id: Date.now(),
+      item_name: itemName,
+      scenario: scenario,
+      max_per_tour: maxPerTour,
+      created_at: new Date().toISOString()
+    });
+  }
+  saveConsumptionStandards();
+}
+
+/**
+ * 删除领用标准
+ */
+function deleteConsumptionStandard(id) {
+  consumptionStandards = consumptionStandards.filter(s => s.id !== id);
+  saveConsumptionStandards();
+  renderConsumptionStandardsPanel();
+  showToast('领用标准已删除', 'success');
+}
+
+/**
+ * 获取某物品在某场景下的领用标准
+ */
+function getConsumptionStandard(itemName, scenario) {
+  // 优先精确匹配场景
+  let std = consumptionStandards.find(s => s.item_name === itemName && s.scenario === scenario);
+  if (std) return std;
+  // 其次匹配"通用"场景
+  std = consumptionStandards.find(s => s.item_name === itemName && s.scenario === '通用');
+  return std || null;
+}
+
+/**
+ * 检查领用是否超额
+ * 返回 { overLimit: boolean, standard: number|null, currentTotal: number, message: string }
+ */
+function checkOverLimit(itemName, scenario, requestedQty, tourName) {
+  const std = getConsumptionStandard(itemName, scenario);
+  if (!std) return { overLimit: false, standard: null, currentTotal: 0, message: '' };
+
+  // 统计同一团期同一场景下该物品已领用总量（不含已取消/已完成出库的）
+  let reqList = JSON.parse(localStorage.getItem('requisitions') || '[]');
+  let currentTotal = 0;
+  reqList.forEach(req => {
+    if (req.tour_name === tourName && req.scenario === scenario &&
+        req.status !== 'cancelled' && req.status !== 'withdrawn') {
+      req.items.forEach(it => {
+        if (it.name === itemName) {
+          currentTotal += it.quantity;
+        }
+      });
+    }
+  });
+
+  // 也检查已完成的出库记录
+  let soList = JSON.parse(localStorage.getItem('stockOutRecords') || '[]');
+  soList.forEach(so => {
+    if (so.tour_name === tourName && so.scenario === scenario) {
+      so.items.forEach(it => {
+        if (it.name === itemName) {
+          currentTotal += it.quantity;
+        }
+      });
+    }
+  });
+
+  // 去重：出库记录中的已计入领用单的，不再重复加
+  // 简化处理：出库记录关联领用单，用 requisition_id 去重
+  // 重新统计：只统计"已完成出库"的数量 + "待出库"领用单的数量
+  currentTotal = 0;
+  const countedReqIds = new Set();
+
+  // 已出库的数量
+  soList.forEach(so => {
+    if (so.tour_name === tourName && so.scenario === scenario && so.requisition_id) {
+      countedReqIds.add(so.requisition_id);
+      so.items.forEach(it => {
+        if (it.name === itemName) currentTotal += it.quantity;
+      });
+    }
+  });
+
+  // 待出库的领用单数量（未被出库记录覆盖的）
+  reqList.forEach(req => {
+    if (req.tour_name === tourName && req.scenario === scenario &&
+        !countedReqIds.has(req.id) &&
+        req.status !== 'cancelled' && req.status !== 'withdrawn' &&
+        req.status !== 'outbound_completed') {
+      req.items.forEach(it => {
+        if (it.name === itemName) currentTotal += it.quantity;
+      });
+    }
+  });
+
+  const newTotal = currentTotal + requestedQty;
+  const overLimit = newTotal > std.max_per_tour;
+
+  return {
+    overLimit,
+    standard: std.max_per_tour,
+    currentTotal,
+    newTotal,
+    message: overLimit
+      ? `⚠️ "${itemName}" 在团期「${tourName}」(${scenario}) 已领用 ${currentTotal}，本次申请 ${requestedQty}，合计 ${newTotal}，超过标准上限 ${std.max_per_tour}`
+      : ''
+  };
+}
+
+/**
+ * 渲染领用标准配置面板（在品类管理页面下方）
+ */
+function renderConsumptionStandardsPanel() {
+  try {
+  let panel = document.getElementById('consumption-standards-panel');
+  if (!panel) {
+    // 如果面板不存在，尝试在品类管理模块中创建
+    const modulePane = document.getElementById('module-categories');
+    if (!modulePane) return;
+
+    panel = document.createElement('div');
+    panel.id = 'consumption-standards-panel';
+    panel.className = 'panel';
+    panel.style.marginTop = '16px';
+    modulePane.appendChild(panel);
+  }
+
+  loadConsumptionStandards();
+
+  const isAdmin = (typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'admin');
+
+  // 获取所有库存物品名用于下拉
+  let inventory = JSON.parse(localStorage.getItem('inventory') || '[]');
+  const itemNames = [...new Set(inventory.map(it => it.name).filter(Boolean))];
+  const itemOptions = itemNames.map(n => `<option value="${n}">${n}</option>`).join('');
+
+  const scenarioOptions = ['列车餐车', '列车客房', '通用'].map(s =>
+    `<option value="${s}">${s}</option>`
+  ).join('');
+
+  let tableHtml = '';
+  if (consumptionStandards.length === 0) {
+    tableHtml = '<tr><td colspan="5" class="empty-state">暂无领用标准，请添加</td></tr>';
+  } else {
+    tableHtml = consumptionStandards.map(std => `
+      <tr>
+        <td style="font-weight:600;">${std.item_name}</td>
+        <td><span style="background:#e3f2fd;color:#1565c0;padding:2px 8px;border-radius:10px;font-size:12px;">${std.scenario}</span></td>
+        <td style="font-weight:700;color:var(--accent);">${std.max_per_tour}</td>
+        <td>${std.created_at ? std.created_at.slice(0, 10) : '-'}</td>
+        <td>
+          ${isAdmin ? `<button class="btn btn-sm" style="color:var(--danger);" onclick="deleteConsumptionStandard(${std.id})">删除</button>` : ''}
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  panel.innerHTML = `
+    <div class="panel-header">
+      <div class="panel-title">领用标准配置</div>
+      ${isAdmin ? '<button class="btn btn-accent" id="add-standard-btn">+ 新增标准</button>' : ''}
+    </div>
+    <p style="color:var(--text-muted);font-size:13px;margin:0 0 16px 0;">
+      设置每个物品在每个团期中的领用上限。当领用数量超过标准时，系统将在领用单和报表中标记超额。
+    </p>
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>物品名称</th>
+            <th>使用场景</th>
+            <th>每团期上限</th>
+            <th>创建日期</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="standards-tbody">${tableHtml}</tbody>
+      </table>
+    </div>
+    ${isAdmin ? `
+    <div id="add-standard-form" style="display:none;margin-top:16px;padding:16px;background:var(--bg-card);border-radius:8px;border:1px solid var(--border);">
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+        <div class="form-group" style="flex:1;min-width:160px;margin:0;">
+          <label style="font-size:12px;">物品名称</label>
+          <input type="text" id="std-item-name" list="std-item-datalist" placeholder="输入或选择物品" style="width:100%;">
+          <datalist id="std-item-datalist">${itemOptions}</datalist>
+        </div>
+        <div class="form-group" style="flex:0 0 140px;margin:0;">
+          <label style="font-size:12px;">使用场景</label>
+          <select id="std-scenario" style="width:100%;">${scenarioOptions}</select>
+        </div>
+        <div class="form-group" style="flex:0 0 120px;margin:0;">
+          <label style="font-size:12px;">每团期上限</label>
+          <input type="number" id="std-max-qty" min="1" value="10" style="width:100%;">
+        </div>
+        <div style="display:flex;gap:8px;padding-bottom:0;">
+          <button class="btn btn-accent" onclick="_saveStandardFromForm()">保存</button>
+          <button class="btn" onclick="document.getElementById('add-standard-form').style.display='none'">取消</button>
+        </div>
+      </div>
+    </div>
+    ` : ''}
+  `;
+
+  // 绑定新增标准按钮
+  const addBtn = document.getElementById('add-standard-btn');
+  if (addBtn) {
+    addBtn.addEventListener('click', () => {
+      const form = document.getElementById('add-standard-form');
+      if (form) form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    });
+  }
+  } catch (e) {
+    console.error('[renderConsumptionStandardsPanel] 错误:', e);
+  }
+}
+
+/**
+ * 从表单保存领用标准
+ */
+function _saveStandardFromForm() {
+  const itemName = document.getElementById('std-item-name').value.trim();
+  const scenario = document.getElementById('std-scenario').value;
+  const maxQty = parseInt(document.getElementById('std-max-qty').value);
+
+  if (!itemName) { showToast('请输入物品名称', 'warning'); return; }
+  if (!maxQty || maxQty < 1) { showToast('请输入有效的上限数量', 'warning'); return; }
+
+  upsertConsumptionStandard(itemName, scenario, maxQty);
+  document.getElementById('add-standard-form').style.display = 'none';
+  renderConsumptionStandardsPanel();
+  showToast(`已设置「${itemName}」在${scenario}的领用标准：每团期上限 ${maxQty}`, 'success');
+}
+
 // 导出函数
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     initPurchaseModule,
-    loadPurchaseOrders
+    loadPurchaseOrders,
+    loadCategoriesFromStorage,
+    renderCategoryList,
+    getConsumptionStandard,
+    checkOverLimit,
+    loadConsumptionStandards,
+    consumptionStandards
   };
 }

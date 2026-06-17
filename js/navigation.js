@@ -116,16 +116,19 @@ function loadModuleData(moduleName) {
       if (typeof loadPurchaseOrders === 'function') {
         loadPurchaseOrders();
       }
+      if (typeof _bfUpdatePurchaseKPI === 'function') _bfUpdatePurchaseKPI();
       break;
     case 'stock-in':
       if (typeof loadStockInRecords === 'function') {
         loadStockInRecords();
       }
+      if (typeof _bfUpdateStockInKPI === 'function') _bfUpdateStockInKPI();
       break;
     case 'requisition':
       if (typeof loadRequisitions === 'function') {
         loadRequisitions();
       }
+      if (typeof _bfUpdateRequisitionKPI === 'function') _bfUpdateRequisitionKPI();
       break;
     case 'stock-out':
       if (typeof loadStockOutRecords === 'function') {
@@ -134,6 +137,7 @@ function loadModuleData(moduleName) {
       if (typeof loadRequisitions === 'function') {
         loadRequisitions();
       }
+      if (typeof _bfUpdateStockOutKPI === 'function') _bfUpdateStockOutKPI();
       break;
     case 'monthly-summary':
       if (typeof loadMonthlySummary === 'function') {
@@ -143,6 +147,11 @@ function loadModuleData(moduleName) {
     case 'reports':
       if (typeof loadReports === 'function') {
         loadReports();
+      }
+      break;
+    case 'admin-users':
+      if (typeof loadUserList === 'function') {
+        loadUserList();
       }
       break;
     default:

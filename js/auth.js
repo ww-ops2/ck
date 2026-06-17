@@ -257,11 +257,53 @@ function getRoleName(role) {
 }
 
 /**
- * 检查当前用户是否有指定权限（统一使用 getPermissionsForRole）
+ * 检查当前用户是否有指定权限（支持 role/user 覆盖，localStorage 可配置）
  */
 function hasPermission(permission) {
   if (!currentUser) return false;
-  return roleHasPermission(currentUser.role, permission);
+  // 管理员拥有所有权限
+  if (currentUser.role === 'admin') return true;
+
+  // 基于角色的默认权限（兼容旧逻辑）
+  var defaultPerms = getPermissionsForRole(currentUser.role || 'staff');
+
+  // 从 localStorage 中读取可配置覆盖（键：rolePermissions, userPermissions）
+  var rolePermStore = {};
+  var userPermStore = {};
+  try { rolePermStore = JSON.parse(localStorage.getItem('rolePermissions') || '{}'); } catch(e) { rolePermStore = {}; }
+  try { userPermStore = JSON.parse(localStorage.getItem('userPermissions') || '{}'); } catch(e) { userPermStore = {}; }
+n  var perms = Array.isArray(defaultPerms) ? defaultPerms.slice() : [];
+  if (rolePermStore[currentUser.role] && Array.isArray(rolePermStore[currentUser.role])) {
+    perms = Array.from(new Set(perms.concat(rolePermStore[currentUser.role])));
+  }
+  if (userPermStore[currentUser.id] && Array.isArray(userPermStore[currentUser.id])) {
+    perms = Array.from(new Set(perms.concat(userPermStore[currentUser.id])));
+  }
+n  return perms.includes('all') || perms.includes(permission);
+}
+
+/**
+ * 设置/保存角色权限到 localStorage
+ */
+function setRolePermissions(role, perms) {
+  try {
+    var store = JSON.parse(localStorage.getItem('rolePermissions') || '{}');
+    store[role] = perms;
+    localStorage.setItem('rolePermissions', JSON.stringify(store));
+    return true;
+  } catch(e) { return false; }
+}
+
+/**
+ * 设置/保存用户权限到 localStorage
+ */
+function setUserPermissions(userId, perms) {
+  try {
+    var store = JSON.parse(localStorage.getItem('userPermissions') || '{}');
+    store[userId] = perms;
+    localStorage.setItem('userPermissions', JSON.stringify(store));
+    return true;
+  } catch(e) { return false; }
 }
 
 /**

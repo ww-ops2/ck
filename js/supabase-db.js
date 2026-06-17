@@ -43,7 +43,7 @@ async function writeAuditLog(action, entityType, entityId, entityCode, details) 
   try {
     const sb = getSupabase();
     if (!sb) return;
-    await sb.from('audit_logs').insert({
+    const { error } = await sb.from('audit_logs').insert({
       action,
       entity_type: entityType,
       entity_id: entityId,
@@ -52,8 +52,9 @@ async function writeAuditLog(action, entityType, entityId, entityCode, details) 
       user_name: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.name : 'system',
       user_role: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.role : 'system'
     });
+    if (error) console.warn('[Audit] 审计日志写入失败:', error.message);
   } catch (e) {
-    console.warn('Audit log write failed:', e.message);
+    console.warn('[Audit] 审计日志异常:', e.message);
   }
 }
 
@@ -94,6 +95,78 @@ const SupaDB = {
       name: data.name,
       role: data.role
     };
+  },
+
+  // ---- 用户管理 ----
+  async createUser(userData) {
+    const sb = getSupabase();
+    if (!sb) throw new Error('Supabase not available');
+    // 云端 users 表仅有基础字段 + is_active，status 映射为 is_active
+    const { data, error } = await sb
+      .from('users')
+      .upsert({
+        id: userData.id,
+        username: userData.username,
+        name: userData.name || userData.username,
+        role: userData.role || 'staff',
+        is_active: userData.status === 'active'
+      }, { onConflict: 'username' })
+      .select()
+      .single();
+    if (error) throw new Error('用户创建失败: ' + error.message);
+    // 创建成功后再尝试写入扩展信息（如表结构不支持则静默跳过）
+    const { error: extError } = await sb.from('users').update({
+      description: userData.description || '',
+      created_at: userData.created_at || new Date().toISOString()
+    }).eq('id', data.id);
+    if (extError) console.warn('[Supabase] 用户扩展列更新跳过:', extError.message);
+    await writeAuditLog('CREATE', 'users', data.id, data.username, userData);
+    return data;
+  },
+
+  async getUsers() {
+    const sb = getSupabase();
+    const data = await _sbQuery(
+      sb.from('users').select('*').order('id', { ascending: true })
+    );
+    // 转换 is_active → status，兼容本地 localStorage 格式
+    return (data || []).map(function(u) {
+      if (u.status === undefined || u.status === null) {
+        u.status = u.is_active ? 'active' : 'pending';
+      }
+      return u;
+    });
+  },
+
+  async updateUser(username, updates) {
+    const sb = getSupabase();
+    // 映射 status → is_active
+    var cloudUpdates = {};
+    for (var key in updates) {
+      if (updates.hasOwnProperty(key)) {
+        if (key === 'status') {
+          cloudUpdates.is_active = (updates[key] === 'active');
+        } else {
+          cloudUpdates[key] = updates[key];
+        }
+      }
+    }
+    const { data, error } = await sb
+      .from('users')
+      .update(cloudUpdates)
+      .eq('username', username)
+      .select()
+      .single();
+    if (error) throw new Error('用户更新失败: ' + error.message);
+    await writeAuditLog('UPDATE', 'users', data.id, username, updates);
+    return data;
+  },
+
+  async deleteUser(username) {
+    const sb = getSupabase();
+    const { error } = await sb.from('users').delete().eq('username', username);
+    if (error) throw new Error('用户删除失败: ' + error.message);
+    await writeAuditLog('DELETE', 'users', null, username);
   },
 
   // ---- 品类管理 ----

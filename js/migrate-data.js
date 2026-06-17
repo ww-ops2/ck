@@ -279,6 +279,44 @@ async function migrateAllData() {
     results.itemHistory = histCount > 0 ? `✅ ${histCount} 条` : '⏭️ 无数据';
   } catch (e) { results.itemHistory = '❌ ' + e.message; }
 
+  // ---- 8. 迁移用户与权限 ----
+  try {
+    // users
+    const users = JSON.parse(localStorage.getItem('users') || '[]');
+    if (users.length > 0) {
+      const { error } = await sb.from('users').upsert(
+        users.map(u => ({ id: u.id, username: u.username, name: u.name, role: u.role })),
+        { onConflict: 'username' }
+      );
+      results.users = error ? `❌ ${error.message}` : `✅ ${users.length} 条`;
+    } else {
+      results.users = '⏭️ 无数据';
+    }
+
+    // rolePermissions (object -> rows)
+    const rolePerms = JSON.parse(localStorage.getItem('rolePermissions') || '{}');
+    let rpCount = 0;
+    for (const [role, perms] of Object.entries(rolePerms)) {
+      for (const p of perms) {
+        await sb.from('role_permissions').upsert({ role: role, permission: p }, { onConflict: 'role,permission' });
+        rpCount++;
+      }
+    }
+    results.rolePermissions = rpCount > 0 ? `✅ ${rpCount} 条` : '⏭️ 无数据';
+
+    // userPermissions
+    const userPerms = JSON.parse(localStorage.getItem('userPermissions') || '{}');
+    let upCount = 0;
+    for (const [uid, perms] of Object.entries(userPerms)) {
+      for (const p of perms) {
+        await sb.from('user_permissions').upsert({ user_id: parseInt(uid,10), permission: p }, { onConflict: 'user_id,permission' });
+        upCount++;
+      }
+    }
+    results.userPermissions = upCount > 0 ? `✅ ${upCount} 条` : '⏭️ 无数据';
+
+  } catch (e) { results.users = results.rolePermissions = results.userPermissions = '❌ ' + e.message; }
+
   // ---- 输出结果 ----
   console.log('\n📊 迁移结果:');
   console.table(results);

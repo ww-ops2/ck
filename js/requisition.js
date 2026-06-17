@@ -17,6 +17,16 @@ let _tourNames = [];
 let _currentStockOutReqId = null;
 
 /**
+ * 场景名称标准化（兼容旧数据：餐车→列车餐车，客房→列车客房）
+ */
+function _normalizeScenario(s) {
+  if (!s) return '其他';
+  if (s === '餐车') return '列车餐车';
+  if (s === '客房') return '列车客房';
+  return s;
+}
+
+/**
  * 初始化出库模块
  */
 function initRequisitionModule() {
@@ -686,6 +696,25 @@ function submitRequisition() {
 
   const totalQty = items.reduce((sum, it) => sum + it.quantity, 0);
 
+  // === 超额领用检测 ===
+  if (typeof checkOverLimit === 'function') {
+    const overLimitWarnings = [];
+    items.forEach(it => {
+      const result = checkOverLimit(it.name, scenario, it.quantity, tourName);
+      if (result.overLimit) {
+        overLimitWarnings.push(result.message);
+      }
+    });
+
+    if (overLimitWarnings.length > 0) {
+      const warningMsg = '以下物品超过领用标准上限：\n\n' +
+        overLimitWarnings.join('\n') +
+        '\n\n是否仍要继续提交？';
+      // 注：showConfirm 为异步回调，此处需同步阻塞，暂用原生 confirm
+      if (!confirm(warningMsg)) return;
+    }
+  }
+
   const requisition = {
     id: Date.now(),
     code: 'RQ' + Date.now().toString().slice(-8),
@@ -711,6 +740,7 @@ function submitRequisition() {
   loadRequisitions();
   loadStockOutRecords();
   updateKPICards();
+  if (typeof refreshAllBusinessKPI === 'function') refreshAllBusinessKPI();
 
   showToast(`领用申请 ${requisition.code} 已提交，已推送至仓库管理员待出库`, 'success');
   console.log('领用单创建成功:', requisition);
@@ -767,7 +797,7 @@ function loadRequisitions() {
         <td>${req.code}</td>
         <td>${req.tour_date || '-'}</td>
         <td>${_escapeHtml(req.tour_name || '-')}</td>
-        <td>${req.scenario}</td>
+        <td>${_normalizeScenario(req.scenario)}</td>
         <td>${req.applicant}</td>
         <td>${req.apply_date}</td>
         <td>${req.items.length} 种 / ${req.total_quantity} 件</td>
@@ -796,6 +826,22 @@ function viewRequisitionDetail(reqId) {
 
   let itemsHtml = '';
   if (req.items && req.items.length > 0) {
+    // 检查超额领用
+    const overLimitInfo = {};
+    if (typeof getConsumptionStandard === 'function') {
+      req.items.forEach(item => {
+        const std = getConsumptionStandard(item.name, req.scenario);
+        if (std) {
+          const result = checkOverLimit(item.name, req.scenario, 0, req.tour_name);
+          overLimitInfo[item.name] = {
+            standard: std.max_per_tour,
+            totalUsed: result.currentTotal,
+            overLimit: result.currentTotal > std.max_per_tour
+          };
+        }
+      });
+    }
+
     itemsHtml = `
       <div class="detail-section-title">领用明细</div>
       <div class="table-scroll">
@@ -810,11 +856,19 @@ function viewRequisitionDetail(reqId) {
               <th>型号</th>
               <th>数量</th>
               <th>单位</th>
+              <th>标准</th>
+              <th>状态</th>
             </tr>
           </thead>
           <tbody>
-            ${req.items.map((item, i) => `
-              <tr>
+            ${req.items.map((item, i) => {
+              const info = overLimitInfo[item.name];
+              const overBadge = info && info.overLimit
+                ? `<span style="background:#fde8e8;color:#e53935;padding:2px 6px;border-radius:8px;font-size:11px;font-weight:600;">超额</span>`
+                : (info ? `<span style="background:#e8f5e9;color:#2e7d32;padding:2px 6px;border-radius:8px;font-size:11px;">正常</span>` : '-');
+              const stdText = info ? `${info.standard}/团期` : '-';
+              return `
+              <tr${info && info.overLimit ? ' style="background:#fff8f0;"' : ''}>
                 <td>${i + 1}</td>
                 <td style="font-family:monospace;font-size:12px;color:var(--text-muted);">${_escapeHtml(item.code)}</td>
                 <td style="font-weight:600;">${_escapeHtml(item.name)}</td>
@@ -823,8 +877,10 @@ function viewRequisitionDetail(reqId) {
                 <td>${_escapeHtml(item.model || '-')}</td>
                 <td style="font-weight:600;">${item.quantity}</td>
                 <td>${_escapeHtml(item.unit)}</td>
+                <td>${stdText}</td>
+                <td>${overBadge}</td>
               </tr>
-            `).join('')}
+            `}).join('')}
           </tbody>
         </table>
       </div>
@@ -859,7 +915,7 @@ function viewRequisitionDetail(reqId) {
       </div>
       <div class="detail-info-item">
         <span class="detail-info-label">使用场景</span>
-        <span class="detail-info-value">${req.scenario}</span>
+        <span class="detail-info-value">${_normalizeScenario(req.scenario)}</span>
       </div>
       <div class="detail-info-item">
         <span class="detail-info-label">物品总数</span>
@@ -916,7 +972,7 @@ function confirmStockOut(reqId) {
       </div>
       <div class="detail-info-item">
         <span class="detail-info-label">使用场景</span>
-        <span class="detail-info-value">${req.scenario}</span>
+        <span class="detail-info-value">${_normalizeScenario(req.scenario)}</span>
       </div>
       <div class="detail-info-item">
         <span class="detail-info-label">申请人</span>
@@ -1199,6 +1255,7 @@ function _finalConfirmStockOut() {
   }
 
   _currentStockOutReqId = null;
+  if (typeof refreshAllBusinessKPI === 'function') refreshAllBusinessKPI();
   console.log('出库完成:', stockOutRecord);
 }
 
@@ -1527,7 +1584,7 @@ function loadStockOutRecords() {
           <td style="font-weight:600;">${r.requisition_code}</td>
           <td>${r.tour_date || '-'}</td>
           <td>${_escapeHtml(r.tour_name || '-')}</td>
-          <td>${r.scenario}</td>
+          <td>${_normalizeScenario(r.scenario)}</td>
           <td>${r.date}</td>
           <td>${r.items.length} 种 / ${r.total_quantity} 件</td>
           <td><span class="status-badge warning">待确认</span></td>
@@ -1544,7 +1601,7 @@ function loadStockOutRecords() {
           <td>${r.requisition_code}</td>
           <td>${r.tour_date || '-'}</td>
           <td>${_escapeHtml(r.tour_name || '-')}</td>
-          <td>${r.scenario}</td>
+          <td>${_normalizeScenario(r.scenario)}</td>
           <td>${r.date}</td>
           <td>${r.items.length} 种 / ${r.total_quantity} 件</td>
           <td><span class="status-badge success">已出库</span></td>
@@ -1641,7 +1698,7 @@ function viewStockOutDetail(recordCode) {
       </div>
       <div class="detail-info-item">
         <span class="detail-info-label">使用场景</span>
-        <span class="detail-info-value">${record.scenario}</span>
+        <span class="detail-info-value">${_normalizeScenario(record.scenario)}</span>
       </div>
       <div class="detail-info-item">
         <span class="detail-info-label">物品总数</span>

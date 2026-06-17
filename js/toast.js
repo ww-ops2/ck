@@ -106,7 +106,7 @@ function showConfirm(message, onConfirm, onCancel) {
 
   // ESC 关闭
   overlay.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') cancelBtn.click();
+    if (e.key === 'Escape') { e.stopPropagation(); cancelBtn.click(); }
   });
   okBtn.focus();
 }
@@ -160,9 +160,9 @@ function showPrompt(message, defaultValue, onConfirm) {
     if (typeof onConfirm === 'function') onConfirm(null);
   });
 
-  // Enter 确认
+  // Enter / ESC
   inputField.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') okBtn.click();
-    if (e.key === 'Escape') cancelBtn.click();
+    if (e.key === 'Escape') { e.stopPropagation(); cancelBtn.click(); }
   });
 }

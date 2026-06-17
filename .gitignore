@@ -3,3 +3,6 @@ node_modules/
 .DS_Store
 Thumbs.db
 *.qoderworkcn/
+push.ps1
+PROJECT_BRIEF.md
+backups/

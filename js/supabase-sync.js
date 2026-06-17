@@ -13,7 +13,6 @@
 // ============================================================
 // 全局同步状态
 // ============================================================
-let _supabaseSyncReady = false;
 let _isSyncing = false;           // 初始拉取中，禁止回推
 let _syncBatchTimer = null;       // 批量防抖计时器
 let _pendingSyncKeys = new Set(); // 待同步的 key 集合
@@ -21,7 +20,9 @@ let _pendingSyncKeys = new Set(); // 待同步的 key 集合
 const SYNCABLE_KEYS = [
   'categories', 'inventory', 'purchaseOrders',
   'stockInRecords', 'requisitions', 'stockOutRecords',
-  'brandHistory', 'modelHistory', 'inventoryCategories'
+  'brandHistory', 'modelHistory', 'inventoryCategories',
+  'inventoryAdjustments', 'users', 'rolePermissions', 'userPermissions', 'settings',
+  'consumptionStandards'
 ];
 
 // 保存原始 setItem（在覆写前绑定）
@@ -56,14 +57,26 @@ async function syncFromSupabase(options) {
       purchaseOrdersData,
       stockInData,
       requisitionsData,
-      stockOutData
+      stockOutData,
+      inventoryAdjustmentsData, usersData, rolePermsData, userPermsData, settingsData,
+      consumptionStandardsData
     ] = await Promise.all([
       sb.from('categories').select('*').order('id'),
       sb.from('inventory_items').select('*').order('id'),
       sb.from('purchase_orders').select('*, purchase_order_items(*)').order('created_at', { ascending: false }),
       sb.from('stock_in_records').select('*, stock_in_items(*)').order('created_at', { ascending: false }),
       sb.from('requisitions').select('*, requisition_items(*)').order('created_at', { ascending: false }),
-      sb.from('stock_out_records').select('*, stock_out_items(*)').order('created_at', { ascending: false })
+      sb.from('stock_out_records').select('*, stock_out_items(*)').order('created_at', { ascending: false }),
+      sb.from('inventory_adjustments').select('*').order('created_at', { ascending: false }),
+      // 可选：users 表（若已存在）
+      sb.from('users').select('*').order('id'),
+      // 角色权限表
+      sb.from('role_permissions').select('*'),
+      sb.from('user_permissions').select('*'),
+      // 系统设置（可选）
+      sb.from('settings').select('*'),
+      // 领用标准
+      sb.from('consumption_standards').select('*').order('id')
     ]);
 
     // 写入 localStorage（_isSyncing=true 期间不会触发回推）
@@ -148,6 +161,12 @@ async function syncFromSupabase(options) {
       console.log('  \u2705 stockOutRecords: ' + soRecords.length + ' 条');
     }
 
+    // ---- 库存调整：历史/手工录入 ----
+    if (typeof inventoryAdjustmentsData !== 'undefined' && inventoryAdjustmentsData && inventoryAdjustmentsData.data) {
+      _silentSet('inventoryAdjustments', JSON.stringify(inventoryAdjustmentsData.data));
+      console.log('  \u2705 inventoryAdjustments: ' + inventoryAdjustmentsData.data.length + ' 条');
+    }
+
     // 品牌/型号历史
     const { data: brandData } = await sb.from('item_history')
       .select('item_name, type, value')
@@ -175,9 +194,61 @@ async function syncFromSupabase(options) {
       _silentSet('modelHistory', JSON.stringify(modelHist));
     }
 
+    // ---- 可选：用户与权限 ----
+    if (usersData && usersData.data) {
+      // 将云端 is_active 映射为本地 status 格式
+      var mappedUsers = usersData.data.map(function(u) {
+        if (u.status === undefined || u.status === null) {
+          u.status = u.is_active ? 'active' : 'pending';
+        }
+        return u;
+      });
+      // 合并本地待审核用户（尚未同步到云端的本地注册用户不丢失）
+      try {
+        var localUsers = JSON.parse(_originalGetItem('users') || '[]');
+        var cloudUsernames = mappedUsers.map(function(u) { return u.username; });
+        var localOnly = localUsers.filter(function(u) {
+          return u.status === 'pending' && cloudUsernames.indexOf(u.username) === -1;
+        });
+        if (localOnly.length > 0) {
+          mappedUsers = mappedUsers.concat(localOnly);
+          console.log('  \uD83D\uDD00 合并 ' + localOnly.length + ' 条本地待审核用户');
+        }
+      } catch(e) { /* 合并失败则使用云端数据 */ }
+      _silentSet('users', JSON.stringify(mappedUsers));
+      console.log('  \u2705 users: ' + mappedUsers.length + ' 条');
+    }
+
+    if (rolePermsData && rolePermsData.data) {
+      // 将 role_permissions 转换为 rolePermissions 对象 { role: [perm,...] }
+      var rp = {};
+      rolePermsData.data.forEach(function(r) { if (!rp[r.role]) rp[r.role] = []; rp[r.role].push(r.permission); });
+      _silentSet('rolePermissions', JSON.stringify(rp));
+      console.log('  \u2705 role_permissions: ' + rolePermsData.data.length + ' 条');
+    }
+
+    if (userPermsData && userPermsData.data) {
+      var up = {};
+      userPermsData.data.forEach(function(u) { if (!up[u.user_id]) up[u.user_id] = []; up[u.user_id].push(u.permission); });
+      _silentSet('userPermissions', JSON.stringify(up));
+      console.log('  \u2705 user_permissions: ' + userPermsData.data.length + ' 条');
+    }
+
+    if (settingsData && settingsData.data) {
+      _silentSet('settings', JSON.stringify(settingsData.data));
+      console.log('  \u2705 settings: ' + settingsData.data.length + ' 条');
+    }
+
+    if (consumptionStandardsData && consumptionStandardsData.data) {
+      _silentSet('consumptionStandards', JSON.stringify(consumptionStandardsData.data));
+      console.log('  \u2705 consumptionStandards: ' + consumptionStandardsData.data.length + ' 条');
+    }
+
     var elapsed = Date.now() - startTime;
     console.log('[Sync] \u2705 同步完成 (' + elapsed + 'ms)');
-    _supabaseSyncReady = true;
+
+    // 同步完成后刷新通知徽章
+    try { if (typeof checkNotifications === 'function') checkNotifications(); } catch(e) {}
 
   } catch (err) {
     console.error('[Sync] \u274c 同步失败:', err.message);
@@ -198,8 +269,8 @@ function _silentSet(key, value) {
 localStorage.setItem = function(key, value) {
   _originalSetItem(key, value);
 
-  // 初始拉取期间 / Supabase 未就绪 → 不回推
-  if (_isSyncing || !_supabaseSyncReady) return;
+  // 初始拉取期间 → 不回推（_isSyncing 为 true 时静默跳过）
+  if (_isSyncing) return;
   if (!SYNCABLE_KEYS.includes(key)) return;
 
   _pendingSyncKeys.add(key);
@@ -211,7 +282,7 @@ localStorage.setItem = function(key, value) {
     _pendingSyncKeys.clear();
     _syncBatchTimer = null;
     _batchSyncToSupabase(keys);
-  }, 300);
+  }, 100);  // 100ms 防抖，接近实时同步
 };
 
 // ============================================================
@@ -227,9 +298,21 @@ async function _batchSyncToSupabase(keys) {
       await syncToSupabase(keys[i]);
     }
     var elapsed = Date.now() - t0;
-    console.log('[Sync] \ud83d\udce6 批量同步 ' + keys.join(', ') + ' \u2192 Supabase \u2705 (' + elapsed + 'ms)');
+    console.log('[Sync] 📦 批量同步 ' + keys.join(', ') + ' → Supabase ✅ (' + elapsed + 'ms)');
+    // 静默成功，仅关键操作弹提示
+    if (typeof showToast === 'function') {
+      var userKeys = keys.filter(function(k) {
+        return ['users', 'purchaseOrders', 'requisitions', 'stockInRecords', 'stockOutRecords', 'inventory'].indexOf(k) !== -1;
+      });
+      if (userKeys.length > 0 && elapsed > 200) {
+        showToast('数据已同步至云端', 'success');
+      }
+    }
   } catch (err) {
-    console.warn('[Sync] \ud83d\udce6 批量同步失败:', err.message);
+    console.warn('[Sync] 📦 批量同步失败:', err.message);
+    if (typeof showToast === 'function') {
+      showToast('部分数据同步异常，请稍后刷新重试', 'warning');
+    }
   }
 }
 
@@ -237,8 +320,6 @@ async function _batchSyncToSupabase(keys) {
 // 4. syncToSupabase — 增量同步（只推送变更记录）
 // ============================================================
 async function syncToSupabase(key) {
-  if (!_supabaseSyncReady) return;
-
   var sb = getSupabase();
   if (!sb) return;
 
@@ -321,6 +402,18 @@ async function syncToSupabase(key) {
         }
         break;
 
+      // ---- 库存调整（历史/手工） ----
+      case 'inventoryAdjustments':
+        // 插入或 upsert 调整记录（按 id 唯一）
+        for (var a = 0; a < data.length; a++) {
+          try {
+            await sb.from('inventory_adjustments').upsert(data[a], { onConflict: 'id' });
+          } catch (e) {
+            try { await sb.from('inventory_adjustments').insert(data[a]); } catch (e2) { /* 忽略 */ }
+          }
+        }
+        break;
+
       // ---- 品牌/型号历史 ----
       case 'brandHistory':
       case 'modelHistory':
@@ -334,6 +427,72 @@ async function syncToSupabase(key) {
               { item_name: itemName, type: histType, value: values[v], use_count: 1 },
               { onConflict: 'item_name,type,value' }
             );
+          }
+        }
+        break;
+
+      // ---- 角色权限 ----
+      case 'rolePermissions':
+        var rpObj = data || {};
+        for (var role in rpObj) {
+          if (!Object.prototype.hasOwnProperty.call(rpObj, role)) continue;
+          var perms = rpObj[role] || [];
+          for (var i = 0; i < perms.length; i++) {
+            await sb.from('role_permissions').upsert({ role: role, permission: perms[i] }, { onConflict: 'role,permission' });
+          }
+        }
+        break;
+
+      // ---- 用户权限 ----
+      case 'userPermissions':
+        var upObj = data || {};
+        for (var uid in upObj) {
+          if (!Object.prototype.hasOwnProperty.call(upObj, uid)) continue;
+          var perms = upObj[uid] || [];
+          for (var j = 0; j < perms.length; j++) {
+            await sb.from('user_permissions').upsert({ user_id: parseInt(uid, 10), permission: perms[j] }, { onConflict: 'user_id,permission' });
+          }
+        }
+        break;
+
+      // ---- 用户表 — 仅同步基础字段 + is_active ----
+      case 'users':
+        for (var u = 0; u < data.length; u++) {
+          var uu = data[u];
+          await sb.from('users').upsert({
+            id: uu.id,
+            username: uu.username,
+            name: uu.name,
+            role: uu.role,
+            is_active: (uu.status === 'active')
+          }, { onConflict: 'username' });
+        }
+        break;
+
+      // ---- 系统设置 ----
+      case 'settings':
+        if (Array.isArray(data)) {
+          for (var s = 0; s < data.length; s++) {
+            var it = data[s];
+            if (it && it.key) {
+              await sb.from('settings').upsert({ key: it.key, value: it.value }, { onConflict: 'key' });
+            }
+          }
+        }
+        break;
+
+      // ---- 领用标准 ----
+      case 'consumptionStandards':
+        if (Array.isArray(data)) {
+          for (var cs = 0; cs < data.length; cs++) {
+            var std = data[cs];
+            await sb.from('consumption_standards').upsert({
+              id: std.id,
+              item_name: std.item_name,
+              scenario: std.scenario || '通用',
+              max_per_tour: std.max_per_tour || 0,
+              category: std.category || ''
+            }, { onConflict: 'id' });
           }
         }
         break;

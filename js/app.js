@@ -5,9 +5,9 @@
 // 模拟数据（实际项目中应从Supabase获取）
 const mockData = {
   items: [
-    { id: 1, code: 'ITEM001', name: '矿泉水', category: '饮品', stock: 500, unit: '瓶', safety_stock: 100 },
-    { id: 2, code: 'ITEM002', name: '方便面', category: '食品', stock: 200, unit: '箱', safety_stock: 50 },
-    { id: 3, code: 'ITEM003', name: '纸巾', category: '日用品', stock: 80, unit: '包', safety_stock: 100 }
+    { id: 1, code: 'XH000001', name: '不锈钢托盘', category: '循环使用类', stock: 50, unit: '个', safety_stock: 10 },
+    { id: 2, code: 'HM000001', name: '一次性拖鞋', category: '消耗类', stock: 200, unit: '双', safety_stock: 50 },
+    { id: 3, code: 'HM000002', name: '矿泉水', category: '消耗类', stock: 500, unit: '瓶', safety_stock: 100 }
   ],
   purchaseOrders: [],
   stockInRecords: [],
@@ -56,6 +56,18 @@ document.addEventListener('DOMContentLoaded', () => {
   if (typeof initMonthlySummary === 'function') {
     initMonthlySummary();
   }
+  if (typeof initTourReports === 'function') {
+    initTourReports();
+  }
+  if (typeof initBusinessFlow === 'function') {
+    initBusinessFlow();
+  }
+
+  // 初始化管理员/调试绑定（新增物品、账号创建等快速入口）
+  if (typeof initAdminBindings !== 'function') {
+    // 延迟声明，实际实现在文件下方
+  }
+  initAdminBindings();
 });
 
 /**
@@ -271,22 +283,37 @@ function loadRecentActivities() {
  * 加载库存列表 - 按分类分块展示
  */
 let _invBatchMode = false;
+let _invSupplementMode = false;
 
-function loadInventory() {
+async function loadInventory() {
   const container = document.getElementById('inventory-container');
   if (!container) return;
 
-  // 优先从localStorage读取入库后的库存数据
+  // 尝试从 Supabase 拉取实时库存（云端优先），失败则回退到 localStorage 或 mockData
   let items = [];
-  const inventoryData = localStorage.getItem('inventory');
-  if (inventoryData) {
-    items = JSON.parse(inventoryData);
+  try {
+    if (typeof SupaDB !== 'undefined' && SupaDB.getInventory) {
+      const filterCat = document.getElementById('filter-category')?.value || '';
+      const filterStatus = document.getElementById('filter-status')?.value || '';
+      const filters = {};
+      if (filterCat) filters.category = filterCat;
+      // status 仍在客户端过滤以保持行为一致
+      items = await SupaDB.getInventory(filters);
+      console.log('从 Supabase 获取库存项:', items.length);
+    }
+  } catch (e) {
+    console.warn('从 Supabase 获取库存失败，回退到本地缓存：', e.message);
+    items = [];
   }
 
-  // 如果localStorage没有数据，使用模拟数据
-  if (items.length === 0) {
-    items = mockData.items;
+  // 若云端没数据则读取 localStorage
+  if (!items || items.length === 0) {
+    const inventoryData = localStorage.getItem('inventory');
+    if (inventoryData) items = JSON.parse(inventoryData);
   }
+
+  // 如果仍无数据，使用模拟数据
+  if (!items || items.length === 0) items = mockData.items;
 
   // 先从全量数据构建分类下拉（不受筛选影响）
   const allCategories = {};
@@ -334,8 +361,32 @@ function loadInventory() {
     }
   }
 
+  // 更新补充信息按钮状态
+  const suppBtn = document.getElementById('inv-supplement-btn');
+  if (suppBtn) {
+    if (!hasPermission('supplement_info')) {
+      suppBtn.style.display = 'none';
+    } else {
+      suppBtn.style.display = '';
+      suppBtn.textContent = _invSupplementMode ? '完成补充' : '补充信息';
+      suppBtn.className = _invSupplementMode ? 'btn btn-accent' : 'btn';
+    }
+  }
+
+  // 在补充信息模式下隐藏新增物品按钮
+  const addItemBtn = document.getElementById('add-item-btn');
+  if (addItemBtn) {
+    addItemBtn.style.display = _invSupplementMode ? 'none' : '';
+  }
+
   if (items.length === 0) {
     container.innerHTML = '<div class="empty-state" style="padding:40px;text-align:center;color:var(--text-muted);">暂无数据</div>';
+    return;
+  }
+
+  // 补充信息模式：显示扁平可编辑表格
+  if (_invSupplementMode) {
+    _renderSupplementTable(container, items);
     return;
   }
 
@@ -349,6 +400,7 @@ function loadInventory() {
 
   // 分类图标映射
   const catIcons = {
+    '循环使用类': '🔄', '消耗类': '📦', '其他': '📁',
     '饮品': '🥤', '食品': '🍜', '日用品': '🧴', '电子': '🔌',
     '文具': '✏️', '清洁': '🧹', '工具': '🔧', '未分类': '📦'
   };
@@ -408,7 +460,7 @@ function loadInventory() {
             return `<span class="pending-qty-badge" onclick="event.stopPropagation();_showPendingPopover(this,'${(item.name || '').replace(/'/g, "\\'")}')" title="点击查看采购明细">${totalQty}</span>`;
           })()}</td>
           <td>
-            ${hasPermission('edit_inventory') ? `<button class="btn btn-sm" onclick="editItem(${item.id})">编辑</button>` : '<span style="color:var(--text-muted);font-size:12px;">-</span>'}
+            ${ (hasPermission('edit_inventory') || hasPermission('inventory.adjust') || hasPermission('inventory.edit')) ? `<button class="btn btn-sm" onclick="editItem(${item.id})">编辑</button>` : '<span style="color:var(--text-muted);font-size:12px;">-</span>'}
           </td>
         </tr>`;
     }).join('');
@@ -542,6 +594,155 @@ function _invBatchPurchase() {
   }, 150);
 }
 
+/* --- 库存概览补充信息模式相关 --- */
+
+function toggleInvSupplementMode() {
+  if (_invSupplementMode) {
+    _saveInvSupplement();
+    return;
+  }
+  _invSupplementMode = true;
+  loadInventory();
+}
+
+function _renderSupplementTable(container, items) {
+  var catOptions = '';
+  if (typeof categories !== 'undefined' && categories.length > 0) {
+    catOptions = categories.map(function(c) { return '<option value="' + c.name + '">' + c.name + '</option>'; }).join('');
+  } else {
+    catOptions = '<option value="未分类">未分类</option><option value="循环使用类">循环使用类</option><option value="消耗类">消耗类</option>';
+  }
+
+  var html = '<div style="margin-bottom:12px;padding:10px 16px;background:var(--accent-glow);border-radius:8px;font-size:13px;color:var(--text-secondary);">✏️ 补充信息模式 — 可编辑分类、品牌、型号、单位，库存数量不可修改</div>';
+  html += '<div class="table-scroll"><table class="data-table" id="supplement-table"><thead><tr>';
+  html += '<th style="width:30px;">#</th><th>物品编号</th><th>物品名称</th>';
+  html += '<th style="min-width:120px;">分类</th><th style="min-width:100px;">品牌</th><th style="min-width:100px;">型号</th><th style="min-width:70px;">单位</th>';
+  html += '<th>库存</th><th>状态</th>';
+  html += '</tr></thead><tbody>';
+
+  items.forEach(function(item, idx) {
+    var status = getStockStatus(item);
+    html += '<tr>';
+    html += '<td style="text-align:center;color:var(--text-muted);font-size:12px;">' + (idx + 1) + '</td>';
+    html += '<td style="font-family:monospace;font-size:12px;color:var(--text-muted);">' + (item.code || '-') + '</td>';
+    html += '<td style="font-weight:600;">' + item.name + '</td>';
+    html += '<td><select class="supp-edit-cat" data-item-id="' + item.id + '" style="width:100%;padding:6px 8px;border:1.5px solid var(--accent);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:12px;"><option value="">未分类</option>' + catOptions + '</select></td>';
+    html += '<td><input type="text" class="supp-edit-brand" data-item-id="' + item.id + '" value="' + (item.brand || '').replace(/"/g, '&quot;') + '" placeholder="品牌" style="width:100%;padding:6px 8px;border:1.5px solid var(--accent);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:12px;"></td>';
+    html += '<td><input type="text" class="supp-edit-model" data-item-id="' + item.id + '" value="' + (item.model || '').replace(/"/g, '&quot;') + '" placeholder="型号" style="width:100%;padding:6px 8px;border:1.5px solid var(--accent);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:12px;"></td>';
+    html += '<td><input type="text" class="supp-edit-unit" data-item-id="' + item.id + '" value="' + (item.unit || '').replace(/"/g, '&quot;') + '" placeholder="单位" style="width:100%;padding:6px 8px;border:1.5px solid var(--accent);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:12px;"></td>';
+    html += '<td><span style="font-weight:600;color:' + (item.stock < (item.safety_stock || 10) ? 'var(--danger)' : 'var(--text-primary)') + '">' + item.stock + '</span></td>';
+    html += '<td><span class="status-badge ' + status.class + '">' + status.text + '</span></td>';
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+
+  html += '<div id="inv-supplement-bar" style="position:sticky;bottom:0;left:0;right:0;z-index:10;background:#ffffff;border:2px solid var(--accent);border-top:3px solid var(--accent);border-radius:var(--sketch-r1);box-shadow:var(--shadow-elevated);padding:14px 20px;margin-top:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">';
+  html += '<div style="font-size:13px;color:var(--text-muted);"><span id="supp-changed-count">0</span> 项已修改</div>';
+  html += '<div style="display:flex;gap:8px;">';
+  html += '<button class="btn" onclick="_cancelInvSupplement()">取消</button>';
+  html += '<button class="btn btn-accent" onclick="_saveInvSupplement()">保存补充信息</button>';
+  html += '</div></div>';
+
+  container.innerHTML = html;
+
+  setTimeout(function() {
+    items.forEach(function(item) {
+      var catSelect = container.querySelector('.supp-edit-cat[data-item-id="' + item.id + '"]');
+      if (catSelect && item.category) {
+        catSelect.value = item.category;
+      }
+      [].forEach.call(container.querySelectorAll('[data-item-id="' + item.id + '"]'), function(inp) {
+        inp.addEventListener('change', _suppUpdateChangeCount);
+        inp.addEventListener('input', _suppUpdateChangeCount);
+      });
+    });
+  }, 50);
+
+  container._suppOriginalItems = JSON.parse(JSON.stringify(items));
+}
+
+function _suppUpdateChangeCount() {
+  var container = document.getElementById('inventory-container');
+  if (!container) return;
+  var countEl = document.getElementById('supp-changed-count');
+  if (!countEl) return;
+
+  var changed = 0;
+  var originalItems = container._suppOriginalItems || [];
+
+  originalItems.forEach(function(item) {
+    var catEl = container.querySelector('.supp-edit-cat[data-item-id="' + item.id + '"]');
+    var brandEl = container.querySelector('.supp-edit-brand[data-item-id="' + item.id + '"]');
+    var modelEl = container.querySelector('.supp-edit-model[data-item-id="' + item.id + '"]');
+    var unitEl = container.querySelector('.supp-edit-unit[data-item-id="' + item.id + '"]');
+    if (!catEl && !brandEl && !modelEl && !unitEl) return;
+
+    var newCat = catEl ? catEl.value : (item.category || '');
+    var newBrand = brandEl ? brandEl.value : (item.brand || '');
+    var newModel = modelEl ? modelEl.value : (item.model || '');
+    var newUnit = unitEl ? unitEl.value : (item.unit || '');
+
+    if (newCat !== (item.category || '') ||
+        newBrand !== (item.brand || '') ||
+        newModel !== (item.model || '') ||
+        newUnit !== (item.unit || '')) {
+      changed++;
+    }
+  });
+
+  countEl.textContent = changed;
+}
+
+function _saveInvSupplement() {
+  var container = document.getElementById('inventory-container');
+  if (!container) return;
+
+  var inventory = JSON.parse(localStorage.getItem('inventory') || '[]');
+  var changedCount = 0;
+
+  [].forEach.call(container.querySelectorAll('.supp-edit-cat'), function(catEl) {
+    var itemId = parseFloat(catEl.dataset.itemId);
+    var brandEl = container.querySelector('.supp-edit-brand[data-item-id="' + itemId + '"]');
+    var modelEl = container.querySelector('.supp-edit-model[data-item-id="' + itemId + '"]');
+    var unitEl = container.querySelector('.supp-edit-unit[data-item-id="' + itemId + '"]');
+
+    var item = inventory.find(function(i) { return Number(i.id) === Number(itemId); });
+    if (!item) return;
+
+    var newCat = catEl.value.trim() || '未分类';
+    var newBrand = brandEl ? brandEl.value.trim() : '';
+    var newModel = modelEl ? modelEl.value.trim() : '';
+    var newUnit = unitEl ? unitEl.value.trim() : '';
+
+    if (item.category !== newCat ||
+        (item.brand || '') !== newBrand ||
+        (item.model || '') !== newModel ||
+        (item.unit || '') !== newUnit) {
+      item.category = newCat;
+      item.brand = newBrand;
+      item.model = newModel;
+      item.unit = newUnit;
+      changedCount++;
+    }
+  });
+
+  if (changedCount > 0) {
+    localStorage.setItem('inventory', JSON.stringify(inventory));
+    showToast('已保存 ' + changedCount + ' 项补充信息，物品按新分类重新排列', 'success');
+  } else {
+    showToast('未检测到修改', 'info');
+  }
+
+  _invSupplementMode = false;
+  loadInventory();
+}
+
+function _cancelInvSupplement() {
+  _invSupplementMode = false;
+  loadInventory();
+}
+
 /**
  * 显示采购中物品的气泡弹窗
  */
@@ -665,9 +866,7 @@ function getStockStatus(item) {
 /**
  * 加载报表数据
  */
-function loadReports() {
-  // 实现报表加载逻辑
-}
+// loadReports 已迁移到 tour-reports.js，此处不再定义
 
 /**
  * 绑定模态框事件
@@ -696,6 +895,33 @@ function bindModalEvents() {
         closeModal();
       }
     });
+  });
+
+  // ESC 键关闭所有弹窗（模态框 + confirm/prompt 遮罩层）
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      // 优先关闭自定义 confirm/prompt 遮罩层（它们层级更高）
+      const confirmOverlay = document.getElementById('custom-confirm-overlay');
+      if (confirmOverlay && confirmOverlay.classList.contains('show')) {
+        const cancelBtn = document.getElementById('confirm-cancel-btn');
+        if (cancelBtn) cancelBtn.click();
+        e.preventDefault();
+        return;
+      }
+      const promptOverlay = document.getElementById('custom-prompt-overlay');
+      if (promptOverlay && promptOverlay.classList.contains('show')) {
+        const cancelBtn = document.getElementById('prompt-cancel-btn');
+        if (cancelBtn) cancelBtn.click();
+        e.preventDefault();
+        return;
+      }
+      // 关闭普通模态框
+      const openModals = document.querySelectorAll('.modal.show');
+      if (openModals.length > 0) {
+        closeModal();
+        e.preventDefault();
+      }
+    }
   });
 }
 
@@ -756,11 +982,117 @@ function generateRandomData(count, min, max) {
 }
 
 /**
- * 编辑物品（占位函数）
+ * 填充品类下拉选项（从全局 categories 数组同步）
+ */
+function _populateCategorySelect(selectEl) {
+  if (!selectEl) return;
+  const cats = (typeof categories !== 'undefined' && Array.isArray(categories)) ? categories : [];
+  const currentVal = selectEl.value;
+  selectEl.innerHTML = '<option value="">请选择</option>' +
+    cats.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+  if (currentVal) selectEl.value = currentVal;
+}
+
+/**
+ * 编辑物品（支持手工调整并生成调整记录）
  */
 function editItem(itemId) {
-  console.log('编辑物品:', itemId);
-  showToast('编辑功能待实现', 'info');
+  // 从 localStorage 中查找（兼容 mockData 查找作为兜底）
+  const inventory = JSON.parse(localStorage.getItem('inventory') || '[]');
+  let item = inventory.find(i => String(i.id) === String(itemId));
+  if (!item && typeof mockData !== 'undefined') {
+    item = mockData.items.find(i => String(i.id) === String(itemId));
+  }
+  if (!item) {
+    if (typeof showToast === 'function') {
+      showToast('未找到该物品，可能已被删除', 'warning');
+    } else {
+      alert('未找到物品');
+    }
+    return;
+  }
+
+  // 权限检查（保持与按钮显示逻辑一致）
+  if (!hasPermission('inventory.adjust') && !hasPermission('inventory.edit') && !hasPermission('edit_inventory') && !hasPermission('all')) {
+    if (typeof showToast === 'function') {
+      showToast('您没有权限修改库存信息', 'warning');
+    } else {
+      alert('您没有权限修改库存信息');
+    }
+    return;
+  }
+
+  document.getElementById('modal-item-title').textContent = '编辑物品';
+  const form = document.getElementById('item-form');
+  form.elements['name'].value = item.name || '';
+  form.elements['code'].value = item.code || '';
+  // 填充品类下拉选项
+  _populateCategorySelect(form.elements['category']);
+  form.elements['category'].value = item.category || '';
+  form.elements['unit'].value = item.unit || '';
+  form.elements['stock'].value = item.stock || 0;
+  form.elements['safety_stock'].value = item.safety_stock || 0;
+
+  openModal('modal-item');
+
+  // 绑定保存（替换按钮以清除旧事件）
+  const saveBtn = document.querySelector('#modal-item .modal-save');
+  const newSaveBtn = saveBtn.cloneNode(true);
+  saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
+
+  newSaveBtn.addEventListener('click', function onSave() {
+    try {
+      const newStock = Number(form.elements['stock'].value || 0);
+      const newSafety = Number(form.elements['safety_stock'].value || 0);
+      const delta = newStock - (item.stock || 0);
+
+      // 更新物品数据
+      item.name = form.elements['name'].value.trim();
+      item.code = form.elements['code'].value.trim();
+      item.category = form.elements['category'].value;
+      item.unit = form.elements['unit'].value.trim();
+      item.stock = newStock;
+      item.safety_stock = newSafety;
+
+      // 写回 localStorage（兼顾 mockData）
+      const inv = JSON.parse(localStorage.getItem('inventory') || '[]');
+      const idx = inv.findIndex(i => String(i.id) === String(item.id));
+      if (idx >= 0) {
+        inv[idx] = item;
+      } else {
+        inv.push(item);
+      }
+      localStorage.setItem('inventory', JSON.stringify(inv));
+      // 同步更新 mockData（兼容旧代码）
+      if (typeof mockData !== 'undefined') {
+        const mi = mockData.items.findIndex(i => String(i.id) === String(item.id));
+        if (mi >= 0) mockData.items[mi] = item;
+      }
+
+      // 记录调整
+      const adj = {
+        id: item.id,
+        inventory_item_id: item.id,
+        item_code: item.code,
+        delta: delta,
+        new_stock: newStock,
+        reason: '手工调整',
+        created_by: (getCurrentUser() ? getCurrentUser().username : 'system'),
+        created_at: new Date().toISOString()
+      };
+      const arr = JSON.parse(localStorage.getItem('inventoryAdjustments') || '[]');
+      arr.push(adj);
+      localStorage.setItem('inventoryAdjustments', JSON.stringify(arr));
+
+      loadInventory();
+      closeModal();
+      if (typeof showToast === 'function') showToast('保存成功（已记录调整）','success');
+    } catch (e) {
+      console.error(e);
+      if (typeof showToast === 'function') showToast('保存失败：' + e.message, 'error');
+      else alert('保存失败：' + e.message);
+    }
+  });
 }
 
 /**
