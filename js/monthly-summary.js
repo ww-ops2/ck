@@ -136,31 +136,19 @@ function _msFormatDate(d) {
 // ============== 数据读取 ==============
 
 function _msReadInventory() {
-  let items = [];
-  const d = localStorage.getItem('inventory');
-  if (d) items = JSON.parse(d);
-  return items;
+  return (_appCache && _appCache.inventory) ? _appCache.inventory : [];
 }
 
 function _msReadStockInRecords() {
-  let records = [];
-  const d = localStorage.getItem('stockInRecords');
-  if (d) records = JSON.parse(d);
-  return records;
+  return (_appCache && _appCache.stockInRecords) ? _appCache.stockInRecords : [];
 }
 
 function _msReadStockOutRecords() {
-  let records = [];
-  const d = localStorage.getItem('stockOutRecords');
-  if (d) records = JSON.parse(d);
-  return records;
+  return (_appCache && _appCache.stockOutRecords) ? _appCache.stockOutRecords : [];
 }
 
 function _msReadRequisitions() {
-  let list = [];
-  const d = localStorage.getItem('requisitions');
-  if (d) list = JSON.parse(d);
-  return list;
+  return (_appCache && _appCache.requisitions) ? _appCache.requisitions : [];
 }
 
 // ============== 主加载函数 ==============

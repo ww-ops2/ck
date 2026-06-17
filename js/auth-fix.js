@@ -74,26 +74,33 @@ async function handleLogin(e) {
     return;
   }
 
-  // 普通用户登录 — 先查 localStorage
-  let users = JSON.parse(localStorage.getItem('users') || '[]');
-  let user = users.find(u => u.username === phone);
+  // 普通用户登录 — 优先从 SupaDB 获取，然后 _appCache，最后 localStorage 兜底
+  let users = [];
+  let user = null;
 
-  // 如果本地没有或状态非 active，尝试从 Supabase 拉取最新数据
-  if (!user || user.status !== 'active') {
-    try {
-      if (typeof SupaDB !== 'undefined' && SupaDB.getUsers) {
-        const cloudUsers = await SupaDB.getUsers();
-        // 更新本地缓存
-        if (cloudUsers && cloudUsers.length > 0) {
-          localStorage.setItem('users', JSON.stringify(cloudUsers));
-          users = cloudUsers;
-          user = users.find(u => u.username === phone);
-        }
+  // 1. 尝试 SupaDB.getUsers()
+  try {
+    if (typeof SupaDB !== 'undefined' && SupaDB.getUsers) {
+      const cloudUsers = await SupaDB.getUsers();
+      if (cloudUsers && cloudUsers.length > 0) {
+        users = cloudUsers;
       }
-    } catch (e) {
-      console.warn('[Auth] Supabase lookup failed:', e.message);
     }
+  } catch (e) {
+    console.warn('[Auth] SupaDB.getUsers() failed:', e.message);
   }
+
+  // 2. 如果 SupaDB 未返回数据，尝试 _appCache.users
+  if (users.length === 0 && typeof _appCache !== 'undefined' && _appCache.users && _appCache.users.length > 0) {
+    users = _appCache.users;
+  }
+
+  // 3. 最后兜底到 localStorage
+  if (users.length === 0) {
+    users = JSON.parse(localStorage.getItem('users') || '[]');
+  }
+
+  user = users.find(u => u.username === phone);
 
   if (!user) {
     showToast('该账号未注册，请先注册', 'warning');
@@ -164,34 +171,17 @@ function submitRegistration() {
     created_at: new Date().toISOString()
   };
 
-  // 1. 写入 localStorage（本地缓存）
-  users.push(newUser);
-  localStorage.setItem('users', JSON.stringify(users));
+  // 1. 更新 _appCache 缓存
+  if (typeof _appCache !== 'undefined') {
+    if (!_appCache.users) _appCache.users = [];
+    _appCache.users.push(newUser);
+  }
 
-  // 2. 直接写入 Supabase（确保管理员在另一台电脑上也能看到）
+  // 2. 写入 SupaDB 作为主要存储
   if (typeof SupaDB !== 'undefined' && SupaDB.createUser) {
     SupaDB.createUser(newUser).catch(function(e) {
-      console.warn('[Auth] Supabase 注册同步失败:', e.message);
-      // 静默失败，localStorage 已有数据，后续可通过同步层补传
+      console.warn('[Auth] SupaDB.createUser() failed:', e.message);
     });
-  } else {
-    // 兜底：通过同步层推送
-    try {
-      var sb = typeof getSupabase === 'function' ? getSupabase() : null;
-      if (sb) {
-        sb.from('users').upsert({
-          id: typeof newUser.id === 'string' && newUser.id.charAt(0) === 'u' ? Number(newUser.id.substring(1)) : newUser.id,
-          username: newUser.username, name: newUser.name,
-          role: newUser.role, is_active: false
-        }, { onConflict: 'username' }).then(function() {
-          console.log('[Auth] User synced to Supabase:', newUser.username);
-        }).catch(function(e) {
-          console.warn('[Auth] Supabase sync failed:', e.message);
-        });
-      }
-    } catch(e) {
-      console.warn('[Auth] Supabase not available:', e.message);
-    }
   }
 
   closeModal();
@@ -280,7 +270,13 @@ function checkNotifications() {
   const badge = document.getElementById('notification-badge');
   if (!badge) return;
   try {
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
+    // 优先使用 _appCache.users，然后 localStorage 兜底
+    let users = [];
+    if (typeof _appCache !== 'undefined' && _appCache.users && _appCache.users.length > 0) {
+      users = _appCache.users;
+    } else {
+      users = JSON.parse(localStorage.getItem('users') || '[]');
+    }
     const pendingCount = users.filter(u => u.status === 'pending').length;
     if (pendingCount > 0) {
       badge.textContent = pendingCount;

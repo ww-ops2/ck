@@ -131,9 +131,7 @@ function _initTourNameDropdown(inputId, listId) {
  * 从已有领用单中收集团期名称
  */
 function _loadTourNames() {
-  let reqList = [];
-  const data = localStorage.getItem('requisitions');
-  if (data) reqList = JSON.parse(data);
+  const reqList = _appCache.requisitions || [];
 
   const nameSet = new Set();
   reqList.forEach(r => {
@@ -192,9 +190,7 @@ function _escapeHtml(str) {
  * 获取所有物品在待出库领用单中的占用数量
  */
 function _getPendingQuantities(excludeReqId) {
-  let reqList = [];
-  const data = localStorage.getItem('requisitions');
-  if (data) reqList = JSON.parse(data);
+  const reqList = _appCache.requisitions || [];
 
   const pending = {};
   reqList.forEach(req => {
@@ -231,10 +227,8 @@ function openRequisitionModal() {
   // 清空已选物品
   _reqSelectedItems = [];
 
-  // 从localStorage加载库存物品
-  let inventory = [];
-  const invData = localStorage.getItem('inventory');
-  if (invData) inventory = JSON.parse(invData);
+  // 从_appCache加载库存物品
+  const inventory = _appCache.inventory || [];
   if (inventory.length === 0) {
     inventory = [
       { id: 1, code: 'ITEM001', name: '矿泉水', category: '饮品', stock: 500, unit: '瓶' },
@@ -730,11 +724,9 @@ function submitRequisition() {
     created_at: new Date().toISOString()
   };
 
-  let reqList = [];
-  const data = localStorage.getItem('requisitions');
-  if (data) reqList = JSON.parse(data);
+  let reqList = _appCache.requisitions ? _appCache.requisitions.slice() : [];
   reqList.push(requisition);
-  localStorage.setItem('requisitions', JSON.stringify(reqList));
+  _appCache.requisitions = reqList;
 
   closeModal();
   loadRequisitions();
@@ -753,9 +745,7 @@ function loadRequisitions() {
   const tbody = document.getElementById('requisition-tbody');
   if (!tbody) return;
 
-  let reqList = [];
-  const data = localStorage.getItem('requisitions');
-  if (data) reqList = JSON.parse(data);
+  let reqList = _appCache.requisitions ? _appCache.requisitions.slice() : [];
 
   reqList.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
@@ -812,9 +802,7 @@ function loadRequisitions() {
  * 查看领用单详情 - 模态框渲染
  */
 function viewRequisitionDetail(reqId) {
-  let reqList = [];
-  const data = localStorage.getItem('requisitions');
-  if (data) reqList = JSON.parse(data);
+  let reqList = _appCache.requisitions ? _appCache.requisitions : [];
   const req = reqList.find(r => r.id === reqId);
   if (!req) return;
 
@@ -941,9 +929,7 @@ function viewRequisitionDetail(reqId) {
  * 确认出库 - 打开确认模态框（第一步：填写实际出库数量）
  */
 function confirmStockOut(reqId) {
-  let reqList = [];
-  const data = localStorage.getItem('requisitions');
-  if (data) reqList = JSON.parse(data);
+  let reqList = _appCache.requisitions ? _appCache.requisitions : [];
   const req = reqList.find(r => r.id === reqId);
   if (!req) return;
 
@@ -1100,9 +1086,7 @@ function _previewStockOutDiff() {
 function _finalConfirmStockOut() {
   if (!_currentStockOutReqId) return;
 
-  let reqList = [];
-  const data = localStorage.getItem('requisitions');
-  if (data) reqList = JSON.parse(data);
+  let reqList = _appCache.requisitions ? _appCache.requisitions.slice() : [];
   const req = reqList.find(r => r.id === _currentStockOutReqId);
   if (!req) return;
 
@@ -1130,9 +1114,7 @@ function _finalConfirmStockOut() {
   const stockOutDate = new Date().toISOString().split('T')[0];
 
   // 扣减库存（按实际出库数量）
-  let inventory = [];
-  const invData = localStorage.getItem('inventory');
-  if (invData) inventory = JSON.parse(invData);
+  let inventory = _appCache.inventory ? _appCache.inventory.slice() : [];
 
   const actualItems = [];
   let actualTotalQty = 0;
@@ -1153,7 +1135,7 @@ function _finalConfirmStockOut() {
     }
   });
 
-  localStorage.setItem('inventory', JSON.stringify(inventory));
+  _appCache.inventory = inventory;
 
   // 创建出库记录
   const stockOutRecord = {
@@ -1173,17 +1155,13 @@ function _finalConfirmStockOut() {
     created_at: new Date().toISOString()
   };
 
-  let soList = [];
-  const soData = localStorage.getItem('stockOutRecords');
-  if (soData) soList = JSON.parse(soData);
+  let soList = _appCache.stockOutRecords ? _appCache.stockOutRecords.slice() : [];
   soList.push(stockOutRecord);
-  localStorage.setItem('stockOutRecords', JSON.stringify(soList));
+  _appCache.stockOutRecords = soList;
 
   // 更新领用单状态
   req.status = 'outbound_completed';
-  localStorage.setItem('requisitions', JSON.stringify(reqList));
-
-  // 关闭模态框
+  _appCache.requisitions = reqList;
   closeModal();
 
   // 刷新列表和KPI
@@ -1263,9 +1241,7 @@ function _finalConfirmStockOut() {
  * 编辑领用单
  */
 function editRequisition(reqId) {
-  let reqList = [];
-  const data = localStorage.getItem('requisitions');
-  if (data) reqList = JSON.parse(data);
+  let reqList = _appCache.requisitions ? _appCache.requisitions : [];
   const req = reqList.find(r => r.id === reqId);
   if (!req) return;
 
@@ -1295,9 +1271,7 @@ function editRequisition(reqId) {
   }
 
   // 加载库存数据
-  let inventory = [];
-  const invData = localStorage.getItem('inventory');
-  if (invData) inventory = JSON.parse(invData);
+  let inventory = _appCache.inventory ? _appCache.inventory.slice() : [];
   if (inventory.length === 0) {
     inventory = [
       { id: 1, code: 'ITEM001', name: '矿泉水', category: '饮品', stock: 500, unit: '瓶' },
@@ -1397,9 +1371,7 @@ function saveRequisitionEdit() {
   const totalQty = items.reduce((sum, it) => sum + it.quantity, 0);
 
   // 更新领用单
-  let reqList = [];
-  const data = localStorage.getItem('requisitions');
-  if (data) reqList = JSON.parse(data);
+  let reqList = _appCache.requisitions ? _appCache.requisitions.slice() : [];
   const reqIndex = reqList.findIndex(r => r.id === reqId);
   if (reqIndex === -1) {
     showToast('领用单不存在', 'error');
@@ -1418,7 +1390,7 @@ function saveRequisitionEdit() {
     remark: remark
   };
 
-  localStorage.setItem('requisitions', JSON.stringify(reqList));
+  _appCache.requisitions = reqList;
 
   closeModal();
   loadRequisitions();
@@ -1432,9 +1404,7 @@ function saveRequisitionEdit() {
  * 撤回领用单（改为已取消状态，可重新编辑）
  */
 function withdrawRequisition(reqId) {
-  let reqList = [];
-  const data = localStorage.getItem('requisitions');
-  if (data) reqList = JSON.parse(data);
+  let reqList = _appCache.requisitions ? _appCache.requisitions.slice() : [];
   const req = reqList.find(r => r.id === reqId);
   if (!req) return;
 
@@ -1453,7 +1423,7 @@ function withdrawRequisition(reqId) {
 
   showConfirm(`确定要撤回领用单 ${req.code} 吗？撤回后状态将变为"已撤回"，您可以重新编辑后再次提交。`, function() {
     req.status = 'cancelled';
-    localStorage.setItem('requisitions', JSON.stringify(reqList));
+    _appCache.requisitions = reqList;
 
     loadRequisitions();
     loadStockOutRecords();
@@ -1467,9 +1437,7 @@ function withdrawRequisition(reqId) {
  * 删除领用单
  */
 function deleteRequisition(reqId) {
-  let reqList = [];
-  const data = localStorage.getItem('requisitions');
-  if (data) reqList = JSON.parse(data);
+  let reqList = _appCache.requisitions ? _appCache.requisitions : [];
   const req = reqList.find(r => r.id === reqId);
   if (!req) return;
 
@@ -1488,7 +1456,7 @@ function deleteRequisition(reqId) {
 
   showConfirm(`确定要永久删除领用单 ${req.code} 吗？此操作不可恢复！`, function() {
     reqList = reqList.filter(r => r.id !== reqId);
-    localStorage.setItem('requisitions', JSON.stringify(reqList));
+    _appCache.requisitions = reqList;
 
     loadRequisitions();
     loadStockOutRecords();
@@ -1506,16 +1474,12 @@ function loadStockOutRecords() {
   if (!tbody) return;
 
   // 1. 读取待出库的领用单
-  let reqList = [];
-  const reqData = localStorage.getItem('requisitions');
-  if (reqData) reqList = JSON.parse(reqData);
+  let reqList = _appCache.requisitions ? _appCache.requisitions : [];
 
   const pendingReqs = reqList.filter(r => r.status === 'pending_outbound');
 
   // 2. 读取已完成出库记录
-  let completedRecords = [];
-  const soData = localStorage.getItem('stockOutRecords');
-  if (soData) completedRecords = JSON.parse(soData);
+  let completedRecords = _appCache.stockOutRecords ? _appCache.stockOutRecords : [];
 
   // 3. 合并为统一列表
   const canConfirm = hasPermission('confirm_stockout');
@@ -1618,9 +1582,7 @@ function loadStockOutRecords() {
  * 查看出库详情
  */
 function viewStockOutDetail(recordCode) {
-  let records = [];
-  const data = localStorage.getItem('stockOutRecords');
-  if (data) records = JSON.parse(data);
+  let records = _appCache.stockOutRecords ? _appCache.stockOutRecords : [];
   const record = records.find(r => r.code === recordCode);
   if (!record) { showToast('未找到该出库记录', 'error'); return; }
 

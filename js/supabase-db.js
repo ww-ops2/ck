@@ -810,6 +810,105 @@ const SupaDB = {
     if (filters.end_date) query = query.lte('created_at', filters.end_date);
 
     return await _sbQuery(query.order('created_at', { ascending: false }).limit(filters.limit || 100));
+  },
+
+  // ---- 删除库存物品 ----
+  async deleteInventoryItem(id) {
+    const sb = getSupabase();
+    const { error } = await sb.from('inventory_items').delete().eq('id', id);
+    if (error) throw new Error('物品删除失败: ' + error.message);
+    await writeAuditLog('DELETE', 'inventory_items', id);
+  },
+
+  // ---- 库存调整记录 ----
+  async getInventoryAdjustments() {
+    const sb = getSupabase();
+    return await _sbQuery(
+      sb.from('inventory_adjustments')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(500)
+    );
+  },
+
+  async createInventoryAdjustment(data) {
+    const sb = getSupabase();
+    const { data: result, error } = await sb
+      .from('inventory_adjustments')
+      .insert({
+        inventory_item_id: data.inventory_item_id,
+        item_code: data.item_code || '',
+        delta: data.delta || 0,
+        new_stock: data.new_stock || 0,
+        reason: data.reason || '手工调整',
+        created_by: data.created_by || 'system'
+      })
+      .select()
+      .single();
+    if (error) throw new Error('调整记录创建失败: ' + error.message);
+    return result;
+  },
+
+  // ---- 领用标准 ----
+  async getConsumptionStandards() {
+    const sb = getSupabase();
+    return await _sbQuery(
+      sb.from('consumption_standards').select('*').order('id')
+    );
+  },
+
+  async upsertConsumptionStandard(data) {
+    const sb = getSupabase();
+    // 先按 item_name + scenario 查找是否存在
+    const { data: existing } = await sb
+      .from('consumption_standards')
+      .select('id')
+      .eq('item_name', data.item_name)
+      .eq('scenario', data.scenario)
+      .maybeSingle();
+
+    if (existing) {
+      const { error } = await sb
+        .from('consumption_standards')
+        .update({ max_per_tour: data.max_per_tour, category: data.category || '' })
+        .eq('id', existing.id);
+      if (error) throw new Error('领用标准更新失败: ' + error.message);
+      return { id: existing.id, ...data };
+    } else {
+      const { data: result, error } = await sb
+        .from('consumption_standards')
+        .insert({
+          item_name: data.item_name,
+          scenario: data.scenario || '通用',
+          max_per_tour: data.max_per_tour || 0,
+          category: data.category || ''
+        })
+        .select()
+        .single();
+      if (error) throw new Error('领用标准创建失败: ' + error.message);
+      return result;
+    }
+  },
+
+  async deleteConsumptionStandard(id) {
+    const sb = getSupabase();
+    const { error } = await sb.from('consumption_standards').delete().eq('id', id);
+    if (error) throw new Error('领用标准删除失败: ' + error.message);
+    await writeAuditLog('DELETE', 'consumption_standards', id);
+  },
+
+  // ---- 系统设置 ----
+  async getSettings() {
+    const sb = getSupabase();
+    return await _sbQuery(sb.from('settings').select('*'));
+  },
+
+  async upsertSetting(key, value) {
+    const sb = getSupabase();
+    const { error } = await sb
+      .from('settings')
+      .upsert({ key, value: String(value) }, { onConflict: 'key' });
+    if (error) throw new Error('设置保存失败: ' + error.message);
   }
 };
 

@@ -14,7 +14,7 @@ let _rptFilteredData = []; // 缓存当前筛选结果
  */
 function _rptLookupPrice(itemName) {
   try {
-    const poData = JSON.parse(localStorage.getItem('purchaseOrders') || '[]');
+    const poData = (_appCache && _appCache.purchaseOrders) ? _appCache.purchaseOrders : [];
     let latestPrice = 0;
     let latestDate = '';
     poData.forEach(po => {
@@ -42,7 +42,7 @@ function _rptLookupPrice(itemName) {
 function _rptBuildPriceMap() {
   const priceMap = {};
   try {
-    const poData = JSON.parse(localStorage.getItem('purchaseOrders') || '[]');
+    const poData = (_appCache && _appCache.purchaseOrders) ? _appCache.purchaseOrders : [];
     poData.forEach(po => {
       if (po.items) {
         po.items.forEach(it => {
@@ -95,9 +95,9 @@ function loadReports() {
   const filterScenario = scenarioFilter ? scenarioFilter.value : '';
 
   // 读取出库记录
-  const stockOutRecords = JSON.parse(localStorage.getItem('stockOutRecords') || '[]');
+  const stockOutRecords = (_appCache && _appCache.stockOutRecords) ? _appCache.stockOutRecords : [];
   // 读取领用单（含待出库）
-  const requisitions = JSON.parse(localStorage.getItem('requisitions') || '[]');
+  const requisitions = (_appCache && _appCache.requisitions) ? _appCache.requisitions : [];
 
   // 筛选指定月份的出库记录
   const filteredSO = stockOutRecords.filter(r => {
@@ -414,7 +414,7 @@ function _rptRenderDetailTable(detailRows) {
   }
 
   // 加载领用标准用于比对
-  const standards = JSON.parse(localStorage.getItem('consumptionStandards') || '[]');
+  const standards = (_appCache && _appCache.consumptionStandards) ? _appCache.consumptionStandards : [];
 
   // 按团期+场景+物品聚合
   const aggMap = {};
@@ -518,7 +518,7 @@ function exportTourReport() {
     aggMap[key].totalCost += (row.cost || 0);
   });
 
-  const standards = JSON.parse(localStorage.getItem('consumptionStandards') || '[]');
+  const standards = (_appCache && _appCache.consumptionStandards) ? _appCache.consumptionStandards : [];
   const rows = Object.values(aggMap).sort((a, b) => a.tour_date.localeCompare(b.tour_date));
 
   const header = ['团期日期', '团期名称', '使用场景', '物品名称', '类别', '出库数量', '单位', '单价', '成本', '领用标准', '状态'];

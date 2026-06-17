@@ -105,16 +105,12 @@ function loadDashboard() {
  */
 function updateKPICards() {
   // 总库存物品数
-  let inventory = [];
-  const invData = localStorage.getItem('inventory');
-  if (invData) inventory = JSON.parse(invData);
+  let inventory = _appCache.inventory ? _appCache.inventory : [];
   const totalItems = inventory.length > 0 ? inventory.length : mockData.items.length;
   document.getElementById('kpi-total-items').textContent = totalItems;
 
   // 本月入库数
-  let stockInRecords = [];
-  const siData = localStorage.getItem('stockInRecords');
-  if (siData) stockInRecords = JSON.parse(siData);
+  let stockInRecords = _appCache.stockInRecords ? _appCache.stockInRecords : [];
   const now = new Date();
   const thisMonth = now.getMonth();
   const thisYear = now.getFullYear();
@@ -127,9 +123,7 @@ function updateKPICards() {
   document.getElementById('kpi-month-in').textContent = monthInQty;
 
   // 本月出库数
-  let stockOutRecords = [];
-  const soData = localStorage.getItem('stockOutRecords');
-  if (soData) stockOutRecords = JSON.parse(soData);
+  let stockOutRecords = _appCache.stockOutRecords ? _appCache.stockOutRecords : [];
   const monthOutQty = stockOutRecords
     .filter(r => {
       const d = new Date(r.stockout_date || r.created_at);
@@ -139,9 +133,7 @@ function updateKPICards() {
   document.getElementById('kpi-month-out').textContent = monthOutQty;
 
   // 待处理采购单数
-  let purchaseOrders = [];
-  const poData = localStorage.getItem('purchaseOrders');
-  if (poData) purchaseOrders = JSON.parse(poData);
+  let purchaseOrders = _appCache.purchaseOrders ? _appCache.purchaseOrders : [];
   const pendingPurchase = purchaseOrders.filter(o => o.status === 'pending_stockin').length;
   document.getElementById('kpi-pending-purchase').textContent = pendingPurchase;
 
@@ -153,9 +145,7 @@ function updateKPICards() {
   document.getElementById('kpi-low-stock').textContent = items.filter(item => item.stock < (item.safety_stock || 10)).length;
 
   // 待确认出库
-  let reqList = [];
-  const rqData = localStorage.getItem('requisitions');
-  if (rqData) reqList = JSON.parse(rqData);
+  let reqList = _appCache.requisitions ? _appCache.requisitions : [];
   const pendingOutbound = reqList.filter(r => r.status === 'pending_outbound').length;
   const pendingOutboundEl = document.getElementById('kpi-pending-outbound');
   if (pendingOutboundEl) pendingOutboundEl.textContent = pendingOutbound;
@@ -316,17 +306,14 @@ async function loadInventory() {
     items = [];
   }
 
-  // 若云端没数据则读取 localStorage
+  // 若云端没数据则读取 _appCache
   if (!items || items.length === 0) {
-    const inventoryData = localStorage.getItem('inventory');
-    if (inventoryData) items = JSON.parse(inventoryData);
+    items = _appCache.inventory ? _appCache.inventory.slice() : [];
   } else {
-    // 合并本地库存（入库生成的本地物品可能云端还没有）
+    // 合并本地缓存物品（入库生成的本地物品可能云端还没有）
     try {
-      const localData = localStorage.getItem('inventory');
-      if (localData) {
-        const localItems = JSON.parse(localData);
-        localItems.forEach(function(localItem) {
+      const localItems = _appCache.inventory ? _appCache.inventory : [];
+      localItems.forEach(function(localItem) {
           // 如果 Supabase 结果中不存在该物品（按 name+code 匹配），则追加
           var exists = items.some(function(si) {
             return si.code && localItem.code && si.code === localItem.code;
@@ -335,7 +322,6 @@ async function loadInventory() {
           });
           if (!exists) items.push(localItem);
         });
-      }
     } catch(e) { console.warn('合并本地库存失败', e.message); }
   }
 
@@ -453,7 +439,7 @@ async function loadInventory() {
   // 构建采购中数量映射：按物品名称汇总所有待入库采购单的数量
   const _pendingMap = {};
   try {
-    const _poData = JSON.parse(localStorage.getItem('purchaseOrders') || '[]');
+    const _poData = _appCache.purchaseOrders ? _appCache.purchaseOrders : [];
     _poData.filter(po => po.status === 'pending_stockin').forEach(po => {
       (po.items || []).forEach(it => {
         const key = it.name || '';
@@ -524,6 +510,20 @@ async function loadInventory() {
         </div>
         <div class="table-scroll">
           <table class="data-table">
+            <colgroup>
+              ${_invBatchMode ? '<col style="width:36px;">' : ''}
+              <col style="width:11%;">
+              <col style="width:17%;">
+              <col style="width:8%;">
+              <col style="width:9%;">
+              <col style="width:6%;">
+              <col style="width:9%;">
+              <col style="width:7%;">
+              <col style="width:9%;">
+              <col style="width:8%;">
+              <col style="width:8%;">
+              <col style="width:8%;">
+            </colgroup>
             <thead>
               <tr>
                 ${checkboxTh}
@@ -753,7 +753,7 @@ function _saveInvSupplement() {
   var container = document.getElementById('inventory-container');
   if (!container) return;
 
-  var inventory = JSON.parse(localStorage.getItem('inventory') || '[]');
+  var inventory = _appCache.inventory ? JSON.parse(JSON.stringify(_appCache.inventory)) : [];
   var changedCount = 0;
 
   [].forEach.call(container.querySelectorAll('.supp-edit-cat'), function(catEl) {
@@ -788,7 +788,7 @@ function _saveInvSupplement() {
   });
 
   if (changedCount > 0) {
-    localStorage.setItem('inventory', JSON.stringify(inventory));
+    _appCache.inventory = inventory;
     showToast('已保存 ' + changedCount + ' 项补充信息，物品按新分类重新排列', 'success');
   } else {
     showToast('未检测到修改', 'info');
@@ -810,7 +810,7 @@ function _showPendingPopover(el, itemName) {
   // 关闭已有气泡
   _closePendingPopover();
 
-  const poData = JSON.parse(localStorage.getItem('purchaseOrders') || '[]');
+  const poData = _appCache.purchaseOrders ? _appCache.purchaseOrders : [];
   const pending = [];
   poData.filter(po => po.status === 'pending_stockin').forEach(po => {
     (po.items || []).forEach(it => {
@@ -1057,8 +1057,8 @@ function _populateCategorySelect(selectEl) {
  * 编辑物品（支持手工调整并生成调整记录）
  */
 function editItem(itemId) {
-  // 从 localStorage 中查找（兼容 mockData 查找作为兜底）
-  const inventory = JSON.parse(localStorage.getItem('inventory') || '[]');
+  // 从 _appCache 中查找（兼容 mockData 查找作为兜底）
+  const inventory = _appCache.inventory ? _appCache.inventory : [];
   let item = inventory.find(i => String(i.id) === String(itemId));
   if (!item && typeof mockData !== 'undefined') {
     item = mockData.items.find(i => String(i.id) === String(itemId));
@@ -1113,12 +1113,12 @@ function editItem(itemId) {
   deleteBtn.parentNode.replaceChild(newDeleteBtn, deleteBtn);
   newDeleteBtn.addEventListener('click', function() {
     if (confirm('确认要删除 "' + (item.name || '') + '" 吗？此操作不可恢复！')) {
-      // 从 localStorage 删除
-      var inv = JSON.parse(localStorage.getItem('inventory') || '[]');
+      // 从 _appCache 删除
+      var inv = _appCache.inventory ? _appCache.inventory.slice() : [];
       var idx = inv.findIndex(function(i) { return String(i.id) === String(item.id); });
       if (idx >= 0) {
         inv.splice(idx, 1);
-        localStorage.setItem('inventory', JSON.stringify(inv));
+        _appCache.inventory = inv;
       }
       // 从 mockData 删除
       if (typeof mockData !== 'undefined') {
@@ -1152,15 +1152,15 @@ function editItem(itemId) {
       item.safety_stock = newSafety;
       item.unit_price = Number(form.elements['unit_price']?.value || 0);
 
-      // 写回 localStorage（兼顾 mockData）
-      const inv = JSON.parse(localStorage.getItem('inventory') || '[]');
+      // 写回 _appCache
+      const inv = _appCache.inventory ? _appCache.inventory.slice() : [];
       const idx = inv.findIndex(i => String(i.id) === String(item.id));
       if (idx >= 0) {
         inv[idx] = item;
       } else {
         inv.push(item);
       }
-      localStorage.setItem('inventory', JSON.stringify(inv));
+      _appCache.inventory = inv;
       // 同步更新 mockData（兼容旧代码）
       if (typeof mockData !== 'undefined') {
         const mi = mockData.items.findIndex(i => String(i.id) === String(item.id));
@@ -1178,9 +1178,9 @@ function editItem(itemId) {
         created_by: (getCurrentUser() ? getCurrentUser().username : 'system'),
         created_at: new Date().toISOString()
       };
-      const arr = JSON.parse(localStorage.getItem('inventoryAdjustments') || '[]');
+      const arr = _appCache.inventoryAdjustments ? _appCache.inventoryAdjustments.slice() : [];
       arr.push(adj);
-      localStorage.setItem('inventoryAdjustments', JSON.stringify(arr));
+      _appCache.inventoryAdjustments = arr;
 
       loadInventory();
       closeModal();
@@ -1421,7 +1421,7 @@ function _kpiRenderContent(type, body) {
 
 /* 总库存物品 */
 function _kpiRenderTotalItems(body) {
-  let inventory = JSON.parse(localStorage.getItem('inventory') || '[]');
+  let inventory = _appCache.inventory ? _appCache.inventory : [];
   if (inventory.length === 0 && typeof mockData !== 'undefined') inventory = mockData.items;
   if (inventory.length === 0) { body.innerHTML = '<div class="expand-empty">暂无库存数据</div>'; return; }
 
@@ -1444,7 +1444,7 @@ function _kpiRenderTotalItems(body) {
 
 /* 本月入库 */
 function _kpiRenderMonthIn(body) {
-  const records = JSON.parse(localStorage.getItem('stockInRecords') || '[]');
+  const records = _appCache.stockInRecords ? _appCache.stockInRecords : [];
   const now = new Date();
   const monthRecords = records.filter(r => {
     const d = new Date(r.stockin_date || r.created_at);
@@ -1471,7 +1471,7 @@ function _kpiRenderMonthIn(body) {
 
 /* 本月出库 */
 function _kpiRenderMonthOut(body) {
-  const records = JSON.parse(localStorage.getItem('stockOutRecords') || '[]');
+  const records = _appCache.stockOutRecords ? _appCache.stockOutRecords : [];
   const now = new Date();
   const monthRecords = records.filter(r => {
     const d = new Date(r.stockout_date || r.created_at);
@@ -1498,7 +1498,7 @@ function _kpiRenderMonthOut(body) {
 
 /* 待处理采购单 */
 function _kpiRenderPendingPurchase(body) {
-  const orders = JSON.parse(localStorage.getItem('purchaseOrders') || '[]');
+  const orders = _appCache.purchaseOrders ? _appCache.purchaseOrders : [];
   const pending = orders.filter(o => o.status === 'pending_stockin')
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
@@ -1527,7 +1527,7 @@ function _kpiRenderPendingPurchase(body) {
 
 /* 低库存预警 */
 function _kpiRenderLowStock(body) {
-  let inventory = JSON.parse(localStorage.getItem('inventory') || '[]');
+  let inventory = _appCache.inventory ? _appCache.inventory : [];
   if (inventory.length === 0 && typeof mockData !== 'undefined') inventory = mockData.items;
   const lowItems = inventory.filter(item => item.stock < (item.safety_stock || 10))
     .sort((a, b) => a.stock - b.stock);
@@ -1592,7 +1592,7 @@ function _kpiSaveSafetyStock() {
   const inputs = document.querySelectorAll('.kpi-safety-input');
   if (inputs.length === 0) return;
 
-  let inventory = JSON.parse(localStorage.getItem('inventory') || '[]');
+  let inventory = _appCache.inventory ? _appCache.inventory.slice() : [];
   if (inventory.length === 0 && typeof mockData !== 'undefined') inventory = JSON.parse(JSON.stringify(mockData.items));
   let changed = 0;
 
@@ -1607,7 +1607,7 @@ function _kpiSaveSafetyStock() {
   });
 
   if (changed > 0) {
-    localStorage.setItem('inventory', JSON.stringify(inventory));
+    _appCache.inventory = inventory;
     // 刷新 KPI 和当前面板
     updateKPICards();
     _kpiRenderLowStock(document.getElementById('kpi-expand-body'));
@@ -1728,7 +1728,7 @@ function _kpiFillPurchaseForm(items) {
 
 /* 待确认出库 */
 function _kpiRenderPendingOutbound(body) {
-  const reqs = JSON.parse(localStorage.getItem('requisitions') || '[]');
+  const reqs = _appCache.requisitions ? _appCache.requisitions : [];
   const pending = reqs.filter(r => r.status === 'pending_outbound')
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 

@@ -179,13 +179,14 @@ function removeSupplierGroup(groupId) {
 }
 
 /**
- * 从localStorage加载类别计数器
+ * 加载类别计数器（内存缓存，由Supabase管理编码）
  */
 function loadCategoryCounters() {
-  // 遍历所有已知的类别，加载它们的计数器
+  // 初始化类别计数器，Supabase负责编码生成，本地仅做内存缓存
   categories.forEach(cat => {
-    const counterKey = `categoryCounter_${cat.code}`;
-    categoryCodeCounters[cat.code] = parseInt(localStorage.getItem(counterKey) || '1');
+    if (!categoryCodeCounters[cat.code]) {
+      categoryCodeCounters[cat.code] = 1;
+    }
   });
 }
 
@@ -594,12 +595,11 @@ async function submitPurchaseOrder() {
   if (typeof SupaDB !== 'undefined' && SupaDB.createPurchaseOrder) {
     try {
       const created = await SupaDB.createPurchaseOrder(purchaseOrder);
-      // 更新本地缓存与 UI
-      try {
-        let local = JSON.parse(localStorage.getItem('purchaseOrders') || '[]');
-        local.unshift(created);
-        localStorage.setItem('purchaseOrders', JSON.stringify(local));
-      } catch(e) { console.warn('更新本地 purchaseOrders 缓存失败', e.message); }
+      // 更新内存缓存
+      if (typeof _appCache !== 'undefined') {
+        if (!Array.isArray(_appCache.purchaseOrders)) _appCache.purchaseOrders = [];
+        _appCache.purchaseOrders.unshift(created);
+      }
 
       closeModal();
       loadPurchaseOrders();
@@ -645,21 +645,20 @@ function generatePurchaseCode() {
 }
 
 /**
- * 保存采购单数据到本地存储
+ * 保存采购单数据到内存缓存（不再写入 localStorage）
  */
 function savePurchaseOrders() {
-  localStorage.setItem('purchaseOrders', JSON.stringify(purchaseOrders));
-  console.log('采购单已保存，总数:', purchaseOrders.length);
+  if (typeof _appCache !== 'undefined') {
+    _appCache.purchaseOrders = purchaseOrders.slice();
+  }
+  console.log('采购单已更新，总数:', purchaseOrders.length);
 }
 
 /**
- * 从localStorage加载类别数据
+ * 从内存缓存加载类别数据（不再读取 localStorage）
  */
 function loadCategoriesFromStorage() {
-  const data = localStorage.getItem('categories');
-  if (data) {
-    categories = JSON.parse(data);
-  }
+  categories = (typeof _appCache !== 'undefined' && _appCache.categories) ? _appCache.categories.slice() : [];
   // 如果没有任何类别，初始化默认类别（新体系：循环使用类/消耗类/其他）
   if (categories.length === 0) {
     categories = [
@@ -667,7 +666,7 @@ function loadCategoriesFromStorage() {
       { code: 'HM', name: '消耗类', scenario: '通用', remark: '一次性消耗品', created_at: new Date().toISOString() },
       { code: 'QT', name: '其他', scenario: '通用', remark: '其他类别物品', created_at: new Date().toISOString() }
     ];
-    localStorage.setItem('categories', JSON.stringify(categories));
+    if (typeof _appCache !== 'undefined') _appCache.categories = categories.slice();
   } else {
     // 迁移：旧体系（饮品/食品/日用品/办公用品）→ 新体系
     const oldNames = ['饮品', '食品', '日用品', '办公用品'];
@@ -689,14 +688,14 @@ function loadCategoriesFromStorage() {
       categories.forEach(c => {
         if (!c.scenario) c.scenario = '通用';
       });
-      localStorage.setItem('categories', JSON.stringify(categories));
+      if (typeof _appCache !== 'undefined') _appCache.categories = categories.slice();
       console.log('品类体系已迁移：追加新默认类别');
     } else if (!hasNewDefaults) {
       // 没有旧默认也没有新默认（纯自定义），补充 scenario 字段
       categories.forEach(c => {
         if (!c.scenario) c.scenario = '通用';
       });
-      localStorage.setItem('categories', JSON.stringify(categories));
+      if (typeof _appCache !== 'undefined') _appCache.categories = categories.slice();
     }
   }
   // 加载领用标准
@@ -733,7 +732,7 @@ function renderCategoryList() {
   }
 
   // 统计每个品类的库存物品数
-  let inventory = JSON.parse(localStorage.getItem('inventory') || '[]');
+  let inventory = (typeof _appCache !== 'undefined' && _appCache.inventory) ? _appCache.inventory : [];
   if (inventory.length === 0 && typeof mockData !== 'undefined') inventory = mockData.items;
   const itemCountMap = {};
   inventory.forEach(item => {
@@ -796,7 +795,7 @@ function _showCategoryItems(catName) {
   titleEl._currentCat = catName;
   titleEl.textContent = `📁 ${catName} — 分类明细`;
 
-  let inventory = JSON.parse(localStorage.getItem('inventory') || '[]');
+  let inventory = (typeof _appCache !== 'undefined' && _appCache.inventory) ? _appCache.inventory : [];
   if (inventory.length === 0 && typeof mockData !== 'undefined') inventory = mockData.items;
   const catItems = inventory.filter(item => (item.category || '未分类') === catName);
 
@@ -851,7 +850,12 @@ function editCategory(index) {
         return;
       }
       cat.name = newName.trim();
-      localStorage.setItem('categories', JSON.stringify(categories));
+      if (typeof _appCache !== 'undefined') _appCache.categories = categories.slice();
+      if (typeof SupaDB !== 'undefined' && SupaDB.updateCategory) {
+        SupaDB.updateCategory(cat.id, cat.name).catch(function(e) {
+          console.warn('品类更新同步到Supabase失败:', e.message);
+        });
+      }
       renderCategoryList();
       refreshAllCategoryDropdowns();
       showToast(`品类已更新为"${newName.trim()}"`, 'success');
@@ -867,24 +871,23 @@ function deleteCategory(index) {
   if (!cat) return;
   showConfirm(`确定删除品类"${cat.name}"吗？`, function() {
     categories.splice(index, 1);
-    localStorage.setItem('categories', JSON.stringify(categories));
+    if (typeof _appCache !== 'undefined') _appCache.categories = categories.slice();
+    if (typeof SupaDB !== 'undefined' && SupaDB.deleteCategory && cat.id) {
+      SupaDB.deleteCategory(cat.id).catch(function(e) {
+        console.warn('品类删除同步到Supabase失败:', e.message);
+      });
+    }
     renderCategoryList();
     refreshAllCategoryDropdowns();
   });
 }
 
 /**
- * 从本地存储加载采购单数据
+ * 从_appCache加载采购单数据
  */
 function loadPurchaseOrdersData() {
-  const data = localStorage.getItem('purchaseOrders');
-  console.log('从localStorage读取采购单数据:', data ? '有数据' : '无数据');
-  if (data) {
-    purchaseOrders = JSON.parse(data);
-    console.log('解析后的采购单数量:', purchaseOrders.length);
-  } else {
-    purchaseOrders = [];
-  }
+  purchaseOrders = (_appCache && _appCache.purchaseOrders) ? _appCache.purchaseOrders : [];
+  console.log('从_appCache读取采购单数据, 数量:', purchaseOrders.length);
 }
 
 /**
@@ -1291,33 +1294,22 @@ async function executeStockIn(order) {
     try {
       const inserted = await SupaDB.confirmStockIn(order.id, stockInPayload);
       // 成功后刷新列表和记录
+      // 刷新内存缓存
       try {
-        // 更新本地缓存（乐观）
-        let localPOs = JSON.parse(localStorage.getItem('purchaseOrders') || '[]');
-        localPOs = localPOs.map(p => (p.code === order.code ? Object.assign({}, p, { status: 'stockin_completed' }) : p));
-        localStorage.setItem('purchaseOrders', JSON.stringify(localPOs));
-      } catch(e){console.warn('更新本地采购单缓存失败', e.message)}
-      // 同步保存到本地 stockInRecords + 生成库存明细
+        if (typeof _appCache !== 'undefined') {
+          if (Array.isArray(_appCache.purchaseOrders)) {
+            _appCache.purchaseOrders = _appCache.purchaseOrders.map(p => (p.code === order.code ? Object.assign({}, p, { status: 'stockin_completed' }) : p));
+          }
+          purchaseOrders = _appCache.purchaseOrders || [];
+        }
+      } catch(e){console.warn('更新采购单缓存失败', e.message)}
+      // 刷新入库记录缓存
       try {
-        var siRecord = {
-          id: Date.now(),
-          code: inserted.code || ('SI' + Date.now()),
-          purchase_order_id: order.id,
-          purchase_order_code: order.code,
-          stockin_date: stockinDate,
-          batch_code: inserted.batch_code || batchCode,
-          items: stockinItems,
-          total_quantity: stockInPayload.total_quantity,
-          total_amount: stockInPayload.total_amount,
-          status: 'completed',
-          confirmed_by: inserted.confirmed_by || getCurrentUser().name,
-          confirmed_at: inserted.confirmed_at || new Date().toISOString(),
-          remark: remark,
-          created_at: new Date().toISOString()
-        };
-        saveStockInRecord(siRecord);
-        generateInventoryFromStockIn(siRecord);
-      } catch(e){console.warn('保存本地入库记录失败', e.message)}
+        if (typeof refreshData === 'function') {
+          refreshData('stockInRecords');
+          refreshData('inventory');
+        }
+      } catch(e){console.warn('刷新缓存失败', e.message)}
 
       closeModal();
       loadPurchaseOrders();
@@ -1380,13 +1372,9 @@ async function executeStockIn(order) {
  * 保存入库记录
  */
 function saveStockInRecord(record) {
-  let records = [];
-  const data = localStorage.getItem('stockInRecords');
-  if (data) {
-    records = JSON.parse(data);
-  }
+  let records = (typeof _appCache !== 'undefined' && _appCache.stockInRecords) ? _appCache.stockInRecords.slice() : [];
   records.push(record);
-  localStorage.setItem('stockInRecords', JSON.stringify(records));
+  if (typeof _appCache !== 'undefined') _appCache.stockInRecords = records;
 }
 
 /**
@@ -1394,11 +1382,7 @@ function saveStockInRecord(record) {
  */
 function generateInventoryFromStockIn(stockInRecord) {
   // 获取现有库存数据
-  let inventory = [];
-  const data = localStorage.getItem('inventory');
-  if (data) {
-    inventory = JSON.parse(data);
-  }
+  let inventory = (typeof _appCache !== 'undefined' && _appCache.inventory) ? _appCache.inventory.slice() : [];
 
   // 为每个入库物品创建或更新库存记录
   stockInRecord.items.forEach(item => {
@@ -1424,20 +1408,20 @@ function generateInventoryFromStockIn(stockInRecord) {
         name: item.name,
         brand: item.brand || '',
         model: item.model || '',
-        category: '未分类', // 需要后续分类
+        category: '未分类',
         stock: item.actual_quantity,
         unit: item.unit,
         safety_stock: 10,
         last_stockin_date: stockInRecord.stockin_date,
         last_stockin_batch: stockInRecord.batch_code,
-        source: 'purchase', // 标记来源为采购
+        source: 'purchase',
         created_at: new Date().toISOString()
       });
     }
   });
 
-  // 保存库存数据
-  localStorage.setItem('inventory', JSON.stringify(inventory));
+  // 更新内存缓存
+  if (typeof _appCache !== 'undefined') _appCache.inventory = inventory;
   
   console.log('库存明细已更新');
 }
@@ -1789,7 +1773,7 @@ function executeImport() {
 
   // 预处理：确保类别/品牌/型号存在于系统中；若系统内无该物品则创建空库存记录（stock=0）以便后续同步
   try {
-    let inventory = JSON.parse(localStorage.getItem('inventory') || '[]');
+    let inventory = (typeof _appCache !== 'undefined' && _appCache.inventory) ? _appCache.inventory.slice() : [];
 
     importData.forEach(it => {
       // 类别自动创建
@@ -1821,8 +1805,10 @@ function executeImport() {
     });
 
     // 保存可能新增的类别和 inventory
-    localStorage.setItem('categories', JSON.stringify(categories));
-    localStorage.setItem('inventory', JSON.stringify(inventory));
+    if (typeof _appCache !== 'undefined') {
+      _appCache.categories = categories.slice();
+      _appCache.inventory = inventory.slice();
+    }
   } catch (e) { console.warn('预创建条目失败', e); }
 
   // 按采购日期和采购人分组
@@ -1888,7 +1874,7 @@ function executeImport() {
 function generateItemCodeByCategory(categoryCode) {
   // 初始化该类别的计数器（如果不存在）
   if (!categoryCodeCounters[categoryCode]) {
-    categoryCodeCounters[categoryCode] = parseInt(localStorage.getItem(`categoryCounter_${categoryCode}`) || '1');
+    categoryCodeCounters[categoryCode] = 1;
   }
   
   const counter = categoryCodeCounters[categoryCode];
@@ -1896,7 +1882,6 @@ function generateItemCodeByCategory(categoryCode) {
   
   // 更新计数器
   categoryCodeCounters[categoryCode]++;
-  localStorage.setItem(`categoryCounter_${categoryCode}`, categoryCodeCounters[categoryCode].toString());
   
   return code;
 }
@@ -1905,12 +1890,11 @@ function generateItemCodeByCategory(categoryCode) {
  * 生成商品编码（旧版，保留兼容）
  */
 function generateItemCode() {
-  // 从localStorage获取计数器
-  let counter = parseInt(localStorage.getItem('itemCodeCounter') || '1');
+  // 使用内存计数器，不再依赖localStorage
+  if (typeof window._itemCodeCounter === 'undefined') window._itemCodeCounter = 1;
+  const counter = window._itemCodeCounter;
   const code = `SKU${String(counter).padStart(5, '0')}`;
-  counter++;
-  localStorage.setItem('itemCodeCounter', counter.toString());
-  itemCodeCounter = counter; // 更新内存中的计数器
+  window._itemCodeCounter++;
   return code;
 }
 
@@ -1957,8 +1941,8 @@ function autoCreateCategory(categoryName) {
     created_at: new Date().toISOString()
   });
   
-  // 保存到localStorage
-  localStorage.setItem('categories', JSON.stringify(categories));
+  // 保存到内存缓存
+  if (typeof _appCache !== 'undefined') _appCache.categories = categories.slice();
   
   // 同步到库存分类
   syncCategoryToInventory(codePrefix, categoryName);
@@ -2039,8 +2023,8 @@ function saveNewCategory() {
     created_at: new Date().toISOString()
   });
   
-  // 保存到localStorage
-  localStorage.setItem('categories', JSON.stringify(categories));
+  // 保存到内存缓存
+  if (typeof _appCache !== 'undefined') _appCache.categories = categories.slice();
   
   // 同步到库存分类
   syncCategoryToInventory(code, name);
@@ -2061,21 +2045,12 @@ function saveNewCategory() {
  * 同步类别到库存分类
  */
 function syncCategoryToInventory(code, name) {
-  // 这里可以调用库存管理模块的API
-  // 暂时保存在localStorage中
-  let inventoryCategories = [];
-  const data = localStorage.getItem('inventoryCategories');
-  if (data) {
-    inventoryCategories = JSON.parse(data);
-  }
-  
-  if (!inventoryCategories.find(c => c.name === name)) {
-    inventoryCategories.push({
-      code: code,
-      name: name,
-      created_at: new Date().toISOString()
-    });
-    localStorage.setItem('inventoryCategories', JSON.stringify(inventoryCategories));
+  // 同步到_appCache中的库存分类
+  if (typeof _appCache !== 'undefined') {
+    if (!_appCache.inventoryCategories) _appCache.inventoryCategories = [];
+    if (!_appCache.inventoryCategories.find(c => c.name === name)) {
+      _appCache.inventoryCategories.push({ code, name, created_at: new Date().toISOString() });
+    }
   }
 }
 
@@ -2109,23 +2084,18 @@ function refreshAllCategoryDropdowns() {
  * 加载品牌型号历史记录
  */
 function loadBrandModelHistory() {
-  const brandData = localStorage.getItem('brandHistory');
-  const modelData = localStorage.getItem('modelHistory');
-  
-  if (brandData) {
-    brandHistory = JSON.parse(brandData);
-  }
-  if (modelData) {
-    modelHistory = JSON.parse(modelData);
-  }
+  brandHistory = (typeof _appCache !== 'undefined' && _appCache.brandHistory) ? _appCache.brandHistory : {};
+  modelHistory = (typeof _appCache !== 'undefined' && _appCache.modelHistory) ? _appCache.modelHistory : {};
 }
 
 /**
- * 保存品牌型号历史记录
+ * 保存品牌型号历史记录到内存缓存
  */
 function saveBrandModelHistory() {
-  localStorage.setItem('brandHistory', JSON.stringify(brandHistory));
-  localStorage.setItem('modelHistory', JSON.stringify(modelHistory));
+  if (typeof _appCache !== 'undefined') {
+    _appCache.brandHistory = JSON.parse(JSON.stringify(brandHistory));
+    _appCache.modelHistory = JSON.parse(JSON.stringify(modelHistory));
+  }
 }
 
 /**
@@ -2197,17 +2167,16 @@ function addModelToHistory(itemName, model) {
  * 加载领用标准
  */
 function loadConsumptionStandards() {
-  const data = localStorage.getItem('consumptionStandards');
-  if (data) {
-    consumptionStandards = JSON.parse(data);
-  }
+  consumptionStandards = (typeof _appCache !== 'undefined' && _appCache.consumptionStandards) ? _appCache.consumptionStandards.slice() : [];
 }
 
 /**
- * 保存领用标准到 localStorage
+ * 保存领用标准到内存缓存
  */
 function saveConsumptionStandards() {
-  localStorage.setItem('consumptionStandards', JSON.stringify(consumptionStandards));
+  if (typeof _appCache !== 'undefined') {
+    _appCache.consumptionStandards = consumptionStandards.slice();
+  }
 }
 
 /**
@@ -2262,7 +2231,7 @@ function checkOverLimit(itemName, scenario, requestedQty, tourName) {
   if (!std) return { overLimit: false, standard: null, currentTotal: 0, message: '' };
 
   // 统计同一团期同一场景下该物品已领用总量（不含已取消/已完成出库的）
-  let reqList = JSON.parse(localStorage.getItem('requisitions') || '[]');
+  let reqList = (typeof _appCache !== 'undefined' && _appCache.requisitions) ? _appCache.requisitions : [];
   let currentTotal = 0;
   reqList.forEach(req => {
     if (req.tour_name === tourName && req.scenario === scenario &&
@@ -2276,7 +2245,7 @@ function checkOverLimit(itemName, scenario, requestedQty, tourName) {
   });
 
   // 也检查已完成的出库记录
-  let soList = JSON.parse(localStorage.getItem('stockOutRecords') || '[]');
+  let soList = (typeof _appCache !== 'undefined' && _appCache.stockOutRecords) ? _appCache.stockOutRecords : [];
   soList.forEach(so => {
     if (so.tour_name === tourName && so.scenario === scenario) {
       so.items.forEach(it => {
@@ -2352,8 +2321,8 @@ function renderConsumptionStandardsPanel() {
   const isAdmin = (typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'admin');
 
   // 获取所有库存物品名用于下拉
-  let inventory = JSON.parse(localStorage.getItem('inventory') || '[]');
-  const itemNames = [...new Set(inventory.map(it => it.name).filter(Boolean))];
+  let inventory = (typeof _appCache !== 'undefined' && _appCache.inventory) ? _appCache.inventory : [];
+  const itemNames = [...new Set((inventory || []).map(it => it.name).filter(Boolean))];
   const itemOptions = itemNames.map(n => `<option value="${n}">${n}</option>`).join('');
 
   const scenarioOptions = ['列车餐车', '列车客房', '通用'].map(s =>

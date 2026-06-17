@@ -16,7 +16,7 @@
     }).join('');
     // load existing
     let store = {};
-    try { store = JSON.parse(localStorage.getItem('rolePermissions') || '{}'); } catch(e) { store = {}; }
+    try { store = (_appCache && _appCache.rolePermissions) ? _appCache.rolePermissions : {}; } catch(e) { store = {}; }
     const existing = Array.isArray(store[role]) ? store[role] : [];
     container.querySelectorAll('input[type=checkbox]').forEach(cb => { if (existing.includes(cb.dataset.perm)) cb.checked = true; });
 
@@ -29,7 +29,7 @@
         saveBtn.addEventListener('click', () => {
           const permChecks = Array.from(container.querySelectorAll('input[type=checkbox]'));
           const perms = permChecks.filter(c=>c.checked).map(c=>c.dataset.perm);
-          try { const s = JSON.parse(localStorage.getItem('rolePermissions') || '{}'); s[saveBtn._role] = perms; localStorage.setItem('rolePermissions', JSON.stringify(s)); if (typeof showToast === 'function') showToast('角色权限已保存','success'); closeModal(); renderRoleCards(); } catch(e){ console.warn('保存角色权限失败', e); if (typeof showToast === 'function') showToast('保存失败','error'); }
+          try { const s = (_appCache && _appCache.rolePermissions) ? _appCache.rolePermissions : {}; s[saveBtn._role] = perms; _appCache.rolePermissions = s; if (typeof showToast === 'function') showToast('角色权限已保存','success'); closeModal(); renderRoleCards(); } catch(e){ console.warn('保存角色权限失败', e); if (typeof showToast === 'function') showToast('保存失败','error'); }
         });
       }
     }
@@ -46,7 +46,7 @@
       if (!role) return;
       // update permission list display
       const permContainer = card.querySelector('.role-permissions');
-      const store = JSON.parse(localStorage.getItem('rolePermissions') || '{}');
+      const store = (_appCache && _appCache.rolePermissions) ? _appCache.rolePermissions : {};
       const perms = Array.isArray(store[role]) && store[role].length>0 ? store[role] : getDefaultPermsForRole(role);
       if (permContainer) {
         permContainer.innerHTML = perms.slice(0,4).map(p=>`<div class=\"permission-item\">✓ ${p}</div>`).join('') + (perms.length>4?`<div class=\"permission-item\">...等 ${perms.length} 项</div>`:'');

@@ -32,47 +32,30 @@
 
     showButtonLoading('save-user-btn', '保存中...');
     try {
+      const existingUsers = (typeof _appCache !== 'undefined' && _appCache.users) ? _appCache.users : [];
+      const existingUser = existingUsers.find(u => u.username === username);
 
-    let users = JSON.parse(localStorage.getItem('users') || '[]');
-    // check duplicate username
-    if (users.find(u => u.username === username)) {
-      // update existing
-      users = users.map(u => u.username === username ? Object.assign({}, u, { name, role, status, remark }) : u);
-    } else {
-      users.push({ id: Date.now(), username, name: name || username, role, status, remark });
-    }
-    localStorage.setItem('users', JSON.stringify(users));
-
-    // try cloud sync — 只同步当前用户名对应的记录，不再循环全量用户
-    try {
-      const sb = typeof getSupabase === 'function' ? getSupabase() : (typeof SupaDB !== 'undefined' ? SupaDB.getClient && SupaDB.getClient() : null);
-      if (sb) {
-        var currentUser = users.find(function(u) { return u.username === username; });
-        if (currentUser) {
-          // 基础字段
-          var nid = typeof currentUser.id === 'string' && currentUser.id.charAt(0) === 'u' ? Number(currentUser.id.substring(1)) : currentUser.id;
-          await sb.from('users').upsert({
-            id: nid, username: currentUser.username, name: currentUser.name,
-            role: currentUser.role,
-            is_active: (currentUser.status === 'active' || currentUser.status === undefined)
-          }, { onConflict: 'username' });
-          // 扩展字段（如表结构不支持则静默跳过）
-          var { error: extErr } = await sb.from('users').upsert({
-            id: nid, username: currentUser.username, name: currentUser.name,
-            role: currentUser.role,
-            status: currentUser.status || 'active', remark: currentUser.remark || '',
-            description: currentUser.description || '',
-            created_at: currentUser.created_at || new Date().toISOString()
-          }, { onConflict: 'username' });
-          if (extErr) { /* 扩展列不存在则跳过 */ }
-          console.log('[UserAdmin] Synced user to Supabase:', username);
-        }
+      if (existingUser) {
+        // update existing user directly via SupaDB
+        await SupaDB.updateUser(username, { name, role, status, remark });
+      } else {
+        // create new user directly via SupaDB
+        await SupaDB.createUser({
+          id: Date.now(),
+          username,
+          name: name || username,
+          role,
+          status,
+          remark
+        });
       }
-    } catch (e) { console.warn('[UserAdmin] Supabase sync failed', e.message || e); }
 
-    if (typeof loadUserList === 'function') loadUserList();
-    closeModal();
-    if (typeof showToast === 'function') showToast('账号已保存','success');
+      // refresh _appCache from Supabase after write
+      await refreshData('users');
+
+      if (typeof loadUserList === 'function') loadUserList();
+      closeModal();
+      if (typeof showToast === 'function') showToast('账号已保存','success');
     } finally {
       if (typeof hideButtonLoading === 'function') hideButtonLoading('save-user-btn');
     }
@@ -118,7 +101,7 @@
   function loadUserList() {
     const tbody = document.getElementById('users-tbody');
     if (!tbody) return;
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
+    const users = (typeof _appCache !== 'undefined' && _appCache.users) ? _appCache.users : [];
     if (!users || users.length === 0) {
       tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无用户数据</td></tr>';
       return;
@@ -169,7 +152,7 @@
       if (btn._bound) return; btn._bound = true;
       btn.addEventListener('click', (e) => {
         const username = btn.dataset.username;
-        const users = JSON.parse(localStorage.getItem('users') || '[]');
+        const users = (typeof _appCache !== 'undefined' && _appCache.users) ? _appCache.users : [];
         const user = users.find(x => x.username === username);
         openUserModal(user);
       });
@@ -179,7 +162,7 @@
       if (btn._bound) return; btn._bound = true;
       btn.addEventListener('click', (e) => {
         const username = btn.dataset.username;
-        const users = JSON.parse(localStorage.getItem('users') || '[]');
+        const users = (typeof _appCache !== 'undefined' && _appCache.users) ? _appCache.users : [];
         const user = users.find(x => x.username === username);
         openUserPermsModal(user);
       });
@@ -195,12 +178,12 @@
     }
   };
   function _doApprove(username) {
-    let users = JSON.parse(localStorage.getItem('users') || '[]');
-    users = users.map(u => u.username === username ? Object.assign({}, u, { status: 'active' }) : u);
-    localStorage.setItem('users', JSON.stringify(users));
-
-    // 同步到 Supabase
-    _syncUserToCloud(username, { status: 'active' });
+    // update user status via SupaDB directly
+    SupaDB.updateUser(username, { status: 'active' }).catch(function(e) {
+      console.warn('[UserAdmin] Supabase approve failed:', e.message);
+    });
+    // refresh _appCache after write
+    refreshData('users');
 
     loadUserList();
     if (typeof checkNotifications === 'function') checkNotifications();
@@ -216,12 +199,12 @@
     }
   };
   function _doReject(username) {
-    let users = JSON.parse(localStorage.getItem('users') || '[]');
-    users = users.filter(u => u.username !== username);
-    localStorage.setItem('users', JSON.stringify(users));
-
-    // 从 Supabase 删除
-    _syncUserToCloud(username, null, 'delete');
+    // delete user from Supabase directly
+    SupaDB.deleteUser(username).catch(function(e) {
+      console.warn('[UserAdmin] Supabase delete failed:', e.message);
+    });
+    // refresh _appCache after write
+    refreshData('users');
 
     loadUserList();
     if (typeof checkNotifications === 'function') checkNotifications();
@@ -230,12 +213,12 @@
 
   // 启用/禁用
   window.toggleUserStatus = function(username, newStatus) {
-    let users = JSON.parse(localStorage.getItem('users') || '[]');
-    users = users.map(u => u.username === username ? Object.assign({}, u, { status: newStatus }) : u);
-    localStorage.setItem('users', JSON.stringify(users));
-
-    // 同步到 Supabase
-    _syncUserToCloud(username, { status: newStatus });
+    // update user status via SupaDB directly
+    SupaDB.updateUser(username, { status: newStatus }).catch(function(e) {
+      console.warn('[UserAdmin] Supabase status change failed:', e.message);
+    });
+    // refresh _appCache after write
+    refreshData('users');
 
     loadUserList();
     if (typeof checkNotifications === 'function') checkNotifications();
@@ -243,12 +226,11 @@
     showToast('用户 ' + username + ' ' + label, 'info');
   };
 
-  // 用户变更同步到 Supabase（统一入口）
-  // mode: 'update' (默认) 或 'delete'
+  // 用户变更同步到 Supabase（保留为外部 fallback 入口）
   function _syncUserToCloud(username, data, mode) {
     mode = mode || 'update';
     try {
-      if (typeof SupaDB !== 'undefined' && SupaDB.updateUser) {
+      if (typeof SupaDB !== 'undefined') {
         if (mode === 'delete') {
           SupaDB.deleteUser(username).catch(function(e) {
             console.warn('[UserAdmin] Supabase delete failed:', e.message);
@@ -257,31 +239,6 @@
           SupaDB.updateUser(username, data).catch(function(e) {
             console.warn('[UserAdmin] Supabase update failed:', e.message);
           });
-        }
-      } else {
-        // 兜底：直接调用 supabase client
-        var sb = typeof getSupabase === 'function' ? getSupabase() : null;
-        if (sb) {
-          if (mode === 'delete') {
-            sb.from('users').delete().eq('username', username).then(function() {
-              console.log('[UserAdmin] Deleted from Supabase:', username);
-            });
-          } else {
-            // 映射 status → is_active
-            var fbUpdate = {};
-            for (var fbKey in data) {
-              if (data.hasOwnProperty(fbKey)) {
-                if (fbKey === 'status') {
-                  fbUpdate.is_active = (data[fbKey] === 'active');
-                } else {
-                  fbUpdate[fbKey] = data[fbKey];
-                }
-              }
-            }
-            sb.from('users').update(fbUpdate).eq('username', username).then(function() {
-              console.log('[UserAdmin] Updated in Supabase:', username);
-            });
-          }
         }
       }
     } catch(e) {
@@ -313,15 +270,36 @@
       container.querySelectorAll('input[type=checkbox]').forEach(cb => { if (selectedPerms.includes(cb.dataset.perm)) cb.checked = true; });
     }
 
-    // load existing user perms and role
-    let userPermStore = {};
-    try { userPermStore = JSON.parse(localStorage.getItem('userPermissions') || '{}'); } catch(e){ userPermStore = {}; }
-    const existing = Array.isArray(userPermStore[user.id]) ? userPermStore[user.id] : [];
+    // load existing user perms (async from Supabase)
+    let existing = [];
 
+    // render initial checkboxes with role defaults
     if (roleSelect) roleSelect.value = normalizeRole(user.role || 'staff');
     const base = getDefaultPermsForRole(roleSelect ? normalizeRole(roleSelect.value) : normalizeRole(user.role || 'staff'));
-    const merged = Array.from(new Set([...(base||[]), ...(existing||[])]));
-    renderPerms(merged);
+    renderPerms(base);
+
+    // async fetch actual permissions from Supabase
+    (async function() {
+      try {
+        const sb = typeof getSupabase === 'function' ? getSupabase() : null;
+        if (sb) {
+          var nid = user.id;
+          if (typeof nid === 'string' && nid.charAt(0) === 'u') {
+            var stripped = nid.substring(1);
+            var num = Number(stripped);
+            if (!isNaN(num)) nid = num;
+          }
+          const { data: permData } = await sb.from('user_permissions').select('permission').eq('user_id', nid);
+          if (permData) {
+            existing = permData.map(p => p.permission);
+            const merged = Array.from(new Set([...(base||[]), ...(existing||[])]));
+            renderPerms(merged);
+          }
+        }
+      } catch(e) {
+        console.warn('[UserAdmin] Failed to load permissions:', e.message);
+      }
+    })();
 
     // role change -> update checkboxes to role defaults + existing
     if (roleSelect && !roleSelect._boundRole) {
@@ -341,49 +319,36 @@
       newSave.addEventListener('click', async () => {
         showButtonLoading('save-user-perms-btn', '保存中...');
         try {
-        const permChecks = Array.from(container.querySelectorAll('input[type=checkbox]'));
-        const perms = permChecks.filter(c=>c.checked).map(c=>c.dataset.perm);
-        try {
-          // persist userPermissions
-          const s = JSON.parse(localStorage.getItem('userPermissions') || '{}');
-          s[user.id] = perms;
-          localStorage.setItem('userPermissions', JSON.stringify(s));
-          // update user's role in users storage
-          const users = JSON.parse(localStorage.getItem('users') || '[]');
-          const updated = users.map(u => u.id === user.id ? Object.assign({}, u, { role: normalizeRole(roleSelect ? roleSelect.value : (user.role || 'staff')) }) : u);
-          localStorage.setItem('users', JSON.stringify(updated));
+          const permChecks = Array.from(container.querySelectorAll('input[type=checkbox]'));
+          const perms = permChecks.filter(c=>c.checked).map(c=>c.dataset.perm);
 
-          // try cloud sync — 仅同步当前用户的角色和权限
+          // update user role via SupaDB directly
+          const newRole = normalizeRole(roleSelect ? roleSelect.value : (user.role || 'staff'));
+          await SupaDB.updateUser(user.username, { role: newRole });
+
+          // sync permissions via Supabase directly (no dedicated SupaDB method)
           try {
-            const sb = typeof getSupabase === 'function' ? getSupabase() : (typeof SupaDB !== 'undefined' ? SupaDB.getClient && SupaDB.getClient() : null);
+            const sb = typeof getSupabase === 'function' ? getSupabase() : null;
             if (sb) {
-              // 兼容旧格式ID：将 'u' + 时间戳 转为纯数字
-              function toNumericId(id) {
-                var n = Number(id);
-                if (!isNaN(n) && String(n) === String(id)) return n;
-                if (typeof id === 'string' && id.charAt(0) === 'u') {
-                  var stripped = id.substring(1);
-                  var num = Number(stripped);
-                  if (!isNaN(num)) return num;
-                }
-                return id;
+              // convert legacy 'u'-prefixed id to numeric
+              var nid = user.id;
+              if (typeof nid === 'string' && nid.charAt(0) === 'u') {
+                var stripped = nid.substring(1);
+                var num = Number(stripped);
+                if (!isNaN(num)) nid = num;
               }
-              // 仅同步当前用户的角色（不同步全量用户）
-              var nid = toNumericId(user.id);
-              await sb.from('users').upsert({
-                id: nid, username: user.username, name: user.name, role: normalizeRole(roleSelect ? roleSelect.value : (user.role || 'staff')),
-                is_active: (user.status === 'active')
-              }, { onConflict: 'username' });
-              // 仅同步当前用户的权限（不同步全量用户权限）
-              for (var pj = 0; pj < perms.length; pj++) {
-                var { error: permErr } = await sb.from('user_permissions').upsert({
-                  user_id: nid, permission: perms[pj]
-                }, { onConflict: 'user_id,permission' });
-                if (permErr) console.warn('[UserAdmin] 权限同步跳过:', permErr.message);
+              // delete existing permissions for this user
+              await sb.from('user_permissions').delete().eq('user_id', nid);
+              // insert new permissions
+              if (perms.length > 0) {
+                const permInserts = perms.map(p => ({ user_id: nid, permission: p }));
+                await sb.from('user_permissions').insert(permInserts);
               }
-              console.log('[UserAdmin] Synced user permissions to Supabase');
             }
-          } catch (e) { console.warn('[UserAdmin] Supabase sync failed', e.message || e); }
+          } catch (e) { console.warn('[UserAdmin] Permission sync failed:', e.message || e); }
+
+          // refresh _appCache after write
+          await refreshData('users');
 
           if (typeof showToast === 'function') showToast('用户权限已保存','success');
           if (typeof loadUserList === 'function') loadUserList();

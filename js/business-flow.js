@@ -132,7 +132,7 @@ function _bfInMonth(dateStr, range) {
 // ============== 采购 KPI ==============
 
 function _bfUpdatePurchaseKPI() {
-  const orders = JSON.parse(localStorage.getItem('purchaseOrders') || '[]');
+  const orders = (_appCache && _appCache.purchaseOrders) ? _appCache.purchaseOrders : [];
   const filtered = _bfPurchaseMonth
     ? orders.filter(po => _bfInMonth(po.order_date || po.created_at, _bfPurchaseMonth))
     : orders;
@@ -152,11 +152,11 @@ function _bfUpdatePurchaseKPI() {
 
 function _bfUpdateStockInKPI() {
   // 已完成入库记录
-  const records = JSON.parse(localStorage.getItem('stockInRecords') || '[]');
+  const records = (_appCache && _appCache.stockInRecords) ? _appCache.stockInRecords : [];
   // 待入库采购单
   let pendingPOs = [];
   try {
-    var allPOs = JSON.parse(localStorage.getItem('purchaseOrders') || '[]');
+    var allPOs = (_appCache && _appCache.purchaseOrders) ? _appCache.purchaseOrders : [];
     pendingPOs = allPOs.filter(function(o) { return o.status === 'pending_stockin'; }).map(function(o) {
       return {
         stockin_date: o.purchase_date || o.created_at || '',
@@ -186,7 +186,7 @@ function _bfUpdateStockInKPI() {
 // ============== 领用 KPI ==============
 
 function _bfUpdateRequisitionKPI() {
-  const reqs = JSON.parse(localStorage.getItem('requisitions') || '[]');
+  const reqs = (_appCache && _appCache.requisitions) ? _appCache.requisitions : [];
   const filtered = _bfReqMonth
     ? reqs.filter(r => _bfInMonth(r.apply_date || r.created_at, _bfReqMonth))
     : reqs;
@@ -199,7 +199,7 @@ function _bfUpdateRequisitionKPI() {
   // 统计超额领用次数
   let overLimitCount = 0;
   if (typeof getConsumptionStandard === 'function') {
-    const standards = JSON.parse(localStorage.getItem('consumptionStandards') || '[]');
+    const standards = (_appCache && _appCache.consumptionStandards) ? _appCache.consumptionStandards : [];
     active.forEach(req => {
       if (req.items) {
         req.items.forEach(it => {
@@ -219,7 +219,7 @@ function _bfUpdateRequisitionKPI() {
 // ============== 出库 KPI ==============
 
 function _bfUpdateStockOutKPI() {
-  const records = JSON.parse(localStorage.getItem('stockOutRecords') || '[]');
+  const records = (_appCache && _appCache.stockOutRecords) ? _appCache.stockOutRecords : [];
   const filtered = _bfStockOutMonth
     ? records.filter(r => _bfInMonth(r.stockout_date || r.confirmed_at || r.created_at, _bfStockOutMonth))
     : records;

@@ -105,9 +105,9 @@
             const created = await SupaDB.createInventoryItem(newItem);
             // 更新本地缓存与 UI（乐观更新）
             try {
-              const items = JSON.parse(localStorage.getItem('inventory') || '[]');
+              const items = (_appCache && _appCache.inventory) ? _appCache.inventory : [];
               items.unshift(created);
-              localStorage.setItem('inventory', JSON.stringify(items));
+              _appCache.inventory = items;
             } catch(e) { console.warn('更新本地 inventory 缓存失败', e.message); }
             if (typeof loadInventory === 'function') loadInventory();
             closeModal();
@@ -125,7 +125,7 @@
         if (!window.mockData) window.mockData = { items: [] };
         window.mockData.items = window.mockData.items || [];
         window.mockData.items.push(localItem);
-        try { localStorage.setItem('inventory', JSON.stringify(window.mockData.items)); } catch(e){console.warn('保存本地 inventory 失败', e.message)}
+        try { _appCache.inventory = window.mockData.items; } catch(e){console.warn('保存本地 inventory 缓存失败', e.message)}
         if (typeof loadInventory === 'function') loadInventory();
         closeModal();
         if (typeof showToast === 'function') showToast('新增物品已保存（本地）','success');
@@ -160,7 +160,7 @@
 
         askRole(function(role){
           role = role || 'staff';
-          const users = JSON.parse(localStorage.getItem('users') || '[]');
+          const users = (_appCache && _appCache.users) ? _appCache.users : [];
           const newUser = {
             id: Date.now(),
             username: username,
@@ -168,7 +168,7 @@
             role: role
           };
           users.push(newUser);
-          localStorage.setItem('users', JSON.stringify(users));
+          _appCache.users = users;
 
           // 异步同步到 Supabase（若可用）
           try {

@@ -20,19 +20,13 @@ function initStockInModule() {
  * 加载入库记录列表
  */
 function loadStockInRecords() {
-  let records = [];
-  const data = localStorage.getItem('stockInRecords');
-  if (data) {
-    records = JSON.parse(data);
-  }
+  let records = _appCache.stockInRecords || [];
 
   // 同时加载待入库的采购单（status === 'pending_stockin'）
-  const poData = localStorage.getItem('purchaseOrders');
   let pendingOrders = [];
-  if (poData) {
-    try {
-      var allPOs = JSON.parse(poData);
-      pendingOrders = allPOs.filter(function(o) { return o.status === 'pending_stockin'; }).map(function(o) {
+  try {
+    let allPOs = _appCache.purchaseOrders || [];
+    pendingOrders = allPOs.filter(function(o) { return o.status === 'pending_stockin'; }).map(function(o) {
         return {
           _isPending: true,
           code: o.code,
@@ -48,7 +42,6 @@ function loadStockInRecords() {
         };
       });
     } catch(e) { /* 静默 */ }
-  }
 
   // 合并：待入库在前，已完成在后
   var merged = pendingOrders.concat(records);
@@ -112,11 +105,7 @@ function loadStockInRecords() {
  * 查看入库详情
  */
 function viewStockInDetail(recordCode) {
-  let records = [];
-  const data = localStorage.getItem('stockInRecords');
-  if (data) {
-    records = JSON.parse(data);
-  }
+  let records = _appCache.stockInRecords || [];
 
   const record = records.find(r => r.code === recordCode);
   if (!record) {
