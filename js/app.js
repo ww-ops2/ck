@@ -310,6 +310,23 @@ async function loadInventory() {
   if (!items || items.length === 0) {
     const inventoryData = localStorage.getItem('inventory');
     if (inventoryData) items = JSON.parse(inventoryData);
+  } else {
+    // 合并本地库存（入库生成的本地物品可能云端还没有）
+    try {
+      const localData = localStorage.getItem('inventory');
+      if (localData) {
+        const localItems = JSON.parse(localData);
+        localItems.forEach(function(localItem) {
+          // 如果 Supabase 结果中不存在该物品（按 name+code 匹配），则追加
+          var exists = items.some(function(si) {
+            return si.code && localItem.code && si.code === localItem.code;
+          }) || items.some(function(si) {
+            return si.name === localItem.name && si.brand === (localItem.brand || '') && si.model === (localItem.model || '');
+          });
+          if (!exists) items.push(localItem);
+        });
+      }
+    } catch(e) { console.warn('合并本地库存失败', e.message); }
   }
 
   // 如果仍无数据，使用模拟数据
@@ -352,6 +369,17 @@ async function loadInventory() {
       if (filterStatus === 'low') return s.text === '低库存';
       if (filterStatus === 'out') return s.text === '缺货';
       return true;
+    });
+  }
+
+  // 应用模糊搜索
+  var searchText = (document.getElementById('inv-search-input')?.value || '').trim().toLowerCase();
+  if (searchText) {
+    items = items.filter(function(item) {
+      return (item.name || '').toLowerCase().includes(searchText) ||
+             (item.code || '').toLowerCase().includes(searchText) ||
+             (item.brand || '').toLowerCase().includes(searchText) ||
+             (item.model || '').toLowerCase().includes(searchText);
     });
   }
 
@@ -460,9 +488,7 @@ async function loadInventory() {
           <td>${item.brand || '-'}</td>
           <td>${item.model || '-'}</td>
           <td>${item.unit}</td>
-          <td>${canEdit
-            ? `<input type="number" class="price-inline" data-item-id="${item.id}" value="${unitPrice}" min="0" step="0.01" style="width:80px;padding:4px 6px;border:1.5px solid var(--accent);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:12px;text-align:right;">`
-            : `<span style="font-weight:500;">¥${Number(unitPrice).toFixed(2)}</span>`}</td>
+          <td style="font-weight:500;text-align:right;">¥${Number(unitPrice).toFixed(2)}</td>
           <td><span style="font-weight:600;color:${item.stock < (item.safety_stock || 10) ? 'var(--danger)' : 'var(--text-primary)'}">${item.stock}</span></td>
           <td style="font-weight:600;color:var(--accent);">¥${amount.toFixed(2)}</td>
           <td><span class="status-badge ${status.class}">${status.text}</span></td>
@@ -539,48 +565,6 @@ async function loadInventory() {
       });
     }, 50);
   }
-
-  // 绑定内联单价编辑自动保存
-  setTimeout(function() {
-    document.querySelectorAll('.price-inline').forEach(function(inp) {
-      inp.addEventListener('change', function() {
-        var itemId = this.dataset.itemId;
-        var newPrice = Number(this.value || 0);
-        var inv = JSON.parse(localStorage.getItem('inventory') || '[]');
-        var idx = inv.findIndex(function(i) { return String(i.id) === String(itemId); });
-        if (idx >= 0) {
-          inv[idx].unit_price = newPrice;
-          localStorage.setItem('inventory', JSON.stringify(inv));
-          // 同步更新 mockData
-          if (typeof mockData !== 'undefined') {
-            var mi = mockData.items.findIndex(function(i) { return String(i.id) === String(itemId); });
-            if (mi >= 0) mockData.items[mi].unit_price = newPrice;
-          }
-          // 更新当前行的金额列
-          var row = inp.closest('tr');
-          if (row) {
-            // 找到单价输入框所在的列索引，库存和金额分别在单价列之后第1和第2列
-            var priceIdx = Array.prototype.indexOf.call(row.cells, inp.parentNode || inp.closest('td'));
-            // 若直接找到 input 的父级 td 失败，通过遍历找
-            if (priceIdx < 0) {
-              for (var ci = 0; ci < row.cells.length; ci++) {
-                if (row.cells[ci].contains(inp)) { priceIdx = ci; break; }
-              }
-            }
-            if (priceIdx >= 0) {
-              var stockCell = row.cells[priceIdx + 1];  // 库存在单价后一列
-              var amtCell = row.cells[priceIdx + 2];    // 金额在单价后两列
-              if (stockCell) {
-                var stockVal = parseFloat(stockCell.textContent) || 0;
-                if (amtCell) amtCell.textContent = '¥' + (stockVal * newPrice).toFixed(2);
-              }
-            }
-          }
-          if (typeof showToast === 'function') showToast('单价已更新', 'success');
-        }
-      });
-    });
-  }, 100);
 
   // 更新仪表盘的库存物品数
   const kpiTotal = document.getElementById('kpi-total-items');
@@ -1101,6 +1085,41 @@ function editItem(itemId) {
   if (form.elements['unit_price']) form.elements['unit_price'].value = item.unit_price || 0;
 
   openModal('modal-item');
+
+  // 添加删除按钮（仅在编辑模式下显示）
+  var deleteBtn = document.getElementById('modal-item-delete-btn');
+  if (!deleteBtn) {
+    var footer = document.querySelector('#modal-item .modal-footer');
+    if (footer) {
+      deleteBtn = document.createElement('button');
+      deleteBtn.id = 'modal-item-delete-btn';
+      deleteBtn.textContent = '🗑 删除物品';
+      deleteBtn.style.cssText = 'background:var(--danger);color:#fff;border:none;border-radius:var(--sketch-r1);padding:8px 16px;cursor:pointer;font-size:13px;margin-right:auto;';
+      footer.insertBefore(deleteBtn, footer.firstChild);
+    }
+  }
+  if (deleteBtn) deleteBtn.style.display = '';
+  var newDeleteBtn = deleteBtn.cloneNode(true);
+  deleteBtn.parentNode.replaceChild(newDeleteBtn, deleteBtn);
+  newDeleteBtn.addEventListener('click', function() {
+    if (confirm('确认要删除 "' + (item.name || '') + '" 吗？此操作不可恢复！')) {
+      // 从 localStorage 删除
+      var inv = JSON.parse(localStorage.getItem('inventory') || '[]');
+      var idx = inv.findIndex(function(i) { return String(i.id) === String(item.id); });
+      if (idx >= 0) {
+        inv.splice(idx, 1);
+        localStorage.setItem('inventory', JSON.stringify(inv));
+      }
+      // 从 mockData 删除
+      if (typeof mockData !== 'undefined') {
+        var mi = mockData.items.findIndex(function(i) { return String(i.id) === String(item.id); });
+        if (mi >= 0) mockData.items.splice(mi, 1);
+      }
+      loadInventory();
+      closeModal();
+      if (typeof showToast === 'function') showToast('已删除：' + item.name, 'info');
+    }
+  });
 
   // 绑定保存（替换按钮以清除旧事件）
   const saveBtn = document.querySelector('#modal-item .modal-save');
