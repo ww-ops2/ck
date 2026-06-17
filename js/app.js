@@ -315,6 +315,12 @@ async function loadInventory() {
   // 如果仍无数据，使用模拟数据
   if (!items || items.length === 0) items = mockData.items;
 
+  // 归一化字段名：兼容 Supabase category_name 和前端 category
+  items.forEach(function(it) {
+    if (!it.category && it.category_name) it.category = it.category_name;
+    if (!it.category_name && it.category) it.category_name = it.category;
+  });
+
   // 先从全量数据构建分类下拉（不受筛选影响）
   const allCategories = {};
   items.forEach(item => {
@@ -440,6 +446,9 @@ async function loadInventory() {
 
     const rows = catItems.map(item => {
       const status = getStockStatus(item);
+      const canEdit = hasPermission('edit_inventory') || hasPermission('inventory.adjust') || hasPermission('inventory.edit');
+      const unitPrice = item.unit_price || 0;
+      const amount = (item.stock || 0) * unitPrice;
       const checkboxTd = _invBatchMode
         ? `<td><input type="checkbox" class="inv-batch-cb" data-item-id="${item.id}" data-item-name="${(item.name || '').replace(/"/g, '&quot;')}" data-item-cat="${(item.category || '').replace(/"/g, '&quot;')}" data-item-brand="${(item.brand || '').replace(/"/g, '&quot;')}" data-item-model="${(item.model || '').replace(/"/g, '&quot;')}" data-item-unit="${item.unit || ''}" data-item-code="${item.code || ''}" data-item-safety="${item.safety_stock || 10}" data-item-stock="${item.stock || 0}" checked></td>`
         : '';
@@ -451,7 +460,11 @@ async function loadInventory() {
           <td>${item.brand || '-'}</td>
           <td>${item.model || '-'}</td>
           <td>${item.unit}</td>
+          <td>${canEdit
+            ? `<input type="number" class="price-inline" data-item-id="${item.id}" value="${unitPrice}" min="0" step="0.01" style="width:80px;padding:4px 6px;border:1.5px solid var(--accent);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:12px;text-align:right;">`
+            : `<span style="font-weight:500;">¥${Number(unitPrice).toFixed(2)}</span>`}</td>
           <td><span style="font-weight:600;color:${item.stock < (item.safety_stock || 10) ? 'var(--danger)' : 'var(--text-primary)'}">${item.stock}</span></td>
+          <td style="font-weight:600;color:var(--accent);">¥${amount.toFixed(2)}</td>
           <td><span class="status-badge ${status.class}">${status.text}</span></td>
           <td style="text-align:center;">${(() => {
             const pending = _pendingMap[item.name];
@@ -460,7 +473,7 @@ async function loadInventory() {
             return `<span class="pending-qty-badge" onclick="event.stopPropagation();_showPendingPopover(this,'${(item.name || '').replace(/'/g, "\\'")}')" title="点击查看采购明细">${totalQty}</span>`;
           })()}</td>
           <td>
-            ${ (hasPermission('edit_inventory') || hasPermission('inventory.adjust') || hasPermission('inventory.edit')) ? `<button class="btn btn-sm" onclick="editItem(${item.id})">编辑</button>` : '<span style="color:var(--text-muted);font-size:12px;">-</span>'}
+            ${ canEdit ? `<button class="btn btn-sm" onclick="editItem(${item.id})">编辑</button>` : '<span style="color:var(--text-muted);font-size:12px;">-</span>'}
           </td>
         </tr>`;
     }).join('');
@@ -483,7 +496,9 @@ async function loadInventory() {
                 <th>品牌</th>
                 <th>型号</th>
                 <th>单位</th>
+                <th style="text-align:right;">单价</th>
                 <th>库存</th>
+                <th style="text-align:right;">金额</th>
                 <th>状态</th>
                 <th style="text-align:center;">采购中</th>
                 <th>操作</th>
@@ -524,6 +539,48 @@ async function loadInventory() {
       });
     }, 50);
   }
+
+  // 绑定内联单价编辑自动保存
+  setTimeout(function() {
+    document.querySelectorAll('.price-inline').forEach(function(inp) {
+      inp.addEventListener('change', function() {
+        var itemId = this.dataset.itemId;
+        var newPrice = Number(this.value || 0);
+        var inv = JSON.parse(localStorage.getItem('inventory') || '[]');
+        var idx = inv.findIndex(function(i) { return String(i.id) === String(itemId); });
+        if (idx >= 0) {
+          inv[idx].unit_price = newPrice;
+          localStorage.setItem('inventory', JSON.stringify(inv));
+          // 同步更新 mockData
+          if (typeof mockData !== 'undefined') {
+            var mi = mockData.items.findIndex(function(i) { return String(i.id) === String(itemId); });
+            if (mi >= 0) mockData.items[mi].unit_price = newPrice;
+          }
+          // 更新当前行的金额列
+          var row = inp.closest('tr');
+          if (row) {
+            // 找到单价输入框所在的列索引，库存和金额分别在单价列之后第1和第2列
+            var priceIdx = Array.prototype.indexOf.call(row.cells, inp.parentNode || inp.closest('td'));
+            // 若直接找到 input 的父级 td 失败，通过遍历找
+            if (priceIdx < 0) {
+              for (var ci = 0; ci < row.cells.length; ci++) {
+                if (row.cells[ci].contains(inp)) { priceIdx = ci; break; }
+              }
+            }
+            if (priceIdx >= 0) {
+              var stockCell = row.cells[priceIdx + 1];  // 库存在单价后一列
+              var amtCell = row.cells[priceIdx + 2];    // 金额在单价后两列
+              if (stockCell) {
+                var stockVal = parseFloat(stockCell.textContent) || 0;
+                if (amtCell) amtCell.textContent = '¥' + (stockVal * newPrice).toFixed(2);
+              }
+            }
+          }
+          if (typeof showToast === 'function') showToast('单价已更新', 'success');
+        }
+      });
+    });
+  }, 100);
 
   // 更新仪表盘的库存物品数
   const kpiTotal = document.getElementById('kpi-total-items');
@@ -613,10 +670,10 @@ function _renderSupplementTable(container, items) {
     catOptions = '<option value="未分类">未分类</option><option value="循环使用类">循环使用类</option><option value="消耗类">消耗类</option>';
   }
 
-  var html = '<div style="margin-bottom:12px;padding:10px 16px;background:var(--accent-glow);border-radius:8px;font-size:13px;color:var(--text-secondary);">✏️ 补充信息模式 — 可编辑分类、品牌、型号、单位，库存数量不可修改</div>';
+  var html = '<div style="margin-bottom:12px;padding:10px 16px;background:var(--accent-glow);border-radius:8px;font-size:13px;color:var(--text-secondary);">✏️ 补充信息模式 — 可编辑分类、品牌、型号、单位、单价，库存数量不可修改</div>';
   html += '<div class="table-scroll"><table class="data-table" id="supplement-table"><thead><tr>';
   html += '<th style="width:30px;">#</th><th>物品编号</th><th>物品名称</th>';
-  html += '<th style="min-width:120px;">分类</th><th style="min-width:100px;">品牌</th><th style="min-width:100px;">型号</th><th style="min-width:70px;">单位</th>';
+  html += '<th style="min-width:120px;">分类</th><th style="min-width:100px;">品牌</th><th style="min-width:100px;">型号</th><th style="min-width:70px;">单位</th><th style="min-width:80px;">单价</th>';
   html += '<th>库存</th><th>状态</th>';
   html += '</tr></thead><tbody>';
 
@@ -630,6 +687,7 @@ function _renderSupplementTable(container, items) {
     html += '<td><input type="text" class="supp-edit-brand" data-item-id="' + item.id + '" value="' + (item.brand || '').replace(/"/g, '&quot;') + '" placeholder="品牌" style="width:100%;padding:6px 8px;border:1.5px solid var(--accent);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:12px;"></td>';
     html += '<td><input type="text" class="supp-edit-model" data-item-id="' + item.id + '" value="' + (item.model || '').replace(/"/g, '&quot;') + '" placeholder="型号" style="width:100%;padding:6px 8px;border:1.5px solid var(--accent);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:12px;"></td>';
     html += '<td><input type="text" class="supp-edit-unit" data-item-id="' + item.id + '" value="' + (item.unit || '').replace(/"/g, '&quot;') + '" placeholder="单位" style="width:100%;padding:6px 8px;border:1.5px solid var(--accent);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:12px;"></td>';
+    html += '<td><input type="number" class="supp-edit-price" data-item-id="' + item.id + '" value="' + (item.unit_price || 0) + '" min="0" step="0.01" placeholder="0.00" style="width:100%;padding:6px 8px;border:1.5px solid var(--accent);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:12px;text-align:right;"></td>';
     html += '<td><span style="font-weight:600;color:' + (item.stock < (item.safety_stock || 10) ? 'var(--danger)' : 'var(--text-primary)') + '">' + item.stock + '</span></td>';
     html += '<td><span class="status-badge ' + status.class + '">' + status.text + '</span></td>';
     html += '</tr>';
@@ -676,17 +734,20 @@ function _suppUpdateChangeCount() {
     var brandEl = container.querySelector('.supp-edit-brand[data-item-id="' + item.id + '"]');
     var modelEl = container.querySelector('.supp-edit-model[data-item-id="' + item.id + '"]');
     var unitEl = container.querySelector('.supp-edit-unit[data-item-id="' + item.id + '"]');
-    if (!catEl && !brandEl && !modelEl && !unitEl) return;
+    var priceEl = container.querySelector('.supp-edit-price[data-item-id="' + item.id + '"]');
+    if (!catEl && !brandEl && !modelEl && !unitEl && !priceEl) return;
 
     var newCat = catEl ? catEl.value : (item.category || '');
     var newBrand = brandEl ? brandEl.value : (item.brand || '');
     var newModel = modelEl ? modelEl.value : (item.model || '');
     var newUnit = unitEl ? unitEl.value : (item.unit || '');
+    var newPrice = priceEl ? Number(priceEl.value || 0) : (item.unit_price || 0);
 
     if (newCat !== (item.category || '') ||
         newBrand !== (item.brand || '') ||
         newModel !== (item.model || '') ||
-        newUnit !== (item.unit || '')) {
+        newUnit !== (item.unit || '') ||
+        newPrice !== (item.unit_price || 0)) {
       changed++;
     }
   });
@@ -706,6 +767,7 @@ function _saveInvSupplement() {
     var brandEl = container.querySelector('.supp-edit-brand[data-item-id="' + itemId + '"]');
     var modelEl = container.querySelector('.supp-edit-model[data-item-id="' + itemId + '"]');
     var unitEl = container.querySelector('.supp-edit-unit[data-item-id="' + itemId + '"]');
+    var priceEl = container.querySelector('.supp-edit-price[data-item-id="' + itemId + '"]');
 
     var item = inventory.find(function(i) { return Number(i.id) === Number(itemId); });
     if (!item) return;
@@ -714,15 +776,19 @@ function _saveInvSupplement() {
     var newBrand = brandEl ? brandEl.value.trim() : '';
     var newModel = modelEl ? modelEl.value.trim() : '';
     var newUnit = unitEl ? unitEl.value.trim() : '';
+    var newPrice = priceEl ? Number(priceEl.value || 0) : (item.unit_price || 0);
 
     if (item.category !== newCat ||
         (item.brand || '') !== newBrand ||
         (item.model || '') !== newModel ||
-        (item.unit || '') !== newUnit) {
+        (item.unit || '') !== newUnit ||
+        (item.unit_price || 0) !== newPrice) {
       item.category = newCat;
+      item.category_name = newCat;  // 兼容 Supabase 字段名
       item.brand = newBrand;
       item.model = newModel;
       item.unit = newUnit;
+      item.unit_price = newPrice;
       changedCount++;
     }
   });
@@ -1032,6 +1098,7 @@ function editItem(itemId) {
   form.elements['unit'].value = item.unit || '';
   form.elements['stock'].value = item.stock || 0;
   form.elements['safety_stock'].value = item.safety_stock || 0;
+  if (form.elements['unit_price']) form.elements['unit_price'].value = item.unit_price || 0;
 
   openModal('modal-item');
 
@@ -1050,9 +1117,11 @@ function editItem(itemId) {
       item.name = form.elements['name'].value.trim();
       item.code = form.elements['code'].value.trim();
       item.category = form.elements['category'].value;
+      item.category_name = form.elements['category'].value;  // 兼容 Supabase
       item.unit = form.elements['unit'].value.trim();
       item.stock = newStock;
       item.safety_stock = newSafety;
+      item.unit_price = Number(form.elements['unit_price']?.value || 0);
 
       // 写回 localStorage（兼顾 mockData）
       const inv = JSON.parse(localStorage.getItem('inventory') || '[]');
