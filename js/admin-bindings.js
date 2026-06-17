@@ -153,7 +153,7 @@
           role = role || 'staff';
           const users = JSON.parse(localStorage.getItem('users') || '[]');
           const newUser = {
-            id: 'u' + Date.now(),
+            id: Date.now(),
             username: username,
             name: displayName || username,
             role: role
