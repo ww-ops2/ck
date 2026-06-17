@@ -351,10 +351,25 @@
           try {
             const sb = typeof getSupabase === 'function' ? getSupabase() : (typeof SupaDB !== 'undefined' ? SupaDB.getClient && SupaDB.getClient() : null);
             if (sb) {
-              await sb.from('users').upsert(updated.map(u => ({ id: u.id, username: u.username, name: u.name, role: u.role, is_active: (u.status === 'active') })), { onConflict: 'username' });
-              // upsert user permissions table if available
-              const permsToUpsert = Object.keys(s).map(uid => ({ user_id: uid, permissions: s[uid] }));
-              if (permsToUpsert.length) await sb.from('user_permissions').upsert(permsToUpsert, { onConflict: 'user_id' });
+              // 逐条同步用户（避免批量时类型不匹配导致失败）
+              for (var ui = 0; ui < updated.length; ui++) {
+                var uu = updated[ui];
+                await sb.from('users').upsert({
+                  id: uu.id, username: uu.username, name: uu.name, role: uu.role,
+                  is_active: (uu.status === 'active')
+                }, { onConflict: 'username' });
+              }
+              // 逐条同步用户权限（每行一个 permission，非数组）
+              for (var uid in s) {
+                if (!Object.prototype.hasOwnProperty.call(s, uid)) continue;
+                var perms = s[uid] || [];
+                for (var pj = 0; pj < perms.length; pj++) {
+                  var { error: permErr } = await sb.from('user_permissions').upsert({
+                    user_id: uid, permission: perms[pj]
+                  }, { onConflict: 'user_id,permission' });
+                  if (permErr) console.warn('[UserAdmin] 权限同步跳过:', permErr.message);
+                }
+              }
               console.log('[UserAdmin] Synced user permissions to Supabase');
             }
           } catch (e) { console.warn('[UserAdmin] Supabase sync failed', e.message || e); }
