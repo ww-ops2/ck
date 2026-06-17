@@ -102,10 +102,16 @@ const SupaDB = {
     const sb = getSupabase();
     if (!sb) throw new Error('Supabase not available');
     // 云端 users 表仅有基础字段 + is_active，status 映射为 is_active
+    // 兼容旧 'u' 前缀 ID → 纯数字
+    var safeId = userData.id;
+    if (typeof safeId === 'string' && safeId.charAt(0) === 'u') {
+      var n = Number(safeId.substring(1));
+      if (!isNaN(n)) safeId = n;
+    }
     const { data, error } = await sb
       .from('users')
       .upsert({
-        id: userData.id,
+        id: safeId,
         username: userData.username,
         name: userData.name || userData.username,
         role: userData.role || 'staff',
