@@ -60,6 +60,37 @@ function _dismissToast(toast) {
   setTimeout(function() { toast.remove(); }, 300);
 }
 
+/* ========== Button Loading 按钮加载状态 ========== */
+
+/**
+ * 设置按钮为加载状态（显示 spinner + 禁用）
+ * @param {HTMLElement|string} btn 按钮元素或 ID
+ * @param {string} loadingText 加载中显示的文本（默认"保存中..."）
+ */
+function showButtonLoading(btn, loadingText) {
+  if (typeof btn === 'string') btn = document.getElementById(btn);
+  if (!btn) return;
+  // 保存原始状态以便恢复
+  btn._origDisabled = btn.disabled;
+  btn._origHTML = btn.innerHTML;
+  btn._origClass = btn.className;
+  btn.disabled = true;
+  btn.classList.add('btn-loading');
+  btn.innerHTML = '<span class="spinner"></span>' + (loadingText || '保存中...');
+}
+
+/**
+ * 恢复按钮到原始状态
+ * @param {HTMLElement|string} btn 按钮元素或 ID
+ */
+function hideButtonLoading(btn) {
+  if (typeof btn === 'string') btn = document.getElementById(btn);
+  if (!btn) return;
+  btn.disabled = btn._origDisabled || false;
+  btn.classList.remove('btn-loading');
+  if (btn._origHTML) btn.innerHTML = btn._origHTML;
+}
+
 /* ========== Confirm 确认弹窗 ========== */
 function showConfirm(message, onConfirm, onCancel) {
   // 移除已有的 confirm 弹窗

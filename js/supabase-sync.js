@@ -450,7 +450,9 @@ async function syncToSupabase(key) {
           if (!Object.prototype.hasOwnProperty.call(upObj, uid)) continue;
           var perms = upObj[uid] || [];
           for (var j = 0; j < perms.length; j++) {
-            await sb.from('user_permissions').upsert({ user_id: parseInt(uid, 10), permission: perms[j] }, { onConflict: 'user_id,permission' });
+            var nuid = parseInt(uid, 10);
+            if (isNaN(nuid) && typeof uid === 'string' && uid.charAt(0) === 'u') nuid = Number(uid.substring(1));
+            await sb.from('user_permissions').upsert({ user_id: isNaN(nuid) ? uid : nuid, permission: perms[j] }, { onConflict: 'user_id,permission' });
           }
         }
         break;
@@ -460,7 +462,7 @@ async function syncToSupabase(key) {
         for (var u = 0; u < data.length; u++) {
           var uu = data[u];
           await sb.from('users').upsert({
-            id: uu.id,
+            id: typeof uu.id === 'string' && uu.id.charAt(0) === 'u' ? Number(uu.id.substring(1)) : uu.id,
             username: uu.username,
             name: uu.name,
             role: uu.role,

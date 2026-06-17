@@ -1,6 +1,7 @@
 /**
  * 业务流程时间筛选模块
  * 为采购/入库/领用/出库四个模块提供月度时间筛选和 KPI 概览
+ * 支持单月筛选和区间筛选（开始月份 ~ 结束月份）
  */
 
 // 各模块当前筛选月份
@@ -20,55 +21,100 @@ function initBusinessFlow() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   })();
 
-  // 初始化所有月份输入框
-  ['purchase-month', 'stockin-month', 'requisition-month', 'stockout-month'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = thisMonth;
+  // 初始化所有月份输入框，并为每个模块添加结束月份选择 + 筛选按钮
+  const modules = [
+    { pickerId: 'purchase-month',   endId: 'purchase-month-end',   filterId: 'purchase-month-filter',
+      thisBtnId: 'purchase-month-this', lastBtnId: 'purchase-month-last',
+      onFilter: () => { _bfPurchaseMonth = _bfGetMonthRange('purchase-month', 'purchase-month-end'); _bfUpdatePurchaseKPI(); } },
+    { pickerId: 'stockin-month',    endId: 'stockin-month-end',    filterId: 'stockin-month-filter',
+      thisBtnId: 'stockin-month-this', lastBtnId: 'stockin-month-last',
+      onFilter: () => { _bfStockInMonth = _bfGetMonthRange('stockin-month', 'stockin-month-end'); _bfUpdateStockInKPI(); if (typeof loadStockInRecords === 'function') loadStockInRecords(); } },
+    { pickerId: 'requisition-month', endId: 'requisition-month-end', filterId: 'requisition-month-filter',
+      thisBtnId: 'req-month-this', lastBtnId: 'req-month-last',
+      onFilter: () => { _bfReqMonth = _bfGetMonthRange('requisition-month', 'requisition-month-end'); _bfUpdateRequisitionKPI(); } },
+    { pickerId: 'stockout-month',   endId: 'stockout-month-end',   filterId: 'stockout-month-filter',
+      thisBtnId: 'stockout-month-this', lastBtnId: 'stockout-month-last',
+      onFilter: () => { _bfStockOutMonth = _bfGetMonthRange('stockout-month', 'stockout-month-end'); _bfUpdateStockOutKPI(); } }
+  ];
+
+  modules.forEach(function(mod) {
+    var picker = document.getElementById(mod.pickerId);
+    if (!picker) return;
+    picker.value = thisMonth;
+
+    // 获取 panel-actions 容器
+    var container = picker.parentNode;
+    if (!container) return;
+
+    // 添加「至」标签
+    var sep = document.createElement('span');
+    sep.style.cssText = 'color:var(--text-secondary);font-size:13px;';
+    sep.textContent = '至';
+    container.insertBefore(sep, picker.nextSibling);
+
+    // 添加结束月份输入框
+    var endInput = document.createElement('input');
+    endInput.type = 'month';
+    endInput.id = mod.endId;
+    endInput.value = thisMonth;
+    endInput.style.cssText = 'width:140px;';
+    container.insertBefore(endInput, sep.nextSibling);
+
+    // 添加筛选按钮
+    var filterBtn = document.createElement('button');
+    filterBtn.className = 'btn btn-sm btn-accent';
+    filterBtn.id = mod.filterId;
+    filterBtn.textContent = '筛选';
+    container.insertBefore(filterBtn, endInput.nextSibling);
+
+    // 绑定事件
+    picker.addEventListener('change', mod.onFilter);
+    endInput.addEventListener('change', mod.onFilter);
+    filterBtn.addEventListener('click', mod.onFilter);
+
+    // 本月按钮
+    var thisBtn = document.getElementById(mod.thisBtnId);
+    if (thisBtn) {
+      thisBtn.addEventListener('click', function() {
+        picker.value = thisMonth;
+        endInput.value = thisMonth;
+        mod.onFilter();
+      });
+    }
+
+    // 上月按钮
+    var lastBtn = document.getElementById(mod.lastBtnId);
+    if (lastBtn) {
+      lastBtn.addEventListener('click', function() {
+        picker.value = lastMonth;
+        endInput.value = lastMonth;
+        mod.onFilter();
+      });
+    }
   });
-
-  // 采购模块
-  _bfBindMonthPicker('purchase-month', 'purchase-month-this', 'purchase-month-last',
-    thisMonth, lastMonth, () => { _bfPurchaseMonth = _bfGetMonthRange('purchase-month'); _bfUpdatePurchaseKPI(); });
-
-  // 入库模块
-  _bfBindMonthPicker('stockin-month', 'stockin-month-this', 'stockin-month-last',
-    thisMonth, lastMonth, () => { _bfStockInMonth = _bfGetMonthRange('stockin-month'); _bfUpdateStockInKPI(); });
-
-  // 领用模块
-  _bfBindMonthPicker('requisition-month', 'req-month-this', 'req-month-last',
-    thisMonth, lastMonth, () => { _bfReqMonth = _bfGetMonthRange('requisition-month'); _bfUpdateRequisitionKPI(); });
-
-  // 出库模块
-  _bfBindMonthPicker('stockout-month', 'stockout-month-this', 'stockout-month-last',
-    thisMonth, lastMonth, () => { _bfStockOutMonth = _bfGetMonthRange('stockout-month'); _bfUpdateStockOutKPI(); });
 
   // 初始加载
-  _bfPurchaseMonth = _bfGetMonthRange('purchase-month');
-  _bfStockInMonth = _bfGetMonthRange('stockin-month');
-  _bfReqMonth = _bfGetMonthRange('requisition-month');
-  _bfStockOutMonth = _bfGetMonthRange('stockout-month');
+  _bfPurchaseMonth = _bfGetMonthRange('purchase-month', 'purchase-month-end');
+  _bfStockInMonth = _bfGetMonthRange('stockin-month', 'stockin-month-end');
+  _bfReqMonth = _bfGetMonthRange('requisition-month', 'requisition-month-end');
+  _bfStockOutMonth = _bfGetMonthRange('stockout-month', 'stockout-month-end');
 }
 
-function _bfBindMonthPicker(pickerId, thisBtnId, lastBtnId, thisMonth, lastMonth, onChange) {
-  const picker = document.getElementById(pickerId);
-  if (picker) picker.addEventListener('change', onChange);
-
-  const thisBtn = document.getElementById(thisBtnId);
-  if (thisBtn) thisBtn.addEventListener('click', () => {
-    if (picker) { picker.value = thisMonth; onChange(); }
-  });
-
-  const lastBtn = document.getElementById(lastBtnId);
-  if (lastBtn) lastBtn.addEventListener('click', () => {
-    if (picker) { picker.value = lastMonth; onChange(); }
-  });
-}
-
-function _bfGetMonthRange(pickerId) {
-  const el = document.getElementById(pickerId);
-  if (!el || !el.value) return null;
-  const [y, m] = el.value.split('-').map(Number);
-  return { start: new Date(y, m - 1, 1), end: new Date(y, m, 0, 23, 59, 59) };
+function _bfGetMonthRange(startPickerId, endPickerId) {
+  var startEl = document.getElementById(startPickerId);
+  var endEl = document.getElementById(endPickerId);
+  if (!startEl || !startEl.value) return null;
+  var [y1, m1] = startEl.value.split('-').map(Number);
+  var rangeStart = new Date(y1, m1 - 1, 1);
+  var rangeEnd;
+  if (endEl && endEl.value) {
+    var [y2, m2] = endEl.value.split('-').map(Number);
+    rangeEnd = new Date(y2, m2, 0, 23, 59, 59, 999);
+  } else {
+    // 仅开始月份时，只查当月
+    rangeEnd = new Date(y1, m1, 0, 23, 59, 59, 999);
+  }
+  return { start: rangeStart, end: rangeEnd };
 }
 
 function _bfSetKPI(id, val) {
@@ -105,10 +151,26 @@ function _bfUpdatePurchaseKPI() {
 // ============== 入库 KPI ==============
 
 function _bfUpdateStockInKPI() {
+  // 已完成入库记录
   const records = JSON.parse(localStorage.getItem('stockInRecords') || '[]');
+  // 待入库采购单
+  let pendingPOs = [];
+  try {
+    var allPOs = JSON.parse(localStorage.getItem('purchaseOrders') || '[]');
+    pendingPOs = allPOs.filter(function(o) { return o.status === 'pending_stockin'; }).map(function(o) {
+      return {
+        stockin_date: o.purchase_date || o.created_at || '',
+        total_quantity: (o.items || []).reduce(function(s, item) { return s + (item.quantity || 0); }, 0),
+        status: 'pending'
+      };
+    });
+  } catch(e) {}
+
+  // 合并后再按月份筛选
+  var combined = records.concat(pendingPOs);
   const filtered = _bfStockInMonth
-    ? records.filter(r => _bfInMonth(r.stockin_date || r.confirmed_at || r.created_at, _bfStockInMonth))
-    : records;
+    ? combined.filter(r => _bfInMonth(r.stockin_date || r.confirmed_at || r.created_at, _bfStockInMonth))
+    : combined;
 
   const count = filtered.length;
   const totalQty = filtered.reduce((s, r) => s + (r.total_quantity || 0), 0);

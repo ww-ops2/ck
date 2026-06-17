@@ -155,7 +155,7 @@ function submitRegistration() {
   }
 
   const newUser = {
-    id: 'u' + Date.now(),
+    id: Date.now(),
     username: phone,
     name: name,
     role: role,
@@ -180,7 +180,8 @@ function submitRegistration() {
       var sb = typeof getSupabase === 'function' ? getSupabase() : null;
       if (sb) {
         sb.from('users').upsert({
-          id: newUser.id, username: newUser.username, name: newUser.name,
+          id: typeof newUser.id === 'string' && newUser.id.charAt(0) === 'u' ? Number(newUser.id.substring(1)) : newUser.id,
+          username: newUser.username, name: newUser.name,
           role: newUser.role, is_active: false
         }, { onConflict: 'username' }).then(function() {
           console.log('[Auth] User synced to Supabase:', newUser.username);

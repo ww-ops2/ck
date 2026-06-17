@@ -30,48 +30,52 @@
 
     if (!username) { if (typeof showToast === 'function') showToast('请输入用户名','warning'); return; }
 
+    showButtonLoading('save-user-btn', '保存中...');
+    try {
+
     let users = JSON.parse(localStorage.getItem('users') || '[]');
     // check duplicate username
     if (users.find(u => u.username === username)) {
       // update existing
       users = users.map(u => u.username === username ? Object.assign({}, u, { name, role, status, remark }) : u);
     } else {
-      users.push({ id: 'u' + Date.now(), username, name: name || username, role, status, remark });
+      users.push({ id: Date.now(), username, name: name || username, role, status, remark });
     }
     localStorage.setItem('users', JSON.stringify(users));
 
-    // try cloud sync (non-blocking)
+    // try cloud sync — 只同步当前用户名对应的记录，不再循环全量用户
     try {
       const sb = typeof getSupabase === 'function' ? getSupabase() : (typeof SupaDB !== 'undefined' ? SupaDB.getClient && SupaDB.getClient() : null);
       if (sb) {
-        // 逐条同步，避免单条失败导致整个批次失败
-        for (var ui = 0; ui < users.length; ui++) {
-          var uu = users[ui];
+        var currentUser = users.find(function(u) { return u.username === username; });
+        if (currentUser) {
+          // 基础字段
+          var nid = typeof currentUser.id === 'string' && currentUser.id.charAt(0) === 'u' ? Number(currentUser.id.substring(1)) : currentUser.id;
           await sb.from('users').upsert({
-            id: uu.id, username: uu.username, name: uu.name, role: uu.role,
-            is_active: (uu.status === 'active' || uu.status === undefined)
+            id: nid, username: currentUser.username, name: currentUser.name,
+            role: currentUser.role,
+            is_active: (currentUser.status === 'active' || currentUser.status === undefined)
           }, { onConflict: 'username' });
-        }
-        // 再尝试同步扩展字段（逐条，如表结构不支持则跳过）
-        for (var uj = 0; uj < users.length; uj++) {
-          var uuj = users[uj];
+          // 扩展字段（如表结构不支持则静默跳过）
           var { error: extErr } = await sb.from('users').upsert({
-            id: uuj.id, username: uuj.username, name: uuj.name, role: uuj.role,
-            status: uuj.status || 'active', remark: uuj.remark || '',
-            description: uuj.description || '',
-            created_at: uuj.created_at || new Date().toISOString()
+            id: nid, username: currentUser.username, name: currentUser.name,
+            role: currentUser.role,
+            status: currentUser.status || 'active', remark: currentUser.remark || '',
+            description: currentUser.description || '',
+            created_at: currentUser.created_at || new Date().toISOString()
           }, { onConflict: 'username' });
-          if (extErr) {
-            // 扩展列不存在则静默跳过，不阻塞后续用户
-          }
+          if (extErr) { /* 扩展列不存在则跳过 */ }
+          console.log('[UserAdmin] Synced user to Supabase:', username);
         }
-        console.log('[UserAdmin] Synced users to Supabase');
       }
     } catch (e) { console.warn('[UserAdmin] Supabase sync failed', e.message || e); }
 
     if (typeof loadUserList === 'function') loadUserList();
     closeModal();
     if (typeof showToast === 'function') showToast('账号已保存','success');
+    } finally {
+      if (typeof hideButtonLoading === 'function') hideButtonLoading('save-user-btn');
+    }
   }
 
   const PERM_LABELS = {
@@ -335,6 +339,8 @@
       const newSave = saveBtn.cloneNode(true);
       saveBtn.parentNode.replaceChild(newSave, saveBtn);
       newSave.addEventListener('click', async () => {
+        showButtonLoading('save-user-perms-btn', '保存中...');
+        try {
         const permChecks = Array.from(container.querySelectorAll('input[type=checkbox]'));
         const perms = permChecks.filter(c=>c.checked).map(c=>c.dataset.perm);
         try {
@@ -347,28 +353,33 @@
           const updated = users.map(u => u.id === user.id ? Object.assign({}, u, { role: normalizeRole(roleSelect ? roleSelect.value : (user.role || 'staff')) }) : u);
           localStorage.setItem('users', JSON.stringify(updated));
 
-          // try cloud sync (non-blocking)
+          // try cloud sync — 仅同步当前用户的角色和权限
           try {
             const sb = typeof getSupabase === 'function' ? getSupabase() : (typeof SupaDB !== 'undefined' ? SupaDB.getClient && SupaDB.getClient() : null);
             if (sb) {
-              // 逐条同步用户（避免批量时类型不匹配导致失败）
-              for (var ui = 0; ui < updated.length; ui++) {
-                var uu = updated[ui];
-                await sb.from('users').upsert({
-                  id: uu.id, username: uu.username, name: uu.name, role: uu.role,
-                  is_active: (uu.status === 'active')
-                }, { onConflict: 'username' });
-              }
-              // 逐条同步用户权限（每行一个 permission，非数组）
-              for (var uid in s) {
-                if (!Object.prototype.hasOwnProperty.call(s, uid)) continue;
-                var perms = s[uid] || [];
-                for (var pj = 0; pj < perms.length; pj++) {
-                  var { error: permErr } = await sb.from('user_permissions').upsert({
-                    user_id: uid, permission: perms[pj]
-                  }, { onConflict: 'user_id,permission' });
-                  if (permErr) console.warn('[UserAdmin] 权限同步跳过:', permErr.message);
+              // 兼容旧格式ID：将 'u' + 时间戳 转为纯数字
+              function toNumericId(id) {
+                var n = Number(id);
+                if (!isNaN(n) && String(n) === String(id)) return n;
+                if (typeof id === 'string' && id.charAt(0) === 'u') {
+                  var stripped = id.substring(1);
+                  var num = Number(stripped);
+                  if (!isNaN(num)) return num;
                 }
+                return id;
+              }
+              // 仅同步当前用户的角色（不同步全量用户）
+              var nid = toNumericId(user.id);
+              await sb.from('users').upsert({
+                id: nid, username: user.username, name: user.name, role: normalizeRole(roleSelect ? roleSelect.value : (user.role || 'staff')),
+                is_active: (user.status === 'active')
+              }, { onConflict: 'username' });
+              // 仅同步当前用户的权限（不同步全量用户权限）
+              for (var pj = 0; pj < perms.length; pj++) {
+                var { error: permErr } = await sb.from('user_permissions').upsert({
+                  user_id: nid, permission: perms[pj]
+                }, { onConflict: 'user_id,permission' });
+                if (permErr) console.warn('[UserAdmin] 权限同步跳过:', permErr.message);
               }
               console.log('[UserAdmin] Synced user permissions to Supabase');
             }
@@ -380,6 +391,8 @@
         } catch (e) {
           console.warn('保存用户权限失败', e);
           if (typeof showToast === 'function') showToast('保存失败','error');
+        } finally {
+          if (typeof hideButtonLoading === 'function') hideButtonLoading('save-user-perms-btn');
         }
       });
     }

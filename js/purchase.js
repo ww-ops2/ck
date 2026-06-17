@@ -503,6 +503,9 @@ async function submitPurchaseOrder() {
     return;
   }
 
+  showButtonLoading('submit-purchase-btn', '提交中...');
+  try {
+
   // 获取所有供应商分组
   const supplierGroups = document.querySelectorAll('.supplier-group');
   if (supplierGroups.length === 0) {
@@ -624,6 +627,9 @@ async function submitPurchaseOrder() {
   if (typeof refreshAllBusinessKPI === 'function') refreshAllBusinessKPI();
   showToast(`采购单 ${purchaseOrder.code} 已保存（本地）`, 'success');
   console.log('采购单创建成功（本地）:', purchaseOrder);
+  } finally {
+    hideButtonLoading('submit-purchase-btn');
+  }
 }
 
 /**
@@ -1254,6 +1260,9 @@ async function executeStockIn(order) {
     return;
   }
 
+  showButtonLoading('confirm-stockin-btn', '入库中...');
+  try {
+
   // 获取实际入库数量
   const rows = document.querySelectorAll('#stockin-items-tbody tr');
   const stockinItems = [];
@@ -1288,6 +1297,27 @@ async function executeStockIn(order) {
         localPOs = localPOs.map(p => (p.code === order.code ? Object.assign({}, p, { status: 'stockin_completed' }) : p));
         localStorage.setItem('purchaseOrders', JSON.stringify(localPOs));
       } catch(e){console.warn('更新本地采购单缓存失败', e.message)}
+      // 同步保存到本地 stockInRecords + 生成库存明细
+      try {
+        var siRecord = {
+          id: Date.now(),
+          code: inserted.code || ('SI' + Date.now()),
+          purchase_order_id: order.id,
+          purchase_order_code: order.code,
+          stockin_date: stockinDate,
+          batch_code: inserted.batch_code || batchCode,
+          items: stockinItems,
+          total_quantity: stockInPayload.total_quantity,
+          total_amount: stockInPayload.total_amount,
+          status: 'completed',
+          confirmed_by: inserted.confirmed_by || getCurrentUser().name,
+          confirmed_at: inserted.confirmed_at || new Date().toISOString(),
+          remark: remark,
+          created_at: new Date().toISOString()
+        };
+        saveStockInRecord(siRecord);
+        generateInventoryFromStockIn(siRecord);
+      } catch(e){console.warn('保存本地入库记录失败', e.message)}
 
       closeModal();
       loadPurchaseOrders();
@@ -1341,6 +1371,9 @@ async function executeStockIn(order) {
   showToast(`入库成功！批次号：${batchCode}，已自动生成库存明细（本地）`, 'success', 4000);
   
   console.log('入库完成（本地）:', stockInRecord);
+  } finally {
+    hideButtonLoading('confirm-stockin-btn');
+  }
 }
 
 /**
