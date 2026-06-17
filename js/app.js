@@ -43,6 +43,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const filterStatus = document.getElementById('filter-status');
   if (filterStatus) filterStatus.addEventListener('change', loadInventory);
   
+  // 绑定搜索输入事件（带防抖）
+  const searchInput = document.getElementById('inv-search-input');
+  if (searchInput) {
+    var searchTimer = null;
+    searchInput.addEventListener('input', function() {
+      if (searchTimer) clearTimeout(searchTimer);
+      searchTimer = setTimeout(loadInventory, 150);
+    });
+  }
+  
   // 初始化各模块
   if (typeof initPurchaseModule === 'function') {
     initPurchaseModule();
