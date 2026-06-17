@@ -203,16 +203,16 @@ async function syncFromSupabase(options) {
         }
         return u;
       });
-      // 合并本地待审核用户（尚未同步到云端的本地注册用户不丢失）
+      // 合并本地用户（尚未同步到云端的本地用户不丢失）
       try {
         var localUsers = JSON.parse(_originalGetItem('users') || '[]');
         var cloudUsernames = mappedUsers.map(function(u) { return u.username; });
         var localOnly = localUsers.filter(function(u) {
-          return u.status === 'pending' && cloudUsernames.indexOf(u.username) === -1;
+          return cloudUsernames.indexOf(u.username) === -1;
         });
         if (localOnly.length > 0) {
           mappedUsers = mappedUsers.concat(localOnly);
-          console.log('  \uD83D\uDD00 合并 ' + localOnly.length + ' 条本地待审核用户');
+          console.log('  \uD83D\uDD00 合并 ' + localOnly.length + ' 条本地用户（云端未同步）');
         }
       } catch(e) { /* 合并失败则使用云端数据 */ }
       _silentSet('users', JSON.stringify(mappedUsers));

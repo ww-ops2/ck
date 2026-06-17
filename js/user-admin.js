@@ -44,24 +44,27 @@
     try {
       const sb = typeof getSupabase === 'function' ? getSupabase() : (typeof SupaDB !== 'undefined' ? SupaDB.getClient && SupaDB.getClient() : null);
       if (sb) {
-        // 先同步基础字段 + is_active
-        await sb.from('users').upsert(users.map(function(u) {
-          return {
-            id: u.id, username: u.username, name: u.name, role: u.role,
-            is_active: (u.status === 'active' || u.status === undefined)
-          };
-        }), { onConflict: 'username' });
-        // 再尝试同步扩展字段（如表结构不支持则忽略）
-        try {
-          await sb.from('users').upsert(users.map(function(u) {
-            return {
-              id: u.id, username: u.username, name: u.name, role: u.role,
-              status: u.status || 'active', remark: u.remark || '',
-              description: u.description || '',
-              created_at: u.created_at || new Date().toISOString()
-            };
-          }), { onConflict: 'username' });
-        } catch(e2) { /* 扩展列不存在则跳过 */ }
+        // 逐条同步，避免单条失败导致整个批次失败
+        for (var ui = 0; ui < users.length; ui++) {
+          var uu = users[ui];
+          await sb.from('users').upsert({
+            id: uu.id, username: uu.username, name: uu.name, role: uu.role,
+            is_active: (uu.status === 'active' || uu.status === undefined)
+          }, { onConflict: 'username' });
+        }
+        // 再尝试同步扩展字段（逐条，如表结构不支持则跳过）
+        for (var uj = 0; uj < users.length; uj++) {
+          var uuj = users[uj];
+          var { error: extErr } = await sb.from('users').upsert({
+            id: uuj.id, username: uuj.username, name: uuj.name, role: uuj.role,
+            status: uuj.status || 'active', remark: uuj.remark || '',
+            description: uuj.description || '',
+            created_at: uuj.created_at || new Date().toISOString()
+          }, { onConflict: 'username' });
+          if (extErr) {
+            // 扩展列不存在则静默跳过，不阻塞后续用户
+          }
+        }
         console.log('[UserAdmin] Synced users to Supabase');
       }
     } catch (e) { console.warn('[UserAdmin] Supabase sync failed', e.message || e); }

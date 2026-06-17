@@ -155,10 +155,10 @@ const SupaDB = {
       .from('users')
       .update(cloudUpdates)
       .eq('username', username)
-      .select()
-      .single();
+      .select();
     if (error) throw new Error('用户更新失败: ' + error.message);
-    await writeAuditLog('UPDATE', 'users', data.id, username, updates);
+    var updatedId = (data && data.length > 0) ? data[0].id : null;
+    await writeAuditLog('UPDATE', 'users', updatedId, username, updates);
     return data;
   },
 
