@@ -1297,6 +1297,27 @@ async function executeStockIn(order) {
         localPOs = localPOs.map(p => (p.code === order.code ? Object.assign({}, p, { status: 'stockin_completed' }) : p));
         localStorage.setItem('purchaseOrders', JSON.stringify(localPOs));
       } catch(e){console.warn('更新本地采购单缓存失败', e.message)}
+      // 同步保存到本地 stockInRecords + 生成库存明细
+      try {
+        var siRecord = {
+          id: Date.now(),
+          code: inserted.code || ('SI' + Date.now()),
+          purchase_order_id: order.id,
+          purchase_order_code: order.code,
+          stockin_date: stockinDate,
+          batch_code: inserted.batch_code || batchCode,
+          items: stockinItems,
+          total_quantity: stockInPayload.total_quantity,
+          total_amount: stockInPayload.total_amount,
+          status: 'completed',
+          confirmed_by: inserted.confirmed_by || getCurrentUser().name,
+          confirmed_at: inserted.confirmed_at || new Date().toISOString(),
+          remark: remark,
+          created_at: new Date().toISOString()
+        };
+        saveStockInRecord(siRecord);
+        generateInventoryFromStockIn(siRecord);
+      } catch(e){console.warn('保存本地入库记录失败', e.message)}
 
       closeModal();
       loadPurchaseOrders();
