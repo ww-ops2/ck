@@ -1225,7 +1225,7 @@ function confirmStockIn(orderId) {
         <td>${item.brand || '-'}</td>
         <td>${item.model || '-'}</td>
         <td>${item.quantity}</td>
-        <td><input type="number" class="actual-quantity" value="${item.quantity}" min="0" style="width:80px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);color:var(--text-primary);font-size:13px;"></td>
+        <td><input type="number" class="actual-quantity" value="${item.quantity}" min="0" step="0.01" style="width:80px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);color:var(--text-primary);font-size:13px;"></td>
         <td>${item.unit}</td>
         <td>¥${item.price.toFixed(2)}</td>
         <td>¥${(item.quantity * item.price).toFixed(2)}</td>
@@ -1268,7 +1268,7 @@ async function executeStockIn(order) {
   const stockinItems = [];
   
   rows.forEach((row, index) => {
-    const actualQty = parseInt(row.querySelector('.actual-quantity').value) || 0;
+    const actualQty = parseFloat(row.querySelector('.actual-quantity').value) || 0;
     const item = order.items[index];
     
     stockinItems.push({
