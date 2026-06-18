@@ -202,7 +202,7 @@ function handleLogout() {
   }
 }
 
-function showApp() {
+async function showApp() {
   const lp = document.getElementById('login-page');
   const ac = document.getElementById('app-container');
   if (lp) lp.style.display = 'none';
@@ -211,7 +211,20 @@ function showApp() {
   updateMenuByRole();
   checkNotifications();
   if (typeof initNavigation === 'function') initNavigation();
-  if (typeof syncFromSupabase === 'function') { syncFromSupabase().catch(()=>{}); }
+
+  // 等待 Supabase 数据同步完成（最多 6 秒），参考 V3 数据看板模式
+  if (typeof syncFromSupabase === 'function') {
+    try {
+      await Promise.race([
+        syncFromSupabase(),
+        new Promise(function(_, reject) { setTimeout(function() { reject(new Error('Sync timeout 6s')); }, 6000); })
+      ]);
+      console.log('[Auth] Supabase 数据同步完成');
+    } catch(e) {
+      console.warn('[Auth] Supabase 同步超时或失败，使用本地缓存:', e.message);
+    }
+  }
+
   if (typeof loadDashboard === 'function') loadDashboard();
 }
 
