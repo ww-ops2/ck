@@ -464,10 +464,18 @@ const SupaDB = {
         sort_order: item.sort_order || 0
       }));
 
-      // 更新库存: 找到对应物品增加库存
-      const invItems = await _sbQuery(
-        sb.from('inventory_items').select('*').eq('code', item.code).limit(1)
-      );
+      // 更新库存: 先按 code 匹配，再按 name 兜底，都找不到则自动创建
+      var invItems = [];
+      if (item.code) {
+        invItems = await _sbQuery(
+          sb.from('inventory_items').select('*').eq('code', item.code).limit(1)
+        );
+      }
+      if (invItems.length === 0 && item.name) {
+        invItems = await _sbQuery(
+          sb.from('inventory_items').select('*').eq('name', item.name).limit(1)
+        );
+      }
       if (invItems.length > 0) {
         await sb.from('inventory_items')
           .update({
@@ -476,6 +484,23 @@ const SupaDB = {
             last_stockin_batch: stockInData.batch_code
           })
           .eq('id', invItems[0].id);
+      } else {
+        // 自动创建库存物品
+        const autoCode = item.code || await getNextCode('inventory', 'INV', 5);
+        await sb.from('inventory_items').insert({
+          name: item.name,
+          code: autoCode,
+          category_name: item.category || '未分类',
+          brand: item.brand || '',
+          model: item.model || '',
+          unit: item.unit || '',
+          unit_price: item.price || 0,
+          stock: (item.actual_quantity || 0),
+          safety_stock: 10,
+          last_stockin_date: stockInData.stockin_date,
+          last_stockin_batch: stockInData.batch_code
+        });
+        console.log('[StockIn] 自动创建库存物品:', item.name, 'code=' + autoCode);
       }
     }
 
@@ -545,18 +570,43 @@ const SupaDB = {
         sort_order: item.sort_order || 0
       }));
 
-      // 更新库存: 找到对应物品增加库存
-      const invItems = await _sbQuery(
-        sb.from('inventory_items').select('*').eq('code', item.code).limit(1)
-      );
-      if (invItems.length > 0) {
+      // 更新库存: 先按 code 匹配，再按 name 兜底，都找不到则自动创建
+      var invItems2 = [];
+      if (item.code) {
+        invItems2 = await _sbQuery(
+          sb.from('inventory_items').select('*').eq('code', item.code).limit(1)
+        );
+      }
+      if (invItems2.length === 0 && item.name) {
+        invItems2 = await _sbQuery(
+          sb.from('inventory_items').select('*').eq('name', item.name).limit(1)
+        );
+      }
+      if (invItems2.length > 0) {
         await sb.from('inventory_items')
           .update({
-            stock: invItems[0].stock + actualQty,
+            stock: invItems2[0].stock + actualQty,
             last_stockin_date: stockInData.stockin_date,
             last_stockin_batch: stockInData.batch_code
           })
-          .eq('id', invItems[0].id);
+          .eq('id', invItems2[0].id);
+      } else {
+        // 自动创建库存物品
+        const autoCode2 = item.code || await getNextCode('inventory', 'INV', 5);
+        await sb.from('inventory_items').insert({
+          name: item.name,
+          code: autoCode2,
+          category_name: item.category || '未分类',
+          brand: item.brand || '',
+          model: item.model || '',
+          unit: item.unit || '',
+          unit_price: item.price || 0,
+          stock: actualQty,
+          safety_stock: 10,
+          last_stockin_date: stockInData.stockin_date,
+          last_stockin_batch: stockInData.batch_code
+        });
+        console.log('[StockIn] 自动创建库存物品:', item.name, 'code=' + autoCode2);
       }
     }
 

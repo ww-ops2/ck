@@ -1236,7 +1236,7 @@ function editItem(itemId) {
   const newSaveBtn = saveBtn.cloneNode(true);
   saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
 
-  newSaveBtn.addEventListener('click', function onSave() {
+  newSaveBtn.addEventListener('click', async function onSave() {
     try {
       const newStock = Number(form.elements['stock'].value || 0);
       const newSafety = Number(form.elements['safety_stock'].value || 0);
@@ -1267,6 +1267,26 @@ function editItem(itemId) {
         if (mi >= 0) mockData.items[mi] = item;
       }
 
+      // 持久化到 Supabase（修复：之前只写内存，刷新后丢失）
+      var dbSaved = false;
+      try {
+        if (typeof SupaDB !== 'undefined' && SupaDB.updateInventoryItem) {
+          await SupaDB.updateInventoryItem(item.id, {
+            name: item.name,
+            code: item.code,
+            category_name: item.category_name,
+            unit: item.unit,
+            stock: newStock,
+            safety_stock: newSafety,
+            unit_price: item.unit_price
+          });
+          dbSaved = true;
+          console.log('[EditItem] Supabase 保存成功, id=' + item.id);
+        }
+      } catch (dbErr) {
+        console.warn('[EditItem] Supabase 保存失败（本地已缓存）:', dbErr.message);
+      }
+
       // 记录调整
       const adj = {
         id: item.id,
@@ -1284,7 +1304,8 @@ function editItem(itemId) {
 
       loadInventory();
       closeModal();
-      if (typeof showToast === 'function') showToast('保存成功（已记录调整）','success');
+      var saveMsg = dbSaved ? '保存成功（已记录调整）' : '已保存到本地缓存（数据库连接失败，刷新后可能丢失）';
+      if (typeof showToast === 'function') showToast(saveMsg, dbSaved ? 'success' : 'warning');
     } catch (e) {
       console.error(e);
       if (typeof showToast === 'function') showToast('保存失败：' + e.message, 'error');
