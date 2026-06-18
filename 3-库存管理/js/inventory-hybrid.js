@@ -413,14 +413,16 @@ function renderInvInbox() {
 
   container.innerHTML = html;
 
-  // 绑定商品行点击展开入库记录
-  container.querySelectorAll('.inv-item-row').forEach(function(row) {
-    row.addEventListener('click', function(e) {
-      // 排除按钮和链接点击
-      if (e.target.closest('button') || e.target.closest('a') || e.target.closest('.pending-qty-badge')) return;
-      toggleInvItemHistory(row);
+  // 绑定商品行点击展开入库记录（补充信息模式下不绑定，避免DOM冲突）
+  if (!_invHybrid.supplementMode) {
+    container.querySelectorAll('.inv-item-row').forEach(function(row) {
+      row.addEventListener('click', function(e) {
+        // 排除按钮和链接点击
+        if (e.target.closest('button') || e.target.closest('a') || e.target.closest('.pending-qty-badge')) return;
+        toggleInvItemHistory(row);
+      });
     });
-  });
+  }
 
   // 批量采购模式：显示底部操作栏 + 全选checkbox
   if (batchMode) {
@@ -434,6 +436,9 @@ function renderInvInbox() {
  * 点击商品行展开/收起入库记录
  */
 function toggleInvItemHistory(row) {
+  // 安全守卫：不在补充信息模式下才允许展开
+  if (_invHybrid.supplementMode) return;
+
   var nextRow = row.nextElementSibling;
   // 如果已经有展开的入库记录行，收起它
   if (nextRow && nextRow.classList.contains('inv-history-row')) {
@@ -973,6 +978,9 @@ async function _saveInvSupplement() {
     updateInvButtonStates();
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '保存补充信息'; }
     if (cancelBtn) cancelBtn.disabled = false;
+    // 立即隐藏补充信息操作栏
+    var suppBar = document.getElementById('inv-supp-bar');
+    if (suppBar) suppBar.style.display = 'none';
   }
 
   // 重新渲染（全量数据重新加载 + 按新分类重新分组排版）
@@ -982,6 +990,9 @@ async function _saveInvSupplement() {
 function _cancelInvSupplement() {
   _invHybrid.supplementMode = false;
   updateInvButtonStates();
+  // 立即隐藏补充信息操作栏（不等异步刷新）
+  var suppBar = document.getElementById('inv-supp-bar');
+  if (suppBar) suppBar.style.display = 'none';
   loadInventoryHybridData();
 }
 
