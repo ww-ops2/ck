@@ -849,33 +849,12 @@ window.loadInventory = function(skipSupabaseFetch) {
   }
 };
 
-// 也重写 toggleInvSupplementMode 和相关函数
-var _origToggleInvSupplement = window.toggleInvSupplementMode;
-window.toggleInvSupplementMode = function() {
-  if (_invHybrid.supplementMode) {
-    _saveInvSupplement();
-    return;
-  }
-  _invHybrid.supplementMode = true;
-  _invHybrid.batchMode = false;
-  updateInvButtonStates();
-  renderInvInbox();
-};
-
 // 重写 _invToggleBatchMode
 var _origInvToggleBatch = window._invToggleBatchMode;
 window._invToggleBatchMode = function() {
   toggleInvBatchMode();
 };
 
-// 重写 _saveInvSupplement（app.js 中的旧版）
-var _origSaveInvSupp = window._saveInvSupplement;
-window._saveInvSupplement = async function() {
-  await _saveInvSupplement();
-};
-
-// 重写 _cancelInvSupplement
-var _origCancelInvSupp = window._cancelInvSupplement;
-window._cancelInvSupplement = function() {
-  _cancelInvSupplement();
-};
+// 注意：toggleInvSupplementMode / _saveInvSupplement / _cancelInvSupplement
+// 已通过 function 声明提升到全局作用域，自动覆盖 app.js 中的同名函数
+// 不再使用 window.xxx = ... 重写（会导致自引用无限递归 → RangeError）
