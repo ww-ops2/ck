@@ -1154,6 +1154,57 @@ function _populateCategorySelect(selectEl) {
 }
 
 /**
+ * 自定义确认弹窗（替代原生 confirm）
+ */
+function showConfirm(message, onConfirm) {
+  // 移除已有的弹窗
+  var old = document.getElementById('custom-confirm-overlay');
+  if (old) old.remove();
+
+  var overlay = document.createElement('div');
+  overlay.id = 'custom-confirm-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:10000;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.15s ease;';
+
+  var box = document.createElement('div');
+  box.style.cssText = 'background:var(--bg-card,#fff);border-radius:12px;padding:28px 32px 20px;max-width:380px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.18);text-align:center;';
+
+  var icon = document.createElement('div');
+  icon.style.cssText = 'font-size:36px;margin-bottom:12px;';
+  icon.textContent = '\u26A0\uFE0F';
+
+  var msg = document.createElement('div');
+  msg.style.cssText = 'font-size:14px;color:var(--text-primary,#333);margin-bottom:24px;line-height:1.6;';
+  msg.textContent = message;
+
+  var btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:10px;justify-content:center;';
+
+  var cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn';
+  cancelBtn.textContent = '\u53D6\u6D88';
+  cancelBtn.style.cssText = 'padding:8px 24px;border-radius:8px;cursor:pointer;font-size:13px;';
+
+  var confirmBtn = document.createElement('button');
+  confirmBtn.className = 'btn btn-danger';
+  confirmBtn.textContent = '\u786E\u8BA4\u5220\u9664';
+  confirmBtn.style.cssText = 'padding:8px 24px;border-radius:8px;cursor:pointer;font-size:13px;background:var(--danger,#e74c3c);color:#fff;border:none;font-weight:600;';
+
+  function close() { overlay.remove(); }
+  cancelBtn.addEventListener('click', close);
+  confirmBtn.addEventListener('click', function() { close(); if (onConfirm) onConfirm(); });
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) close(); });
+
+  btnRow.appendChild(cancelBtn);
+  btnRow.appendChild(confirmBtn);
+  box.appendChild(icon);
+  box.appendChild(msg);
+  box.appendChild(btnRow);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  confirmBtn.focus();
+}
+
+/**
  * 编辑物品（支持手工调整并生成调整记录）
  */
 function editItem(itemId) {
@@ -1212,7 +1263,21 @@ function editItem(itemId) {
   var newDeleteBtn = deleteBtn.cloneNode(true);
   deleteBtn.parentNode.replaceChild(newDeleteBtn, deleteBtn);
   newDeleteBtn.addEventListener('click', function() {
-    if (confirm('确认要删除 "' + (item.name || '') + '" 吗？此操作不可恢复！')) {
+    showConfirm('\u786E\u8BA4\u8981\u5220\u9664 "' + (item.name || '') + '" \u5417\uFF1F\u6B64\u64CD\u4F5C\u4E0D\u53EF\u6062\u590D\uFF01', async function() {
+      var deleteOk = true;
+      // 从数据库删除
+      try {
+        if (typeof SupaDB !== 'undefined' && SupaDB.deleteInventoryItem) {
+          await SupaDB.deleteInventoryItem(item.id);
+          console.log('[EditItem] Supabase 删除成功, id=' + item.id);
+        }
+      } catch (dbErr) {
+        console.warn('[EditItem] Supabase 删除失败:', dbErr.message);
+        showToast('\u6570\u636E\u5E93\u5220\u9664\u5931\u8D25: ' + dbErr.message, 'error');
+        deleteOk = false;
+      }
+      if (!deleteOk) return;
+
       // 从 _appCache 删除
       var inv = _appCache.inventory ? _appCache.inventory.slice() : [];
       var idx = inv.findIndex(function(i) { return String(i.id) === String(item.id); });
@@ -1227,8 +1292,8 @@ function editItem(itemId) {
       }
       loadInventory();
       closeModal();
-      if (typeof showToast === 'function') showToast('已删除：' + item.name, 'info');
-    }
+      if (typeof showToast === 'function') showToast('\u5DF2\u5220\u9664\uFF1A' + item.name, 'info');
+    });
   });
 
   // 绑定保存（替换按钮以清除旧事件）
