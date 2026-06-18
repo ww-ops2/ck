@@ -914,10 +914,14 @@ async function executePartialStockIn() {
 
     if (actualQty <= 0) return;
 
+    // 表格中空的 brand/model 显示为 '-' 或 '/'，需归一化为 '' 再匹配
+    var normBrand = (brand === '-' || brand === '/') ? '' : brand;
+    var normModel = (model === '-' || model === '/') ? '' : model;
+
     // 从 _siData 找原始 item
     var inboxItem = null;
     _siData.inboxItems.forEach(function(ii) {
-      if (ii.poCode === poCode && ii.itemName === itemName && ii.brand === brand && ii.model === model) {
+      if (ii.poCode === poCode && ii.itemName === itemName && ii.brand === normBrand && ii.model === normModel) {
         inboxItem = ii;
       }
     });
