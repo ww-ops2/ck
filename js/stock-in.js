@@ -444,7 +444,7 @@ function selectStockInPO(poId) {
 }
 
 /**
- * 渲染入库收件箱（右侧）
+ * 渲染入库收件箱（右侧） — 已完成的采购单折叠为可展开汇总栏
  */
 function renderStockInInbox() {
   var tbody = document.getElementById('stockin-inbox-tbody');
@@ -473,13 +473,6 @@ function renderStockInInbox() {
     }
   }
 
-  // 按状态排序：待入库 > 部分入库 > 已完成
-  items.sort(function(a, b) {
-    var sa = a.remainingQty > 0 ? (a.receivedQty > 0 ? 1 : 0) : 2;
-    var sb = b.remainingQty > 0 ? (b.receivedQty > 0 ? 1 : 0) : 2;
-    return sa - sb;
-  });
-
   // 清空选中
   _siData.selectedItems.clear();
 
@@ -490,29 +483,137 @@ function renderStockInInbox() {
     return;
   }
 
-  tbody.innerHTML = items.map(function(item, idx) {
-    var statusLabel = item.remainingQty <= 0 ? '已完成' : (item.receivedQty > 0 ? '部分入库' : '待入库');
-    var statusCls = item.remainingQty <= 0 ? 'success' : (item.receivedQty > 0 ? 'warning' : '');
-    var remaining = item.remainingQty;
-    var disabled = remaining <= 0;
+  // 按 PO 分组
+  var poGroups = {};
+  items.forEach(function(item) {
+    if (!poGroups[item.poCode]) {
+      poGroups[item.poCode] = { poId: item.poId, poCode: item.poCode, poDate: item.poDate, supplier: item.supplier, items: [] };
+    }
+    poGroups[item.poCode].items.push(item);
+  });
 
-    return '<tr class="' + (disabled ? 'stockin-row-done' : '') + '" data-index="' + idx + '">' +
-      '<td><input type="checkbox" class="stockin-item-check" data-index="' + idx + '" ' + (disabled ? 'disabled' : '') + ' onchange="updateSelection()"></td>' +
-      '<td><span style="font-family:monospace;font-size:12px;">' + item.poCode + '</span></td>' +
-      '<td><span style="font-weight:600;">' + item.itemName + '</span></td>' +
-      '<td>' + (item.brand || '-') + '</td>' +
-      '<td>' + (item.model || '-') + '</td>' +
-      '<td class="cell-number">' + item.orderedQty + '</td>' +
-      '<td class="cell-number">' + item.receivedQty + '</td>' +
-      '<td class="cell-number">' + remaining + '</td>' +
-      '<td class="cell-number">' +
-        '<input type="number" class="stockin-qty-input" data-index="' + idx + '" data-remaining="' + remaining + '" value="' + remaining + '" min="0" max="' + remaining + '" step="1" ' + (disabled ? 'disabled' : '') + ' style="width:64px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:13px;text-align:center;">' +
-      '</td>' +
-      '<td>' + (item.unit || '-') + '</td>' +
-      '<td class="cell-number">¥' + (item.price || 0).toFixed(2) + '</td>' +
-      '<td><span class="status-badge ' + statusCls + '" style="font-size:10px;padding:1px 6px;">' + statusLabel + '</span></td>' +
-    '</tr>';
-  }).join('');
+  // 按 PO 状态排序：待入库 > 部分入库 > 已完成
+  var poOrder = Object.keys(poGroups).sort(function(a, b) {
+    var ga = poGroups[a].items, gb = poGroups[b].items;
+    var allDoneA = ga.every(function(i) { return i.remainingQty <= 0; });
+    var anyReceivedA = ga.some(function(i) { return i.receivedQty > 0; });
+    var allDoneB = gb.every(function(i) { return i.remainingQty <= 0; });
+    var anyReceivedB = gb.some(function(i) { return i.receivedQty > 0; });
+    var sa = allDoneA ? 2 : (anyReceivedA ? 1 : 0);
+    var sb = allDoneB ? 2 : (anyReceivedB ? 1 : 0);
+    return sa - sb;
+  });
+
+  var html = '';
+  poOrder.forEach(function(poCode) {
+    var group = poGroups[poCode];
+    var pendingItems = group.items.filter(function(i) { return i.remainingQty > 0; });
+    var doneItems = group.items.filter(function(i) { return i.remainingQty <= 0; });
+    var allCompleted = pendingItems.length === 0;
+    var totalAmount = group.items.reduce(function(s, i) { return s + (i.amount || 0); }, 0);
+
+    if (allCompleted) {
+      // 已完成：渲染为折叠汇总栏
+      var summaryId = 'si-summary-' + group.poId;
+      html += '<tr class="stockin-summary-row" onclick="toggleStockInSummary(\'' + summaryId + '\')">' +
+        '<td colspan="12" style="padding:0;">' +
+          '<div class="stockin-summary-bar">' +
+            '<div class="stockin-summary-left">' +
+              '<span class="stockin-summary-icon">▶</span>' +
+              '<span class="stockin-summary-code">' + group.poCode + '</span>' +
+              '<span class="status-badge success" style="font-size:10px;padding:1px 8px;">全部入库完成</span>' +
+              '<span class="stockin-summary-stat">' + doneItems.length + ' 项 · ¥' + totalAmount.toFixed(2) + '</span>' +
+            '</div>' +
+            '<div class="stockin-summary-right">' +
+              '<span class="stockin-summary-date">' + (group.poDate || '') + '</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="stockin-summary-detail" id="' + summaryId + '" style="display:none;">' +
+            '<table class="data-table stockin-detail-mini">' +
+              '<thead><tr>' +
+                '<th>物品名称</th><th>品牌</th><th>型号</th><th>采购数量</th><th>已入库</th><th>单位</th><th>单价</th><th>金额</th>' +
+              '</tr></thead>' +
+              '<tbody>' +
+                doneItems.map(function(item) {
+                  return '<tr class="stockin-row-done">' +
+                    '<td>' + item.itemName + '</td>' +
+                    '<td>' + (item.brand || '-') + '</td>' +
+                    '<td>' + (item.model || '-') + '</td>' +
+                    '<td class="cell-number">' + item.orderedQty + '</td>' +
+                    '<td class="cell-number" style="color:var(--success);">' + item.receivedQty + '</td>' +
+                    '<td>' + (item.unit || '-') + '</td>' +
+                    '<td class="cell-number">¥' + item.price.toFixed(2) + '</td>' +
+                    '<td class="cell-number">¥' + item.amount.toFixed(2) + '</td>' +
+                  '</tr>';
+                }).join('') +
+              '</tbody>' +
+            '</table>' +
+          '</div>' +
+        '</td>' +
+      '</tr>';
+    } else {
+      // 有待入库的行 — 正常渲染待入库 + 已完成的折叠
+      pendingItems.forEach(function(item, idx) {
+        var statusLabel = item.receivedQty > 0 ? '部分入库' : '待入库';
+        var statusCls = item.receivedQty > 0 ? 'warning' : '';
+        var remaining = item.remainingQty;
+
+        html += '<tr data-index="' + _siData.inboxItems.indexOf(item) + '">' +
+          '<td><input type="checkbox" class="stockin-item-check" data-index="' + _siData.inboxItems.indexOf(item) + '" onchange="updateSelection()"></td>' +
+          '<td><span style="font-family:monospace;font-size:12px;">' + item.poCode + '</span></td>' +
+          '<td><span style="font-weight:600;">' + item.itemName + '</span></td>' +
+          '<td>' + (item.brand || '-') + '</td>' +
+          '<td>' + (item.model || '-') + '</td>' +
+          '<td class="cell-number">' + item.orderedQty + '</td>' +
+          '<td class="cell-number">' + item.receivedQty + '</td>' +
+          '<td class="cell-number">' + remaining + '</td>' +
+          '<td class="cell-number">' +
+            '<input type="number" class="stockin-qty-input" data-index="' + _siData.inboxItems.indexOf(item) + '" data-remaining="' + remaining + '" value="' + remaining + '" min="0" max="' + remaining + '" step="1" style="width:64px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:13px;text-align:center;">' +
+          '</td>' +
+          '<td>' + (item.unit || '-') + '</td>' +
+          '<td class="cell-number">¥' + (item.price || 0).toFixed(2) + '</td>' +
+          '<td><span class="status-badge ' + statusCls + '" style="font-size:10px;padding:1px 6px;">' + statusLabel + '</span></td>' +
+        '</tr>';
+      });
+
+      // 已完成的行在这个 PO 内折叠显示
+      if (doneItems.length > 0) {
+        var partialSummaryId = 'si-partial-' + group.poId;
+        html += '<tr class="stockin-summary-row stockin-partial-done" onclick="toggleStockInSummary(\'' + partialSummaryId + '\')">' +
+          '<td colspan="12" style="padding:0;">' +
+            '<div class="stockin-summary-bar stockin-summary-bar-mini">' +
+              '<span class="stockin-summary-icon">▶</span>' +
+              '<span style="font-size:12px;color:var(--success);">已完成 ' + doneItems.length + ' 项</span>' +
+              '<span style="font-size:11px;color:var(--text-muted);margin-left:8px;">点击展开查看</span>' +
+            '</div>' +
+            '<div class="stockin-summary-detail" id="' + partialSummaryId + '" style="display:none;">' +
+              '<table class="data-table stockin-detail-mini">' +
+                '<thead><tr>' +
+                  '<th>物品名称</th><th>品牌</th><th>型号</th><th>采购数量</th><th>已入库</th><th>单位</th><th>单价</th><th>金额</th>' +
+                '</tr></thead>' +
+                '<tbody>' +
+                  doneItems.map(function(item) {
+                    return '<tr class="stockin-row-done">' +
+                      '<td>' + item.itemName + '</td>' +
+                      '<td>' + (item.brand || '-') + '</td>' +
+                      '<td>' + (item.model || '-') + '</td>' +
+                      '<td class="cell-number">' + item.orderedQty + '</td>' +
+                      '<td class="cell-number" style="color:var(--success);">' + item.receivedQty + '</td>' +
+                      '<td>' + (item.unit || '-') + '</td>' +
+                      '<td class="cell-number">¥' + item.price.toFixed(2) + '</td>' +
+                      '<td class="cell-number">¥' + item.amount.toFixed(2) + '</td>' +
+                    '</tr>';
+                  }).join('') +
+                '</tbody>' +
+              '</table>' +
+            '</div>' +
+          '</td>' +
+        '</tr>';
+      }
+    }
+  });
+
+  tbody.innerHTML = html;
 
   updateActionBar();
   updateInboxInfo();
@@ -529,19 +630,45 @@ function renderStockInInbox() {
 }
 
 /**
- * 更新选中状态
+ * 切换完成明细展开/折叠
+ */
+function toggleStockInSummary(summaryId) {
+  var detail = document.getElementById(summaryId);
+  if (!detail) return;
+
+  var icon = detail.previousElementSibling.querySelector('.stockin-summary-icon');
+
+  if (detail.style.display === 'none') {
+    detail.style.display = 'block';
+    detail.classList.add('stockin-summary-open');
+    if (icon) icon.textContent = '▼';
+  } else {
+    detail.style.display = 'none';
+    detail.classList.remove('stockin-summary-open');
+    if (icon) icon.textContent = '▶';
+  }
+}
+
+/**
+ * 更新选中状态 + 交互反馈
  */
 function updateSelection() {
   _siData.selectedItems.clear();
-  document.querySelectorAll('.stockin-item-check:checked').forEach(function(cb) {
-    _siData.selectedItems.add(parseInt(cb.getAttribute('data-index')));
+  document.querySelectorAll('.stockin-item-check').forEach(function(cb) {
+    var row = cb.closest('tr');
+    if (cb.checked) {
+      _siData.selectedItems.add(parseInt(cb.getAttribute('data-index')));
+      if (row) row.classList.add('stockin-row-selected');
+    } else {
+      if (row) row.classList.remove('stockin-row-selected');
+    }
   });
   updateActionBar();
   updateInboxInfo();
 }
 
 /**
- * 更新底部操作栏
+ * 更新底部操作栏 + 动画
  */
 function updateActionBar() {
   var bar = document.getElementById('stockin-actionbar');
@@ -551,8 +678,14 @@ function updateActionBar() {
   var count = _siData.selectedItems.size;
   if (count > 0) {
     bar.style.display = 'flex';
+    bar.classList.add('stockin-actionbar-show');
     countEl.textContent = '已选择 ' + count + ' 项';
+    // 数字变化弹跳动画
+    countEl.classList.remove('stockin-bounce');
+    void countEl.offsetWidth; // 触发 reflow
+    countEl.classList.add('stockin-bounce');
   } else {
+    bar.classList.remove('stockin-actionbar-show');
     bar.style.display = 'none';
   }
 }
@@ -789,14 +922,43 @@ async function executePartialStockIn() {
     // 刷新数据
     await loadHybridStockInData();
 
+    // 先对选中的行做消失动画
+    animateStockInSuccess();
+
     closeModal();
-    showToast('入库成功！共 ' + stockInItems.length + ' 项，' + totalQty + ' 件', 'success', 4000);
   } catch (e) {
     console.error('[StockIn] 入库失败:', e);
     showToast('入库失败: ' + e.message, 'error');
   } finally {
     hideButtonLoading('confirm-stockin-btn');
   }
+}
+
+/**
+ * 入库成功动画 — 行消失 + 成功提示浮层
+ */
+function animateStockInSuccess() {
+  // 对已勾选的行做 fade-out 动画
+  document.querySelectorAll('.stockin-row-selected').forEach(function(row) {
+    row.classList.add('stockin-row-fadeout');
+  });
+
+  // 显示成功浮层
+  var overlay = document.createElement('div');
+  overlay.className = 'stockin-success-overlay';
+  overlay.innerHTML = '<div class="stockin-success-content">' +
+    '<div class="stockin-success-icon">✓</div>' +
+    '<div class="stockin-success-text">入库成功</div>' +
+  '</div>';
+  document.getElementById('module-stock-in').appendChild(overlay);
+
+  // 3秒后自动消失
+  setTimeout(function() {
+    overlay.classList.add('stockin-success-fadeout');
+    setTimeout(function() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    }, 500);
+  }, 2500);
 }
 
 /**

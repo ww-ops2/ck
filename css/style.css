@@ -524,9 +524,10 @@ body {
 .content-wrapper::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
 /* ===== Module Pane ===== */
-.module-pane { display: none; }
+.module-pane { display: none; position: relative; }
 .module-pane.active {
   display: block;
+  position: relative;
   animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -2569,4 +2570,227 @@ input[type="number"]::-webkit-inner-spin-button {
   font-weight: 500;
   color: var(--text-primary);
   flex: none;
+}
+
+/* ===== 入库交互反馈 ===== */
+
+/* 选中行高亮 */
+.stockin-row-selected {
+  background: var(--accent-glow) !important;
+  border-left: 3px solid var(--accent);
+  transition: background 0.2s, border-left 0.2s;
+}
+
+/* 选中行消失动画 */
+.stockin-row-fadeout {
+  animation: stockinFadeOut 0.6s ease forwards;
+}
+
+@keyframes stockinFadeOut {
+  0% { opacity: 1; transform: translateY(0); }
+  50% { opacity: 0.5; transform: translateY(-8px); background: rgba(45,134,89,0.1); }
+  100% { opacity: 0; transform: translateY(-20px); }
+}
+
+/* 底部操作栏滑入动画 */
+.stockin-actionbar-show {
+  animation: stockinBarSlideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes stockinBarSlideUp {
+  0% { transform: translateY(20px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+/* 选择计数弹跳动画 */
+.stockin-bounce {
+  animation: stockinBounce 0.3s ease;
+}
+
+@keyframes stockinBounce {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.15); }
+  70% { transform: scale(0.95); }
+  100% { transform: scale(1); }
+}
+
+/* ===== 入库成功浮层 ===== */
+.stockin-success-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  background: rgba(45, 38, 32, 0.08);
+  animation: stockinOverlayIn 0.3s ease forwards;
+}
+
+@keyframes stockinOverlayIn {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+.stockin-success-fadeout {
+  animation: stockinOverlayOut 0.5s ease forwards;
+}
+
+@keyframes stockinOverlayOut {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.stockin-success-content {
+  background: var(--bg-card);
+  border: 2px solid var(--success);
+  border-radius: 16px;
+  padding: 32px 48px;
+  box-shadow: 0 8px 32px rgba(45,134,89,0.2), var(--shadow-medium);
+  text-align: center;
+  animation: stockinSuccessPop 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes stockinSuccessPop {
+  0% { transform: scale(0.7); opacity: 0; }
+  60% { transform: scale(1.05); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.stockin-success-icon {
+  font-size: 48px;
+  color: var(--success);
+  margin-bottom: 8px;
+  animation: stockinIconSpin 0.5s ease;
+}
+
+@keyframes stockinIconSpin {
+  0% { transform: scale(0) rotate(-180deg); opacity: 0; }
+  60% { transform: scale(1.2) rotate(10deg); }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+.stockin-success-text {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--success);
+}
+
+/* ===== 完成采购单折叠汇总栏 ===== */
+.stockin-summary-row td {
+  padding: 0 !important;
+  border: none !important;
+  cursor: pointer;
+}
+
+.stockin-summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--success-bg);
+  border: 1.5px solid rgba(45,134,89,0.15);
+  border-radius: 8px;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.stockin-summary-bar:hover {
+  background: rgba(45,134,89,0.12);
+  border-color: rgba(45,134,89,0.25);
+}
+
+.stockin-summary-bar-mini {
+  padding: 6px 16px;
+  background: rgba(45,134,89,0.04);
+  border: 1px dashed rgba(45,134,89,0.2);
+  border-radius: 6px;
+  margin-top: 4px;
+}
+
+.stockin-summary-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.stockin-summary-right {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.stockin-summary-icon {
+  font-size: 10px;
+  color: var(--success);
+  transition: transform 0.2s;
+  width: 16px;
+  text-align: center;
+}
+
+.stockin-summary-code {
+  font-family: monospace;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.stockin-summary-stat {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.stockin-summary-date {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.stockin-summary-detail {
+  padding: 8px 16px 12px;
+  animation: stockinDetailExpand 0.3s ease forwards;
+}
+
+.stockin-summary-open {
+  animation: stockinDetailExpand 0.3s ease forwards;
+}
+
+@keyframes stockinDetailExpand {
+  0% { opacity: 0; max-height: 0; }
+  100% { opacity: 1; max-height: 500px; }
+}
+
+/* 完成明细迷你表格 */
+.stockin-detail-mini {
+  font-size: 12px;
+  margin: 0;
+}
+
+.stockin-detail-mini th {
+  font-size: 11px;
+  padding: 6px 8px;
+  background: var(--bg-elevated);
+  font-weight: 500;
+}
+
+.stockin-detail-mini td {
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.stockin-detail-mini .stockin-row-done {
+  opacity: 0.6;
+}
+
+.stockin-detail-mini .stockin-row-done td {
+  text-decoration: none;
+}
+
+/* 复选框选中动画 */
+.stockin-item-check:checked {
+  accent-color: var(--accent);
+}
+
+.stockin-item-check {
+  transition: transform 0.15s;
+}
+
+.stockin-item-check:checked {
+  transform: scale(1.1);
 }
