@@ -437,7 +437,7 @@ function selectStockInPO(poId) {
   _siData.selectedPOId = poId;
   // 高亮选中的卡片
   document.querySelectorAll('.stockin-card').forEach(function(card) {
-    card.classList.toggle('active', parseInt(card.getAttribute('data-po-id')) === poId);
+    card.classList.toggle('active', parseFloat(card.getAttribute('data-po-id')) === poId);
   });
   // 刷新收件箱
   renderStockInInbox();
@@ -568,7 +568,7 @@ function renderStockInInbox() {
           '<td class="cell-number">' + item.receivedQty + '</td>' +
           '<td class="cell-number">' + remaining + '</td>' +
           '<td class="cell-number">' +
-            '<input type="number" class="stockin-qty-input" data-index="' + _siData.inboxItems.indexOf(item) + '" data-remaining="' + remaining + '" value="' + remaining + '" min="0" max="' + remaining + '" step="1" style="width:64px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:13px;text-align:center;">' +
+            '<input type="number" class="stockin-qty-input" data-index="' + _siData.inboxItems.indexOf(item) + '" data-remaining="' + remaining + '" value="' + remaining + '" min="0" max="' + remaining + '" step="0.01" style="width:64px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:13px;text-align:center;">' +
           '</td>' +
           '<td>' + (item.unit || '-') + '</td>' +
           '<td class="cell-number">¥' + (item.price || 0).toFixed(2) + '</td>' +
@@ -621,8 +621,8 @@ function renderStockInInbox() {
   // 绑定数量输入事件
   tbody.querySelectorAll('.stockin-qty-input').forEach(function(inp) {
     inp.addEventListener('change', function() {
-      var max = parseInt(this.getAttribute('data-remaining')) || 0;
-      var val = parseInt(this.value) || 0;
+      var max = parseFloat(this.getAttribute('data-remaining')) || 0;
+      var val = parseFloat(this.value) || 0;
       if (val < 0) this.value = 0;
       if (val > max) this.value = max;
     });
@@ -657,7 +657,7 @@ function updateSelection() {
   document.querySelectorAll('.stockin-item-check').forEach(function(cb) {
     var row = cb.closest('tr');
     if (cb.checked) {
-      _siData.selectedItems.add(parseInt(cb.getAttribute('data-index')));
+      _siData.selectedItems.add(parseFloat(cb.getAttribute('data-index')));
       if (row) row.classList.add('stockin-row-selected');
     } else {
       if (row) row.classList.remove('stockin-row-selected');
@@ -770,7 +770,7 @@ function openStockInConfirmModal() {
       '<td>' + item.orderedQty + '</td>' +
       '<td>' + item.receivedQty + '</td>' +
       '<td>' + remaining + '</td>' +
-      '<td><input type="number" class="confirm-qty" data-remaining="' + remaining + '" value="' + remaining + '" min="0" max="' + remaining + '" step="1" style="width:70px;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;text-align:center;"></td>' +
+      '<td><input type="number" class="confirm-qty" data-remaining="' + remaining + '" value="' + remaining + '" min="0" max="' + remaining + '" step="0.01" style="width:70px;padding:5px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;text-align:center;"></td>' +
       '<td>' + (item.unit || '-') + '</td>' +
       '<td>¥' + (item.price || 0).toFixed(2) + '</td>' +
       '<td class="cell-number confirm-amount">¥' + (remaining * (item.price || 0)).toFixed(2) + '</td>' +
@@ -783,8 +783,8 @@ function openStockInConfirmModal() {
       inp.addEventListener('input', function() {
         var row = this.closest('tr');
         var price = parseFloat(row.querySelectorAll('td')[9].textContent.replace('¥', '')) || 0;
-        var qty = parseInt(this.value) || 0;
-        var max = parseInt(this.getAttribute('data-remaining')) || 0;
+        var qty = parseFloat(this.value) || 0;
+        var max = parseFloat(this.getAttribute('data-remaining')) || 0;
         if (qty > max) { this.value = max; qty = max; }
         if (qty < 0) { this.value = 0; qty = 0; }
         var amtEl = row.querySelector('.confirm-amount');
@@ -828,8 +828,8 @@ async function executePartialStockIn() {
     var itemName = cells[1].textContent.trim();
     var brand = cells[2].textContent.trim();
     var model = cells[3].textContent.trim();
-    var orderedQty = parseInt(cells[4].textContent) || 0;
-    var actualQty = parseInt(row.querySelector('.confirm-qty').value) || 0;
+    var orderedQty = parseFloat(cells[4].textContent) || 0;
+    var actualQty = parseFloat(row.querySelector('.confirm-qty').value) || 0;
     var unit = cells[8].textContent.trim();
     var priceText = cells[9].textContent.trim().replace('¥', '');
     var price = parseFloat(priceText) || 0;
@@ -893,7 +893,7 @@ async function executePartialStockIn() {
     // 按 PO 分组分批调用
     var poIds = Object.keys(poMap);
     for (var p = 0; p < poIds.length; p++) {
-      var poId = parseInt(poIds[p]);
+      var poId = parseFloat(poIds[p]);
       var poData = poMap[poId];
       var payload = {
         stockin_date: stockinDate,
