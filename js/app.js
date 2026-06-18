@@ -33,7 +33,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 初始化登录动画角色
   if (typeof initLoginCharacters === 'function') {
-    initLoginCharacters();
+    try {
+      initLoginCharacters();
+    } catch (e) {
+      console.warn('[App] initLoginCharacters 首次调用失败:', e);
+    }
+    // 延迟 300ms 再确保动画循环已启动（防止 DOM 布局尚未完成）
+    setTimeout(function() {
+      if (typeof _loginChars !== 'undefined' && !_loginChars._loopRunning) {
+        console.log('[App] 登录动画延迟重启...');
+        try { initLoginCharacters(); } catch(e2) { console.warn('[App] 延迟重启失败:', e2); }
+      }
+    }, 300);
   }
   
   // 绑定模态框关闭事件
