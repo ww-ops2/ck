@@ -401,8 +401,18 @@ function renderStockInBoard() {
 
   container.innerHTML = filtered.map(function(po) {
     var stats = poStats[po.id] || { totalItems: 0, totalOrdered: 0, totalReceived: 0, completedItems: 0, progress: 0, itemsProgress: 0 };
-    var st = statusText[po.status] || po.status;
-    var sc = statusClass[po.status] || '';
+    // 关键修复：根据实际入库进度重新计算显示状态，而非盲目使用数据库中的 po.status
+    // 数据库 status 可能因为 parseFloat/parseInt 截断问题被错误标记为已完成
+    var effectiveStatus;
+    if (stats.completedItems >= stats.totalItems && stats.totalItems > 0) {
+      effectiveStatus = 'stockin_completed';
+    } else if (stats.completedItems > 0) {
+      effectiveStatus = 'partially_stockin';
+    } else {
+      effectiveStatus = 'pending_stockin';
+    }
+    var st = statusText[effectiveStatus] || effectiveStatus;
+    var sc = statusClass[effectiveStatus] || '';
     var supplierNames = (po.suppliers && po.suppliers.length > 0) ? po.suppliers.join(', ') : (po.supplier || '-');
     var isActive = _siData.selectedPOId === po.id;
     var remainingCount = stats.totalItems - stats.completedItems;
@@ -424,7 +434,7 @@ function renderStockInBoard() {
       '</div>' +
       '<div class="stockin-card-footer">' +
         '<span class="stockin-card-stat">' + stats.completedItems + '/' + stats.totalItems + ' 项</span>' +
-        (po.status !== 'stockin_completed' ? '<span class="stockin-card-action">' + (stats.completedItems > 0 ? '继续入库 →' : '开始入库 →') + '</span>' : '<span class="stockin-card-done">✓ 已完成</span>') +
+        (effectiveStatus !== 'stockin_completed' ? '<span class="stockin-card-action">' + (stats.completedItems > 0 ? '继续入库 →' : '开始入库 →') + '</span>' : '<span class="stockin-card-done">✓ 已完成</span>') +
       '</div>' +
     '</div>';
   }).join('');
@@ -477,7 +487,7 @@ function renderStockInInbox() {
   _siData.selectedItems.clear();
 
   if (items.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="12" class="empty-state">暂无待入库物品' + (_siData.selectedPOId ? '，请选择其他采购单' : '，请在左侧选择采购单') + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" class="empty-state">暂无待入库物品' + (_siData.selectedPOId ? '，请选择其他采购单' : '，请在左侧选择采购单') + '</td></tr>';
     updateActionBar();
     updateInboxInfo();
     return;
@@ -516,7 +526,7 @@ function renderStockInInbox() {
       // 已完成：渲染为折叠汇总栏
       var summaryId = 'si-summary-' + group.poId;
       html += '<tr class="stockin-summary-row" onclick="toggleStockInSummary(\'' + summaryId + '\')">' +
-        '<td colspan="12" style="padding:0;">' +
+        '<td colspan="13" style="padding:0;">' +
           '<div class="stockin-summary-bar">' +
             '<div class="stockin-summary-left">' +
               '<span class="stockin-summary-icon">▶</span>' +
@@ -557,9 +567,10 @@ function renderStockInInbox() {
         var statusLabel = item.receivedQty > 0 ? '部分入库' : '待入库';
         var statusCls = item.receivedQty > 0 ? 'warning' : '';
         var remaining = item.remainingQty;
+        var itemIdx = _siData.inboxItems.indexOf(item);
 
-        html += '<tr data-index="' + _siData.inboxItems.indexOf(item) + '">' +
-          '<td><input type="checkbox" class="stockin-item-check" data-index="' + _siData.inboxItems.indexOf(item) + '" onchange="updateSelection()"></td>' +
+        html += '<tr data-index="' + itemIdx + '">' +
+          '<td><input type="checkbox" class="stockin-item-check" data-index="' + itemIdx + '" onchange="updateSelection()"></td>' +
           '<td><span style="font-family:monospace;font-size:12px;">' + item.poCode + '</span></td>' +
           '<td><span style="font-weight:600;">' + item.itemName + '</span></td>' +
           '<td>' + (item.brand || '-') + '</td>' +
@@ -568,11 +579,12 @@ function renderStockInInbox() {
           '<td class="cell-number">' + item.receivedQty + '</td>' +
           '<td class="cell-number">' + remaining + '</td>' +
           '<td class="cell-number">' +
-            '<input type="number" class="stockin-qty-input" data-index="' + _siData.inboxItems.indexOf(item) + '" data-remaining="' + remaining + '" value="' + remaining + '" min="0" max="' + remaining + '" step="0.01" style="width:64px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:13px;text-align:center;">' +
+            '<input type="number" class="stockin-qty-input" data-index="' + itemIdx + '" data-remaining="' + remaining + '" value="' + remaining + '" min="0" max="' + remaining + '" step="0.01" style="width:64px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:13px;text-align:center;">' +
           '</td>' +
           '<td>' + (item.unit || '-') + '</td>' +
           '<td class="cell-number">¥' + (item.price || 0).toFixed(2) + '</td>' +
           '<td><span class="status-badge ' + statusCls + '" style="font-size:10px;padding:1px 6px;">' + statusLabel + '</span></td>' +
+          '<td><button class="btn btn-sm btn-accent stockin-row-confirm-btn" data-item-index="' + itemIdx + '" onclick="confirmStockInSingle(' + itemIdx + ')">确认入库</button></td>' +
         '</tr>';
       });
 
@@ -580,7 +592,7 @@ function renderStockInInbox() {
       if (doneItems.length > 0) {
         var partialSummaryId = 'si-partial-' + group.poId;
         html += '<tr class="stockin-summary-row stockin-partial-done" onclick="toggleStockInSummary(\'' + partialSummaryId + '\')">' +
-          '<td colspan="12" style="padding:0;">' +
+          '<td colspan="13" style="padding:0;">' +
             '<div class="stockin-summary-bar stockin-summary-bar-mini">' +
               '<span class="stockin-summary-icon">▶</span>' +
               '<span style="font-size:12px;color:var(--success);">已完成 ' + doneItems.length + ' 项</span>' +
@@ -724,6 +736,28 @@ function populatePOFilter() {
 // ============================================================
 // 入库确认
 // ============================================================
+
+/**
+ * 单行确认入库 — 勾选该行 + 打开确认弹窗
+ */
+function confirmStockInSingle(itemIndex) {
+  // 清除之前的选择，只选中当前行
+  _siData.selectedItems.clear();
+  _siData.selectedItems.add(itemIndex);
+
+  // 更新复选框状态
+  document.querySelectorAll('.stockin-item-check').forEach(function(cb) {
+    cb.checked = Number(cb.getAttribute('data-index')) === itemIndex;
+  });
+
+  // 更新行高亮
+  document.querySelectorAll('#stockin-inbox-tbody tr[data-index]').forEach(function(row) {
+    row.classList.toggle('stockin-row-selected', Number(row.getAttribute('data-index')) === itemIndex);
+  });
+
+  // 直接打开确认弹窗
+  openStockInConfirmModal();
+}
 
 /**
  * 打开入库确认弹窗

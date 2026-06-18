@@ -2795,6 +2795,34 @@ input[type="number"]::-webkit-inner-spin-button {
   transform: scale(1.1);
 }
 
+/* 行级确认入库按钮 */
+.stockin-row-confirm-btn {
+  font-size: 11px;
+  padding: 3px 8px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* 入库收件箱表格列对齐 — 使用 colgroup 确保表头和tbody 列宽度一致 */
+.stockin-inbox-table colgroup col {
+  /* colgroup widths are set in HTML, this rule ensures the colgroup is respected */
+}
+
+.stockin-inbox-table th,
+.stockin-inbox-table td {
+  /* 统一内边距，确保列对齐 */
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.stockin-inbox-table th.cell-number,
+.stockin-inbox-table td.cell-number {
+  text-align: right;
+}
+
 /* ===== 入库确认弹窗 — 左右分栏布局 ===== */
 .stockin-confirm-layout .modal-body {
   padding: 0;
