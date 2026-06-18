@@ -253,17 +253,23 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 48px 64px;
+  padding: 48px;
   background: var(--bg-base);
 }
 
 .login-form-container {
   width: 100%;
+  max-width: 440px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 48px 40px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.08);
 }
 
 .login-form-header {
   text-align: center;
-  margin-bottom: 40px;
+  margin-bottom: 32px;
 }
 
 .login-form-header h1 {
@@ -277,6 +283,35 @@ body {
 .login-form-header p {
   color: var(--text-muted);
   font-size: 14px;
+}
+
+.login-form-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 32px;
+}
+
+.login-form-footer-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  margin-top: 32px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.login-form-footer-links a {
+  color: var(--text-muted);
+  transition: color 0.2s;
+}
+
+.login-form-footer-links a:hover {
+  color: var(--accent);
 }
 
 .login-form .form-group {
@@ -297,10 +332,10 @@ body {
 
 .login-input-wrap input {
   width: 100%;
-  padding: 12px 14px;
+  padding: 14px 18px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-input);
+  border-radius: 28px;
+  background: var(--bg-elevated);
   color: var(--text-primary);
   font-size: 14px;
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -338,7 +373,9 @@ body {
 .login-submit-btn {
   height: 48px;
   font-size: 15px;
-  font-weight: 500;
+  font-weight: 600;
+  border-radius: 28px;
+  letter-spacing: 4px;
 }
 
 .login-footer {
