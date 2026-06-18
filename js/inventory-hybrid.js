@@ -96,9 +96,27 @@ function initInventoryHybrid() {
     var batchCancelBtn = document.getElementById('inv-batch-cancel');
     if (batchCancelBtn) batchCancelBtn.addEventListener('click', function() { toggleInvBatchMode(); });
     var suppSaveBtn = document.getElementById('inv-supp-save');
-    if (suppSaveBtn) suppSaveBtn.addEventListener('click', _saveInvSupplement);
+    if (suppSaveBtn) {
+      suppSaveBtn.removeEventListener('click', suppSaveBtn._hybridHandler);
+      suppSaveBtn._hybridHandler = function() { _saveInvSupplement(); };
+      suppSaveBtn.addEventListener('click', suppSaveBtn._hybridHandler);
+    }
     var suppCancelBtn = document.getElementById('inv-supp-cancel');
-    if (suppCancelBtn) suppCancelBtn.addEventListener('click', _cancelInvSupplement);
+    if (suppCancelBtn) {
+      suppCancelBtn.removeEventListener('click', suppCancelBtn._hybridHandler);
+      suppCancelBtn._hybridHandler = function() { _cancelInvSupplement(); };
+      suppCancelBtn.addEventListener('click', suppCancelBtn._hybridHandler);
+    }
+
+    // ESC 退出补充信息模式
+    if (!document._invEscHandler) {
+      document._invEscHandler = function(e) {
+        if (e.key === 'Escape' && _invHybrid.supplementMode) {
+          _cancelInvSupplement();
+        }
+      };
+      document.addEventListener('keydown', document._invEscHandler);
+    }
   } catch(bindErr) {
     console.warn('[InventoryHybrid] 事件绑定异常:', bindErr.message);
   }
@@ -702,6 +720,14 @@ async function _saveInvSupplement() {
   var tableWrap = document.getElementById('inv-table-wrap');
   if (!tableWrap) return;
 
+  // 防止重复点击：禁用按钮 + 显示保存中状态
+  var saveBtn = document.getElementById('inv-supp-save');
+  var cancelBtn = document.getElementById('inv-supp-cancel');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '保存中...'; }
+  if (cancelBtn) cancelBtn.disabled = true;
+
+  try {
+
   var changedItems = [];
   var errors = [];
 
@@ -823,11 +849,16 @@ async function _saveInvSupplement() {
     showToast(msg, 'error');
   }
 
-  _invHybrid.supplementMode = false;
-  updateInvButtonStates();
+  } finally {
+    // 无论成功还是失败，确保退出补充信息模式并恢复按钮
+    _invHybrid.supplementMode = false;
+    updateInvButtonStates();
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '保存补充信息'; }
+    if (cancelBtn) cancelBtn.disabled = false;
+  }
 
   // 重新渲染（全量数据重新加载 + 按新分类重新分组排版）
-  loadInventoryHybridData(!allSuccess);
+  loadInventoryHybridData();
 }
 
 function _cancelInvSupplement() {
