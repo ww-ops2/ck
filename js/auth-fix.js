@@ -244,10 +244,7 @@ function updateUserDisplay() {
   if (!u) return;
   const nameEl = document.getElementById('user-name'); if (nameEl) nameEl.textContent = u.name;
   const roleEl = document.getElementById('user-role'); if (roleEl) roleEl.textContent = (getRoleName(u.role) || u.role);
-  const avatar = document.getElementById('user-avatar'); if (avatar) {
-    const roleEmojis = { admin:'👑', purchase:'🛒', warehouse:'📦', finance:'💰', staff:'👤'};
-    avatar.textContent = roleEmojis[u.role] || '👤';
-  }
+  // Avatar: keep default SVG, no emoji replacement
 }
 
 function getRoleName(role) {
