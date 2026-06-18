@@ -30,6 +30,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 初始化认证模块
   initAuth();
+
+  // 初始化登录动画角色
+  if (typeof initLoginCharacters === 'function') {
+    initLoginCharacters();
+  }
   
   // 绑定模态框关闭事件
   bindModalEvents();
