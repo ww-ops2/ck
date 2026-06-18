@@ -97,7 +97,7 @@ body {
 /* ===== 登录界面 — 动画角色版 ===== */
 .login-container {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 3fr 5fr;
   min-height: 100vh;
   position: relative;
   overflow: hidden;
@@ -259,7 +259,7 @@ body {
 
 .login-form-container {
   width: 100%;
-  max-width: 420px;
+  max-width: 480px;
 }
 
 .login-form-header {
