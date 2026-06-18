@@ -777,7 +777,10 @@ function openStockInConfirmModal() {
     '</tr>';
   }).join('');
 
-  // 绑定数量变更事件（更新金额）
+  // 初始化右侧汇总数据
+  updateConfirmSummary(selectedRows);
+
+  // 绑定数量变更事件（更新金额 + 右侧汇总）
   setTimeout(function() {
     tbody.querySelectorAll('.confirm-qty').forEach(function(inp) {
       inp.addEventListener('input', function() {
@@ -789,6 +792,8 @@ function openStockInConfirmModal() {
         if (qty < 0) { this.value = 0; qty = 0; }
         var amtEl = row.querySelector('.confirm-amount');
         if (amtEl) amtEl.textContent = '¥' + (qty * price).toFixed(2);
+        // 重新计算汇总
+        recalcConfirmSummary();
       });
     });
   }, 50);
@@ -801,7 +806,46 @@ function openStockInConfirmModal() {
     newBtn.addEventListener('click', executePartialStockIn);
   }
 
+  // 绑定取消按钮
+  var cancelBtn = document.querySelector('.stockin-confirm-btn-cancel');
+  if (cancelBtn) {
+    var newCancelBtn = cancelBtn.cloneNode(true);
+    cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+    newCancelBtn.addEventListener('click', function() { closeModal(); });
+  }
+
   openModal('modal-stockin-confirm');
+}
+
+/**
+ * 初始化确认弹窗右侧汇总
+ */
+function updateConfirmSummary(selectedRows) {
+  var totalQty = selectedRows.reduce(function(s, i) { return s + i.remainingQty; }, 0);
+  var totalAmt = selectedRows.reduce(function(s, i) { return s + (i.remainingQty * i.price); }, 0);
+  var qtyEl = document.getElementById('confirm-stat-qty');
+  var amtEl = document.getElementById('confirm-stat-amount');
+  if (qtyEl) qtyEl.textContent = totalQty;
+  if (amtEl) amtEl.textContent = '¥' + totalAmt.toFixed(2);
+}
+
+/**
+ * 重新计算确认弹窗右侧汇总（用户修改数量后）
+ */
+function recalcConfirmSummary() {
+  var totalQty = 0;
+  var totalAmt = 0;
+  document.querySelectorAll('.confirm-qty').forEach(function(inp) {
+    var qty = parseFloat(inp.value) || 0;
+    var row = inp.closest('tr');
+    var price = parseFloat(row.querySelectorAll('td')[9].textContent.replace('¥', '')) || 0;
+    totalQty += qty;
+    totalAmt += qty * price;
+  });
+  var qtyEl = document.getElementById('confirm-stat-qty');
+  var amtEl = document.getElementById('confirm-stat-amount');
+  if (qtyEl) qtyEl.textContent = totalQty;
+  if (amtEl) amtEl.textContent = '¥' + totalAmt.toFixed(2);
 }
 
 /**

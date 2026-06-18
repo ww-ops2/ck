@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>库存管理系统</title>
-  <link rel="stylesheet" href="css/style.css?v=5.9">
+  <link rel="stylesheet" href="css/style.css?v=5.12">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
@@ -1272,60 +1272,77 @@
 
   <!-- ===== 模态框：入库确认 ===== -->
   <div id="modal-stockin-confirm" class="modal">
-    <div class="modal-content modal-lg">
+    <div class="modal-content modal-lg stockin-confirm-layout">
       <div class="modal-header">
         <h2>入库确认</h2>
         <button class="modal-close">&times;</button>
       </div>
       <div class="modal-body">
-        <div class="stockin-info">
-          <div class="info-row">
-            <span class="info-label">来源：</span>
-            <span class="info-value" id="confirm-stockin-source">手动入库</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">入库日期：</span>
-            <span class="info-value"><input type="date" id="stockin-date" required style="padding:5px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px;"></span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">批次号：</span>
-            <span class="info-value"><input type="text" id="stockin-batch" placeholder="自动生成或手动输入" style="padding:5px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px;width:200px;"></span>
-          </div>
-        </div>
+        <div class="stockin-confirm-flex">
+          <!-- 左侧：明细表格 -->
+          <div class="stockin-confirm-main">
+            <div class="stockin-info">
+              <div class="info-row">
+                <span class="info-label">来源：</span>
+                <span class="info-value" id="confirm-stockin-source">手动入库</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">入库日期：</span>
+                <span class="info-value"><input type="date" id="stockin-date" required style="padding:5px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px;"></span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">批次号：</span>
+                <span class="info-value"><input type="text" id="stockin-batch" placeholder="自动生成或手动输入" style="padding:5px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px;width:200px;"></span>
+              </div>
+            </div>
 
-        <div class="form-group" style="margin-top:16px;">
-          <label>入库明细 <span style="font-size:11px;color:var(--text-muted);font-weight:normal;">（共 <span id="confirm-stockin-item-count">0</span> 项，可修改实收数量）</span></label>
-          <div class="table-scroll">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>采购单号</th>
-                  <th>物品名称</th>
-                  <th>品牌</th>
-                  <th>型号</th>
-                  <th>采购数量</th>
-                  <th>已入库</th>
-                  <th>待入库</th>
-                  <th>本次实收 *</th>
-                  <th>单位</th>
-                  <th>单价</th>
-                  <th>金额</th>
-                </tr>
-              </thead>
-              <tbody id="stockin-confirm-tbody">
-              </tbody>
-            </table>
+            <div class="form-group" style="margin-top:12px;">
+              <label>入库明细 <span style="font-size:11px;color:var(--text-muted);font-weight:normal;">（共 <span id="confirm-stockin-item-count">0</span> 项）</span></label>
+              <div class="table-scroll">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>采购单号</th>
+                      <th>物品名称</th>
+                      <th>品牌</th>
+                      <th>型号</th>
+                      <th>采购数量</th>
+                      <th>已入库</th>
+                      <th>待入库</th>
+                      <th>本次实收 *</th>
+                      <th>单位</th>
+                      <th>单价</th>
+                      <th>金额</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stockin-confirm-tbody">
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top:8px;">
+              <label>验收备注</label>
+              <textarea id="stockin-remark" rows="2" placeholder="如有差异请说明" style="font-size:13px;"></textarea>
+            </div>
+          </div>
+
+          <!-- 右侧：操作面板 -->
+          <div class="stockin-confirm-actions">
+            <div class="stockin-confirm-summary" id="stockin-confirm-summary">
+              <div class="stockin-confirm-stat">
+                <span class="stockin-confirm-stat-label">入库数量</span>
+                <span class="stockin-confirm-stat-value" id="confirm-stat-qty">0</span>
+              </div>
+              <div class="stockin-confirm-stat">
+                <span class="stockin-confirm-stat-label">入库金额</span>
+                <span class="stockin-confirm-stat-value" id="confirm-stat-amount">¥0.00</span>
+              </div>
+            </div>
+            <button class="btn btn-accent stockin-confirm-btn-main" id="confirm-stockin-btn">确认入库</button>
+            <button class="btn modal-cancel stockin-confirm-btn-cancel">取消</button>
           </div>
         </div>
-
-        <div class="form-group">
-          <label>验收备注</label>
-          <textarea id="stockin-remark" rows="2" placeholder="如有差异请说明"></textarea>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn modal-cancel">取消</button>
-        <button class="btn btn-accent" id="confirm-stockin-btn">确认入库</button>
       </div>
     </div>
   </div>
@@ -1700,18 +1717,18 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="js/supabase-db.js?v=5.8"></script>
   <script src="js/supabase-sync.js?v=5.8"></script>
-  <script src="js/migrate-data.js?v=5.11"></script>
-  <script src="js/toast.js?v=5.11"></script>
-  <script src="js/auth-fix.js?v=5.11"></script>
-  <script src="js/navigation.js?v=5.11"></script>
-  <script src="js/purchase.js?v=5.11"></script>
-  <script src="js/stock-in.js?v=5.11"></script>
-  <script src="js/requisition.js?v=5.11"></script>
-  <script src="js/monthly-summary.js?v=5.11"></script>
-  <script src="js/tour-reports.js?v=5.11"></script>
-  <script src="js/business-flow.js?v=5.11"></script>
-  <script src="js/app.js?v=5.11"></script>
-  <script src="js/admin-bindings.js?v=5.11"></script>
+  <script src="js/migrate-data.js?v=5.12"></script>
+  <script src="js/toast.js?v=5.12"></script>
+  <script src="js/auth-fix.js?v=5.12"></script>
+  <script src="js/navigation.js?v=5.12"></script>
+  <script src="js/purchase.js?v=5.12"></script>
+  <script src="js/stock-in.js?v=5.12"></script>
+  <script src="js/requisition.js?v=5.12"></script>
+  <script src="js/monthly-summary.js?v=5.12"></script>
+  <script src="js/tour-reports.js?v=5.12"></script>
+  <script src="js/business-flow.js?v=5.12"></script>
+  <script src="js/app.js?v=5.12"></script>
+  <script src="js/admin-bindings.js?v=5.12"></script>
 
   <script src="js/user-admin.js"></script>
 </body>

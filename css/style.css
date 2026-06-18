@@ -2794,3 +2794,80 @@ input[type="number"]::-webkit-inner-spin-button {
 .stockin-item-check:checked {
   transform: scale(1.1);
 }
+
+/* ===== 入库确认弹窗 — 左右分栏布局 ===== */
+.stockin-confirm-layout .modal-body {
+  padding: 0;
+}
+
+.stockin-confirm-flex {
+  display: flex;
+  gap: 0;
+  height: calc(90vh - 60px);
+  min-height: 400px;
+}
+
+.stockin-confirm-main {
+  flex: 1;
+  padding: 20px 24px;
+  overflow-y: auto;
+}
+
+.stockin-confirm-actions {
+  width: 200px;
+  min-width: 180px;
+  background: var(--bg-elevated);
+  border-left: 1.5px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px 16px;
+}
+
+.stockin-confirm-summary {
+  background: var(--bg-card);
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  width: 100%;
+  text-align: center;
+}
+
+.stockin-confirm-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+}
+
+.stockin-confirm-stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.stockin-confirm-stat-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.stockin-confirm-btn-main {
+  width: 100%;
+  padding: 14px 20px;
+  font-size: 15px;
+  font-weight: 700;
+  border-radius: 8px;
+  letter-spacing: 0.5px;
+}
+
+.stockin-confirm-btn-cancel {
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 13px;
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+}
