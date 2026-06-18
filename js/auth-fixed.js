@@ -66,7 +66,7 @@ async function showApp() {
 }
 
 function showLoginPage() {
-  document.getElementById('login-page').style.display = 'flex';
+  document.getElementById('login-page').style.display = 'grid';
   document.getElementById('app-container').style.display = 'none';
   const roleSelect = document.getElementById('login-role'); if (roleSelect) roleSelect.value = '';
 }

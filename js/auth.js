@@ -125,7 +125,7 @@ async function showApp() {
  * 显示登录页面
  */
 function showLoginPage() {
-  document.getElementById('login-page').style.display = 'flex';
+  document.getElementById('login-page').style.display = 'grid';
   document.getElementById('app-container').style.display = 'none';
   
   // 重置角色选择

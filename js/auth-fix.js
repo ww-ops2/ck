@@ -218,7 +218,7 @@ function showApp() {
 function showLoginPage() {
   const lp = document.getElementById('login-page');
   const ac = document.getElementById('app-container');
-  if (lp) lp.style.display = 'flex';
+  if (lp) lp.style.display = 'grid';
   if (ac) ac.style.display = 'none';
   const phoneInput = document.getElementById('login-phone');
   if (phoneInput) phoneInput.value = '';
