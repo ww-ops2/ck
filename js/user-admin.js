@@ -101,7 +101,10 @@
   function loadUserList() {
     const tbody = document.getElementById('users-tbody');
     if (!tbody) return;
-    const users = (typeof _appCache !== 'undefined' && _appCache.users) ? _appCache.users : [];
+    // 合并三源数据（Supabase + _appCache + localStorage），防止 Supabase 写入失败时用户丢失
+    const users = (typeof mergeAllUserSources === 'function')
+      ? mergeAllUserSources()
+      : ((typeof _appCache !== 'undefined' && _appCache.users) ? _appCache.users : []);
     if (!users || users.length === 0) {
       tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无用户数据</td></tr>';
       return;

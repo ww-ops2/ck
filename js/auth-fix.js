@@ -56,6 +56,28 @@ function initAuth() {
   }
 }
 
+/**
+ * 合并三源用户数据（Supabase → _appCache → localStorage）
+ * 解决注册写入 Supabase 静默失败时用户只存在于 localStorage 的问题
+ */
+function mergeAllUserSources() {
+  var userMap = {};
+
+  // 1. localStorage（最低优先级）
+  try {
+    var ls = JSON.parse(localStorage.getItem('users') || '[]');
+    ls.forEach(function(u) { if (u && u.username) userMap[u.username] = u; });
+  } catch(e) {}
+
+  // 2. _appCache（中优先级，覆盖 localStorage）
+  if (typeof _appCache !== 'undefined' && _appCache.users) {
+    _appCache.users.forEach(function(u) { if (u && u.username) userMap[u.username] = u; });
+  }
+
+  return Object.values(userMap);
+}
+window.mergeAllUserSources = mergeAllUserSources;
+
 /** 登录处理 */
 async function handleLogin(e) {
   if (e) e.preventDefault();
@@ -74,33 +96,29 @@ async function handleLogin(e) {
     return;
   }
 
-  // 普通用户登录 — 优先从 SupaDB 获取，然后 _appCache，最后 localStorage 兜底
-  let users = [];
-  let user = null;
+  // 普通用户登录 — 合并三源数据（Supabase + _appCache + localStorage）
+  let users = mergeAllUserSources();
 
-  // 1. 尝试 SupaDB.getUsers()
+  // 额外尝试 SupaDB.getUsers() 补充云端数据
   try {
     if (typeof SupaDB !== 'undefined' && SupaDB.getUsers) {
       const cloudUsers = await SupaDB.getUsers();
       if (cloudUsers && cloudUsers.length > 0) {
-        users = cloudUsers;
+        var existNames = {};
+        users.forEach(function(u) { existNames[u.username] = true; });
+        cloudUsers.forEach(function(u) {
+          if (u && u.username && !existNames[u.username]) {
+            users.push(u);
+            existNames[u.username] = true;
+          }
+        });
       }
     }
   } catch (e) {
     console.warn('[Auth] SupaDB.getUsers() failed:', e.message);
   }
 
-  // 2. 如果 SupaDB 未返回数据，尝试 _appCache.users
-  if (users.length === 0 && typeof _appCache !== 'undefined' && _appCache.users && _appCache.users.length > 0) {
-    users = _appCache.users;
-  }
-
-  // 3. 最后兜底到 localStorage
-  if (users.length === 0) {
-    users = JSON.parse(localStorage.getItem('users') || '[]');
-  }
-
-  user = users.find(u => u.username === phone);
+  var user = users.find(function(u) { return u.username === phone; });
 
   if (!user) {
     showToast('该账号未注册，请先注册', 'warning');
@@ -150,10 +168,10 @@ function submitRegistration() {
   if (!role) { showToast('请选择角色', 'warning'); return; }
   if (!description) description = '';
 
-  // 检查重复（三源合并检查）
-  var lsUsers = JSON.parse(localStorage.getItem('users') || '[]');
-  var cacheUsers = (typeof _appCache !== 'undefined' && _appCache.users) ? _appCache.users : [];
-  var allUsers = lsUsers.concat(cacheUsers);
+  // 检查重复（三源合并检查，包含 Supabase 防止跨设备重复注册）
+  var allUsers = (typeof mergeAllUserSources === 'function')
+    ? mergeAllUserSources()
+    : JSON.parse(localStorage.getItem('users') || '[]');
   if (allUsers.find(u => u.username === phone)) {
     showToast('该手机号已注册', 'warning');
     return;
@@ -174,6 +192,7 @@ function submitRegistration() {
   };
 
   // 1. 写入 localStorage（保底持久化，确保刷新后不丢失）
+  var lsUsers = JSON.parse(localStorage.getItem('users') || '[]');
   lsUsers.push(newUser);
   localStorage.setItem('users', JSON.stringify(lsUsers));
 
@@ -288,13 +307,8 @@ function checkNotifications() {
   const badge = document.getElementById('notification-badge');
   if (!badge) return;
   try {
-    // 优先使用 _appCache.users，然后 localStorage 兜底
-    let users = [];
-    if (typeof _appCache !== 'undefined' && _appCache.users && _appCache.users.length > 0) {
-      users = _appCache.users;
-    } else {
-      users = JSON.parse(localStorage.getItem('users') || '[]');
-    }
+    // 合并三源用户数据，确保不遗漏任何注册
+    let users = mergeAllUserSources();
     const pendingCount = users.filter(u => u.status === 'pending').length;
     if (pendingCount > 0) {
       badge.textContent = pendingCount;
