@@ -150,9 +150,11 @@ function submitRegistration() {
   if (!role) { showToast('请选择角色', 'warning'); return; }
   if (!description) description = '';
 
-  // 检查重复（localStorage）
-  const users = JSON.parse(localStorage.getItem('users') || '[]');
-  if (users.find(u => u.username === phone)) {
+  // 检查重复（三源合并检查）
+  var lsUsers = JSON.parse(localStorage.getItem('users') || '[]');
+  var cacheUsers = (typeof _appCache !== 'undefined' && _appCache.users) ? _appCache.users : [];
+  var allUsers = lsUsers.concat(cacheUsers);
+  if (allUsers.find(u => u.username === phone)) {
     showToast('该手机号已注册', 'warning');
     return;
   }
@@ -171,15 +173,21 @@ function submitRegistration() {
     created_at: new Date().toISOString()
   };
 
-  // 1. 更新 _appCache 缓存
+  // 1. 写入 localStorage（保底持久化，确保刷新后不丢失）
+  lsUsers.push(newUser);
+  localStorage.setItem('users', JSON.stringify(lsUsers));
+
+  // 2. 更新 _appCache 缓存
   if (typeof _appCache !== 'undefined') {
     if (!_appCache.users) _appCache.users = [];
     _appCache.users.push(newUser);
   }
 
-  // 2. 写入 SupaDB 作为主要存储
+  // 3. 写入 SupaDB 作为云端存储
   if (typeof SupaDB !== 'undefined' && SupaDB.createUser) {
-    SupaDB.createUser(newUser).catch(function(e) {
+    SupaDB.createUser(newUser).then(function() {
+      console.log('[Auth] 用户注册已同步到 Supabase:', phone);
+    }).catch(function(e) {
       console.warn('[Auth] SupaDB.createUser() failed:', e.message);
     });
   }
