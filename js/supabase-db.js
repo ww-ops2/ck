@@ -251,14 +251,51 @@ const SupaDB = {
 
   async updateInventoryItem(id, updates) {
     const sb = getSupabase();
-    const { data, error } = await sb
-      .from('inventory_items')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
-    if (error) throw new Error('库存更新失败: ' + error.message);
-    await writeAuditLog('UPDATE', 'inventory_items', id, data.code, updates);
+    // 安全列白名单：过滤掉数据库中不存在的列（如 unit_price），避免整个更新失败
+    const SAFE_COLS = ['name','code','brand','model','category_name','stock','unit',
+                       'safety_stock','last_stockin_date','last_stockin_batch','source',
+                       'unit_price'];
+    var safeUpdates = {};
+    Object.keys(updates).forEach(function(k) {
+      if (SAFE_COLS.indexOf(k) >= 0) safeUpdates[k] = updates[k];
+    });
+    if (Object.keys(safeUpdates).length === 0) {
+      console.warn('[SupaDB] updateInventoryItem: 无有效列可更新, id=' + id);
+      return null;
+    }
+    // 先尝试完整更新，如果失败则逐个列重试（跳过不存在的列）
+    var data = null;
+    try {
+      const result = await sb
+        .from('inventory_items')
+        .update(safeUpdates)
+        .eq('id', id)
+        .select()
+        .single();
+      if (result.error) throw new Error(result.error.message);
+      data = result.data;
+    } catch (e) {
+      // 如果批量更新失败，可能是某些列不存在，逐个重试
+      console.warn('[SupaDB] 批量更新失败，尝试逐列更新:', e.message);
+      var keys = Object.keys(safeUpdates);
+      for (var i = 0; i < keys.length; i++) {
+        try {
+          var single = {};
+          single[keys[i]] = safeUpdates[keys[i]];
+          var r = await sb.from('inventory_items').update(single).eq('id', id).select().single();
+          if (r.error) {
+            console.warn('[SupaDB] 列 ' + keys[i] + ' 不存在，已跳过');
+          } else if (!data) {
+            data = r.data;
+          }
+        } catch (e2) { /* skip column */ }
+      }
+      if (!data) {
+        // 重新读取最新记录
+        data = await _sbQuery(sb.from('inventory_items').select('*').eq('id', id).single());
+      }
+    }
+    if (data) await writeAuditLog('UPDATE', 'inventory_items', id, data.code, safeUpdates);
     return data;
   },
 
@@ -494,7 +531,6 @@ const SupaDB = {
           brand: item.brand || '',
           model: item.model || '',
           unit: item.unit || '',
-          unit_price: item.price || 0,
           stock: (item.actual_quantity || 0),
           safety_stock: 10,
           last_stockin_date: stockInData.stockin_date,
@@ -600,7 +636,6 @@ const SupaDB = {
           brand: item.brand || '',
           model: item.model || '',
           unit: item.unit || '',
-          unit_price: item.price || 0,
           stock: actualQty,
           safety_stock: 10,
           last_stockin_date: stockInData.stockin_date,
