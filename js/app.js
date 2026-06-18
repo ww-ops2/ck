@@ -37,15 +37,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // 设置默认月份
   setDefaultMonth();
   
-  // 绑定库存筛选事件
-  const filterCategory = document.getElementById('filter-category');
+  // 绑定库存筛选事件（由 inventory-hybrid.js 处理，此处仅兼容旧模式）
+  const filterCategory = document.getElementById('inv-filter-category') || document.getElementById('filter-category');
   if (filterCategory) filterCategory.addEventListener('change', loadInventory);
-  const filterStatus = document.getElementById('filter-status');
+  const filterStatus = document.getElementById('inv-filter-status') || document.getElementById('filter-status');
   if (filterStatus) filterStatus.addEventListener('change', loadInventory);
   
-  // 绑定搜索输入事件（带防抖）
+  // 绑定搜索输入事件（带防抖）— 由 inventory-hybrid.js 接管，此处仅作备用
   const searchInput = document.getElementById('inv-search-input');
-  if (searchInput) {
+  if (searchInput && !searchInput._hybridBound) {
     var searchTimer = null;
     searchInput.addEventListener('input', function() {
       if (searchTimer) clearTimeout(searchTimer);

@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>库存管理系统</title>
-  <link rel="stylesheet" href="css/style.css?v=5.12">
+  <link rel="stylesheet" href="css/style.css?v=5.13">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
@@ -257,28 +257,116 @@
 
         <!-- ===== 库存概览模块 ===== -->
         <div id="module-inventory" class="module-pane">
-          <div class="panel">
-            <div class="panel-header">
-              <div class="panel-title">库存列表</div>
-              <input type="text" id="inv-search-input" placeholder="🔍 搜索物品名称/编号/品牌..." style="width:200px;padding:5px 10px;border:1.5px solid var(--border);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:13px;margin-left:12px;">
+          <!-- KPI 概览行 -->
+          <div class="panel" style="margin-bottom:12px;">
+            <div class="panel-header" style="border-bottom:none;padding-bottom:8px;">
+              <div class="panel-title">库存概览</div>
               <div class="panel-actions">
-                <select id="filter-category">
-                <select id="filter-category">
+                <input type="text" id="inv-search-input" placeholder="🔍 搜索物品名称/编号/品牌..." style="width:200px;padding:5px 10px;border:1.5px solid var(--border);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:13px;margin-left:12px;">
+                <select id="inv-filter-category" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg-input);color:var(--text-primary);">
                   <option value="">全部分类</option>
                 </select>
-                <select id="filter-status">
+                <select id="inv-filter-status" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg-input);color:var(--text-primary);">
                   <option value="">全部状态</option>
                   <option value="normal">正常</option>
                   <option value="low">低库存</option>
                   <option value="out">缺货</option>
                 </select>
-                <button class="btn" id="inv-batch-purchase-btn" onclick="_invToggleBatchMode()">一键购买</button>
-                <button class="btn" id="inv-supplement-btn" onclick="toggleInvSupplementMode()">补充信息</button>
+                <button class="btn" id="inv-batch-purchase-btn">一键购买</button>
+                <button class="btn" id="inv-supplement-btn">补充信息</button>
                 <button class="btn btn-accent" id="add-item-btn">+ 新增物品</button>
               </div>
             </div>
-            <div id="inventory-container">
-              <!-- 按分类分块动态生成 -->
+            <div class="kpi-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">
+              <div class="kpi-card"><div class="kpi-label">物品总数</div><div class="kpi-value" id="inv-kpi-total">0</div></div>
+              <div class="kpi-card"><div class="kpi-label">库存总量</div><div class="kpi-value" id="inv-kpi-stock">0</div></div>
+              <div class="kpi-card"><div class="kpi-label">低库存</div><div class="kpi-value" id="inv-kpi-low">0</div></div>
+              <div class="kpi-card"><div class="kpi-label">缺货</div><div class="kpi-value" id="inv-kpi-out">0</div></div>
+              <div class="kpi-card"><div class="kpi-label">库存金额</div><div class="kpi-value" id="inv-kpi-value">¥0</div></div>
+            </div>
+          </div>
+
+          <!-- 主体：左右分栏 -->
+          <div class="inv-hybrid">
+            <!-- 左侧：分类看板 -->
+            <div class="inv-board">
+              <div class="inv-board-header">
+                <span class="inv-board-title">分类看板</span>
+                <div class="inv-board-actions">
+                  <input type="text" class="inv-board-search" id="inv-board-search" placeholder="搜索分类..." style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;width:140px;background:var(--bg-input);color:var(--text-primary);">
+                </div>
+              </div>
+              <div class="inv-board-tabs">
+                <button class="inv-tab active" data-filter="">全部</button>
+                <button class="inv-tab" data-filter="normal">正常</button>
+                <button class="inv-tab" data-filter="low">低库存</button>
+                <button class="inv-tab" data-filter="out">缺货</button>
+              </div>
+              <div class="inv-card-list" id="inv-card-list">
+                <div class="inv-loading">加载中...</div>
+              </div>
+            </div>
+
+            <!-- 右侧：物品明细 -->
+            <div class="inv-inbox">
+              <div class="inv-inbox-toolbar">
+                <div class="inv-inbox-filters">
+                  <select id="inv-inbox-filter-category" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg-input);color:var(--text-primary);">
+                    <option value="">全部分类</option>
+                  </select>
+                </div>
+                <div class="inv-inbox-info" id="inv-inbox-info">物品明细</div>
+              </div>
+              <div class="table-scroll inv-inbox-table-wrap" id="inv-inbox-table-wrap">
+                <div class="inv-inbox-inner">
+                  <table class="data-table inv-inbox-table" id="inv-inbox-table">
+                    <thead>
+                      <tr id="inv-inbox-thead">
+                        <th style="width:36px;" class="inv-batch-th" id="inv-select-all-th"></th>
+                        <th style="width:11%;">物品编号</th>
+                        <th style="width:17%;">物品名称</th>
+                        <th style="width:8%;">品牌</th>
+                        <th style="width:9%;">型号</th>
+                        <th style="width:6%;">单位</th>
+                        <th style="width:9%;">单价</th>
+                        <th style="width:7%;">库存</th>
+                        <th style="width:9%;">金额</th>
+                        <th style="width:8%;">状态</th>
+                        <th style="width:8%;">采购中</th>
+                        <th style="width:8%;">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody id="inv-inbox-tbody">
+                      <tr><td colspan="12" class="empty-state">加载中...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 批量采购底部操作栏 -->
+          <div class="inv-actionbar" id="inv-batch-bar" style="display:none;">
+            <div class="inv-actionbar-left">
+              <label style="display:flex;align-items:center;gap:4px;font-size:13px;color:var(--text-secondary);cursor:pointer;">
+                <input type="checkbox" id="inv-select-all-bottom" onchange="document.querySelectorAll('.inv-batch-cb').forEach(function(cb){cb.checked=this.checked;});updateInvBatchCount();"> 全选
+              </label>
+              <span id="inv-batch-count" style="font-size:13px;color:var(--text-muted);">已选中 0 项</span>
+            </div>
+            <div class="inv-actionbar-right">
+              <button class="btn btn-sm" id="inv-batch-cancel">取消</button>
+              <button class="btn btn-sm btn-accent" id="inv-batch-purchase-confirm" style="font-weight:600;">一键采购选中项</button>
+            </div>
+          </div>
+
+          <!-- 补充信息底部操作栏 -->
+          <div class="inv-actionbar" id="inv-supp-bar" style="display:none;">
+            <div class="inv-actionbar-left">
+              <span style="font-size:13px;color:var(--text-muted);"><span id="inv-supp-changed-count">0</span> 项已修改</span>
+            </div>
+            <div class="inv-actionbar-right">
+              <button class="btn btn-sm" id="inv-supp-cancel">取消</button>
+              <button class="btn btn-sm btn-accent" id="inv-supp-save" style="font-weight:600;">保存补充信息</button>
             </div>
           </div>
         </div>
@@ -1715,20 +1803,21 @@
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="js/supabase-db.js?v=5.8"></script>
-  <script src="js/supabase-sync.js?v=5.8"></script>
-  <script src="js/migrate-data.js?v=5.12"></script>
-  <script src="js/toast.js?v=5.12"></script>
-  <script src="js/auth-fix.js?v=5.12"></script>
-  <script src="js/navigation.js?v=5.12"></script>
-  <script src="js/purchase.js?v=5.12"></script>
-  <script src="js/stock-in.js?v=5.12"></script>
-  <script src="js/requisition.js?v=5.12"></script>
-  <script src="js/monthly-summary.js?v=5.12"></script>
-  <script src="js/tour-reports.js?v=5.12"></script>
-  <script src="js/business-flow.js?v=5.12"></script>
-  <script src="js/app.js?v=5.12"></script>
-  <script src="js/admin-bindings.js?v=5.12"></script>
+  <script src="js/supabase-db.js?v=5.13"></script>
+  <script src="js/supabase-sync.js?v=5.13"></script>
+  <script src="js/migrate-data.js?v=5.13"></script>
+  <script src="js/toast.js?v=5.13"></script>
+  <script src="js/auth-fix.js?v=5.13"></script>
+  <script src="js/navigation.js?v=5.13"></script>
+  <script src="js/purchase.js?v=5.13"></script>
+  <script src="js/stock-in.js?v=5.13"></script>
+  <script src="js/requisition.js?v=5.13"></script>
+  <script src="js/monthly-summary.js?v=5.13"></script>
+  <script src="js/tour-reports.js?v=5.13"></script>
+  <script src="js/business-flow.js?v=5.13"></script>
+  <script src="js/app.js?v=5.13"></script>
+  <script src="js/inventory-hybrid.js?v=5.13"></script>
+  <script src="js/admin-bindings.js?v=5.13"></script>
 
   <script src="js/user-admin.js"></script>
 </body>

@@ -103,7 +103,9 @@ function loadModuleData(moduleName) {
       }
       break;
     case 'inventory':
-      if (typeof loadInventory === 'function') {
+      if (typeof initInventoryHybrid === 'function') {
+        initInventoryHybrid();
+      } else if (typeof loadInventory === 'function') {
         loadInventory();
       }
       break;
