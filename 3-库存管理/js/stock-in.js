@@ -12,6 +12,7 @@ var _siData = {
   receivedMap: {},        // { "poId_itemCode": receivedQty }
   inboxItems: [],         // 收件箱展示数据
   selectedItems: new Set(), // 选中的行 index
+  confirmSnapshot: [],    // 确认弹窗打开时的快照（防止后台刷新覆盖）
   currentPOFilter: '',
   currentStatusFilter: '',
   currentBoardFilter: 'all',
@@ -115,6 +116,13 @@ function initStockInModule() {
 // 数据加载
 // ============================================================
 async function loadHybridStockInData() {
+  // 确认弹窗打开时，跳过数据刷新（防止覆盖 confirmSnapshot 对应的数据）
+  var confirmModal = document.getElementById('modal-stockin-confirm');
+  if (confirmModal && confirmModal.classList.contains('show')) {
+    console.log('[StockIn] 确认弹窗打开中，跳过数据刷新');
+    return;
+  }
+
   try {
     // 从 _appCache 获取采购单
     var pos = (_appCache && _appCache.purchaseOrders) ? _appCache.purchaseOrders.slice() : [];
@@ -483,8 +491,11 @@ function renderStockInInbox() {
     }
   }
 
-  // 清空选中
-  _siData.selectedItems.clear();
+  // 清空选中（确认弹窗打开时不清空）
+  var confirmModalOpen = document.getElementById('modal-stockin-confirm') && document.getElementById('modal-stockin-confirm').classList.contains('show');
+  if (!confirmModalOpen) {
+    _siData.selectedItems.clear();
+  }
 
   if (items.length === 0) {
     tbody.innerHTML = '<tr><td colspan="13" class="empty-state">暂无待入库物品' + (_siData.selectedPOId ? '，请选择其他采购单' : '，请在左侧选择采购单') + '</td></tr>';
@@ -783,6 +794,9 @@ function openStockInConfirmModal() {
     return;
   }
 
+  // ★ 关键：保存快照，后续确认直接用此快照，不再依赖可能被刷新的 _siData
+  _siData.confirmSnapshot = selectedRows.slice();
+
   // 填充弹窗
   var today = new Date().toISOString().split('T')[0];
   document.getElementById('stockin-date').value = today;
@@ -895,110 +909,72 @@ async function executePartialStockIn() {
     return;
   }
 
-  // 收集入库数据
+  // ★ 使用打开弹窗时保存的快照（不再依赖可能被后台刷新的 _siData.inboxItems）
+  var snapshot = _siData.confirmSnapshot || [];
+  if (snapshot.length === 0) {
+    showToast('没有可入库的物品', 'warning');
+    return;
+  }
+
+  // 从 DOM 读取用户实际输入的数量，与快照数据合并
   var rows = document.querySelectorAll('#stockin-confirm-tbody tr');
   var stockInItems = [];
   var poMap = {};
 
-  rows.forEach(function(row) {
-    var cells = row.querySelectorAll('td');
-    var poCode = cells[0].textContent.trim();
-    var itemName = cells[1].textContent.trim();
-    var brand = cells[2].textContent.trim();
-    var model = cells[3].textContent.trim();
-    var orderedQty = parseFloat(cells[4].textContent) || 0;
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
     var qtyInput = row.querySelector('.confirm-qty');
     var actualQty = qtyInput ? (parseFloat(qtyInput.value) || 0) : 0;
-    var unit = cells[8].textContent.trim();
-    var priceText = cells[9].textContent.trim().replace('¥', '');
-    var price = parseFloat(priceText) || 0;
 
-    if (actualQty <= 0) return;
+    if (actualQty <= 0) continue;
 
-    // 表格中空的 brand/model 显示为 '-' 或 '/'，需归一化为 '' 再匹配
-    var normBrand = (brand === '-' || brand === '/') ? '' : brand;
-    var normModel = (model === '-' || model === '/') ? '' : model;
-
-    // 从 _siData 找原始 item（渐进式匹配：精确 → 宽松 → 兜底）
-    var inboxItem = null;
-    // 第一轮：精确匹配 4 字段
-    _siData.inboxItems.forEach(function(ii) {
-      if (ii.poCode === poCode && ii.itemName === itemName && ii.brand === normBrand && ii.model === normModel) {
-        inboxItem = ii;
-      }
-    });
-    // 第二轮：仅按 poCode + itemName 匹配（忽略 brand/model 差异）
-    if (!inboxItem) {
-      _siData.inboxItems.forEach(function(ii) {
-        if (!inboxItem && ii.poCode === poCode && ii.itemName === itemName) {
-          inboxItem = ii;
-        }
-      });
-    }
-    // 第三轮：仅按 itemName 匹配（跨 PO 兜底）
-    if (!inboxItem) {
-      _siData.inboxItems.forEach(function(ii) {
-        if (!inboxItem && ii.itemName === itemName) {
-          inboxItem = ii;
-        }
-      });
+    // 从快照获取对应行的完整数据（按行索引一一对应）
+    var snap = snapshot[i];
+    if (!snap) {
+      console.warn('[StockIn] 快照行缺失, index=' + i);
+      continue;
     }
 
-    // 查找 PO ID（从 inboxItem 或 purchaseOrders 中获取）
-    var poId = inboxItem ? inboxItem.poId : null;
-    if (!poId) {
-      _siData.purchaseOrders.forEach(function(po) {
-        if (po.code === poCode) poId = po.id;
-      });
-    }
-    if (!poId) {
-      console.warn('[StockIn] 找不到 PO:', poCode, '跳过:', itemName);
-      return;
-    }
+    var cells = row.querySelectorAll('td');
+    var priceText = cells[9] ? cells[9].textContent.trim().replace('¥', '') : '0';
+    var price = parseFloat(priceText) || snap.price || 0;
 
+    var poId = snap.poId;
     if (!poMap[poId]) {
-      poMap[poId] = { poId: poId, poCode: poCode, items: [] };
+      poMap[poId] = { poId: poId, poCode: snap.poCode, items: [] };
     }
     poMap[poId].items.push({
-      name: itemName,
-      code: inboxItem ? inboxItem.itemCode : '',
-      brand: normBrand,
-      model: normModel,
-      category: inboxItem ? inboxItem.category : '',
-      quantity: orderedQty,
+      name: snap.itemName,
+      code: snap.itemCode || '',
+      brand: snap.brand || '',
+      model: snap.model || '',
+      category: snap.category || '',
+      quantity: snap.orderedQty,
       actual_quantity: actualQty,
-      unit: unit === '-' ? '' : unit,
+      unit: snap.unit || '',
       price: price,
       amount: actualQty * price,
-      supplier: inboxItem ? (inboxItem.supplier || '') : '',
+      supplier: snap.supplier || '',
       sort_order: 0
     });
     stockInItems.push({
-      name: itemName,
-      code: inboxItem ? inboxItem.itemCode : '',
-      brand: normBrand,
-      model: normModel,
-      category: inboxItem ? inboxItem.category : '',
-      quantity: orderedQty,
+      name: snap.itemName,
+      code: snap.itemCode || '',
+      brand: snap.brand || '',
+      model: snap.model || '',
+      category: snap.category || '',
+      quantity: snap.orderedQty,
       actual_quantity: actualQty,
-      unit: unit === '-' ? '' : unit,
+      unit: snap.unit || '',
       price: price,
       amount: actualQty * price,
-      supplier: inboxItem ? (inboxItem.supplier || '') : '',
+      supplier: snap.supplier || '',
       sort_order: 0
     });
-  });
+  }
 
-  console.log('[StockIn] 收集结果: rows=' + rows.length + ', stockInItems=' + stockInItems.length + ', poMap keys=' + Object.keys(poMap).length);
+  console.log('[StockIn] 收集结果: rows=' + rows.length + ', snapshot=' + snapshot.length + ', stockInItems=' + stockInItems.length + ', poMap keys=' + Object.keys(poMap).length);
   if (stockInItems.length === 0) {
-    // 额外诊断：检查每一行的 actualQty
-    rows.forEach(function(row) {
-      var cells = row.querySelectorAll('td');
-      var qtyInput = row.querySelector('.confirm-qty');
-      console.warn('[StockIn] 行诊断:', cells[1] ? cells[1].textContent.trim() : '?',
-        'inputVal=' + (qtyInput ? qtyInput.value : 'null'),
-        'parsedQty=' + (qtyInput ? (parseFloat(qtyInput.value) || 0) : 0));
-    });
     showToast('没有有效的入库数量', 'warning');
     return;
   }
