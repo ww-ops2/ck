@@ -75,7 +75,6 @@ function updatePageTitle(moduleName) {
     'stock-in': '入库管理',
     'requisition': '领用单管理',
     'stock-out': '出库管理',
-    'monthly-summary': '月度汇总',
     'reports': '团期使用报表',
     'analytics': '数据分析',
     'history': '操作记录',
@@ -103,59 +102,33 @@ function loadModuleData(moduleName) {
       }
       break;
     case 'inventory':
-      if (typeof initInventoryHybrid === 'function') {
-        initInventoryHybrid();
-      } else if (typeof loadInventory === 'function') {
+      if (typeof loadInventory === 'function') {
         loadInventory();
-      }
-      break;
-    case 'categories':
-      if (typeof renderCategoryList === 'function') {
-        renderCategoryList();
       }
       break;
     case 'purchase':
       if (typeof loadPurchaseOrders === 'function') {
         loadPurchaseOrders();
       }
-      if (typeof _bfUpdatePurchaseKPI === 'function') _bfUpdatePurchaseKPI();
       break;
     case 'stock-in':
-      if (typeof loadHybridStockInData === 'function') {
-        loadHybridStockInData();
-      } else if (typeof loadStockInRecords === 'function') {
+      if (typeof loadStockInRecords === 'function') {
         loadStockInRecords();
       }
-      if (typeof _bfUpdateStockInKPI === 'function') _bfUpdateStockInKPI();
       break;
     case 'requisition':
       if (typeof loadRequisitions === 'function') {
         loadRequisitions();
       }
-      if (typeof _bfUpdateRequisitionKPI === 'function') _bfUpdateRequisitionKPI();
       break;
     case 'stock-out':
       if (typeof loadStockOutRecords === 'function') {
         loadStockOutRecords();
       }
-      if (typeof loadRequisitions === 'function') {
-        loadRequisitions();
-      }
-      if (typeof _bfUpdateStockOutKPI === 'function') _bfUpdateStockOutKPI();
-      break;
-    case 'monthly-summary':
-      if (typeof loadMonthlySummary === 'function') {
-        loadMonthlySummary();
-      }
       break;
     case 'reports':
       if (typeof loadReports === 'function') {
         loadReports();
-      }
-      break;
-    case 'admin-users':
-      if (typeof loadUserList === 'function') {
-        loadUserList();
       }
       break;
     default:
@@ -164,27 +137,14 @@ function loadModuleData(moduleName) {
 }
 
 /**
- * 处理刷新 — 强制从 Supabase 拉取最新数据后重新渲染
+ * 处理刷新
  */
-async function handleRefresh() {
+function handleRefresh() {
   console.log('刷新当前模块:', currentModule);
-
-  // 从 Supabase 拉取最新数据
-  if (typeof syncFromSupabase === 'function') {
-    try {
-      await syncFromSupabase({ force: true });
-    } catch (e) {
-      console.warn('[Refresh] Supabase 同步失败:', e.message);
-    }
-  }
-
-  // 重新加载当前模块数据
   loadModuleData(currentModule);
-
+  
   // 显示刷新提示
-  if (typeof showToast === 'function') {
-    showToast('数据已刷新', 'success');
-  }
+  showNotification('数据已刷新', 'success');
 }
 
 /**
