@@ -384,7 +384,7 @@ function renderInvInbox() {
       var unitPrice = item.unit_price || 0;
       var amount = (item.stock || 0) * unitPrice;
 
-      html += '<tr class="inv-item-row" data-inv-cat="' + summaryId + '">';
+      html += '<tr class="inv-item-row" data-inv-cat="' + summaryId + '" data-item-id="' + item.id + '" data-item-name="' + (item.name || '').replace(/"/g, '&quot;') + '" data-item-code="' + (item.code || '').replace(/"/g, '&quot;') + '" style="cursor:pointer;">';
 
       // 批量模式才输出 checkbox td
       if (batchMode) {
@@ -413,12 +413,135 @@ function renderInvInbox() {
 
   container.innerHTML = html;
 
+  // 绑定商品行点击展开入库记录（补充信息模式下不绑定，避免DOM冲突）
+  if (!_invHybrid.supplementMode) {
+    container.querySelectorAll('.inv-item-row').forEach(function(row) {
+      row.addEventListener('click', function(e) {
+        // 排除按钮和链接点击
+        if (e.target.closest('button') || e.target.closest('a') || e.target.closest('.pending-qty-badge')) return;
+        toggleInvItemHistory(row);
+      });
+    });
+  }
+
   // 批量采购模式：显示底部操作栏 + 全选checkbox
   if (batchMode) {
     showInvBatchBar();
   } else {
     hideInvActionBar();
   }
+}
+
+/**
+ * 点击商品行展开/收起入库记录
+ */
+function toggleInvItemHistory(row) {
+  // 安全守卫：不在补充信息模式下才允许展开
+  if (_invHybrid.supplementMode) return;
+
+  var nextRow = row.nextElementSibling;
+  // 如果已经有展开的入库记录行，收起它
+  if (nextRow && nextRow.classList.contains('inv-history-row')) {
+    nextRow.remove();
+    row.classList.remove('inv-item-expanded');
+    return;
+  }
+
+  var itemName = row.getAttribute('data-item-name') || '';
+  var itemCode = row.getAttribute('data-item-code') || '';
+  var itemId = row.getAttribute('data-item-id') || '';
+  if (!itemName && !itemCode) return;
+
+  // 计算列数（跨所有列）
+  var totalCols = row.querySelectorAll('td').length;
+
+  // 插入展开行
+  var historyRow = document.createElement('tr');
+  historyRow.className = 'inv-history-row';
+  historyRow.innerHTML = '<td colspan="' + totalCols + '" style="padding:0!important;background:#f8f9fb;">' +
+    '<div class="inv-history-panel" style="overflow:hidden;max-height:0;transition:max-height 0.3s ease;">' +
+    '<div class="inv-history-inner" style="padding:12px 20px;">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">' +
+    '<span style="font-size:14px;font-weight:600;color:var(--text-primary);">📦 入库记录</span>' +
+    '<span class="inv-history-loading" style="font-size:12px;color:var(--text-muted);">加载中...</span>' +
+    '</div>' +
+    '<div class="inv-history-content"></div>' +
+    '</div></div></td>';
+  row.parentNode.insertBefore(historyRow, row.nextSibling);
+  row.classList.add('inv-item-expanded');
+
+  // 动画展开
+  var panel = historyRow.querySelector('.inv-history-panel');
+  requestAnimationFrame(function() {
+    panel.style.maxHeight = '400px';
+  });
+
+  // 从 _appCache.stockInRecords 查找该商品的入库记录
+  var records = [];
+  var siRecords = (typeof _appCache !== 'undefined' && _appCache.stockInRecords) ? _appCache.stockInRecords : [];
+  siRecords.forEach(function(si) {
+    (si.items || []).forEach(function(siItem) {
+      var match = false;
+      if (itemCode && (siItem.item_code === itemCode || siItem.code === itemCode)) match = true;
+      if (!match && itemName && siItem.name === itemName) match = true;
+      if (match) {
+        records.push({
+          date: si.stockin_date || (si.created_at ? si.created_at.slice(0, 10) : '-'),
+          siCode: si.code || '-',
+          poCode: si.purchase_order_code || '-',
+          batchCode: si.batch_code || '-',
+          qty: siItem.actual_quantity || 0,
+          unit: siItem.unit || '-',
+          price: siItem.price || 0,
+          amount: (siItem.actual_quantity || 0) * (siItem.price || 0),
+          confirmedBy: si.confirmed_by || '-',
+          supplier: siItem.supplier || '-'
+        });
+      }
+    });
+  });
+
+  // 渲染入库记录
+  var contentEl = historyRow.querySelector('.inv-history-content');
+  var loadingEl = historyRow.querySelector('.inv-history-loading');
+
+  if (records.length === 0) {
+    if (loadingEl) loadingEl.textContent = '';
+    contentEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:16px 0;">暂无入库记录</div>';
+    return;
+  }
+
+  // 按日期倒序
+  records.sort(function(a, b) { return (b.date || '').localeCompare(a.date || ''); });
+
+  var totalIn = records.reduce(function(s, r) { return s + r.qty; }, 0);
+  if (loadingEl) loadingEl.textContent = '共 ' + records.length + ' 条 · 累计入库 ' + totalIn;
+
+  var tableHtml = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+  tableHtml += '<thead><tr style="background:#eef1f5;">';
+  tableHtml += '<th style="padding:6px 10px;text-align:left;font-weight:500;color:var(--text-secondary);">入库日期</th>';
+  tableHtml += '<th style="padding:6px 10px;text-align:left;font-weight:500;color:var(--text-secondary);">入库单号</th>';
+  tableHtml += '<th style="padding:6px 10px;text-align:left;font-weight:500;color:var(--text-secondary);">批次号</th>';
+  tableHtml += '<th style="padding:6px 10px;text-align:right;font-weight:500;color:var(--text-secondary);">数量</th>';
+  tableHtml += '<th style="padding:6px 10px;text-align:right;font-weight:500;color:var(--text-secondary);">单价</th>';
+  tableHtml += '<th style="padding:6px 10px;text-align:right;font-weight:500;color:var(--text-secondary);">金额</th>';
+  tableHtml += '<th style="padding:6px 10px;text-align:left;font-weight:500;color:var(--text-secondary);">操作人</th>';
+  tableHtml += '</tr></thead><tbody>';
+
+  records.forEach(function(r) {
+    tableHtml += '<tr style="border-bottom:1px solid var(--border);">';
+    tableHtml += '<td style="padding:7px 10px;">' + r.date + '</td>';
+    tableHtml += '<td style="padding:7px 10px;font-family:monospace;font-size:12px;">' + r.siCode + '</td>';
+    tableHtml += '<td style="padding:7px 10px;font-family:monospace;font-size:12px;">' + r.batchCode + '</td>';
+    tableHtml += '<td style="padding:7px 10px;text-align:right;font-weight:600;color:var(--success);">' + r.qty + ' ' + r.unit + '</td>';
+    tableHtml += '<td style="padding:7px 10px;text-align:right;">¥' + r.price.toFixed(2) + '</td>';
+    tableHtml += '<td style="padding:7px 10px;text-align:right;font-weight:600;">¥' + r.amount.toFixed(2) + '</td>';
+    tableHtml += '<td style="padding:7px 10px;">' + r.confirmedBy + '</td>';
+    tableHtml += '</tr>';
+  });
+
+  tableHtml += '</tbody></table>';
+  contentEl.innerHTML = tableHtml;
 }
 
 function getInvFilteredItems() {
@@ -855,6 +978,9 @@ async function _saveInvSupplement() {
     updateInvButtonStates();
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '保存补充信息'; }
     if (cancelBtn) cancelBtn.disabled = false;
+    // 立即隐藏补充信息操作栏
+    var suppBar = document.getElementById('inv-supp-bar');
+    if (suppBar) suppBar.style.display = 'none';
   }
 
   // 重新渲染（全量数据重新加载 + 按新分类重新分组排版）
@@ -864,6 +990,9 @@ async function _saveInvSupplement() {
 function _cancelInvSupplement() {
   _invHybrid.supplementMode = false;
   updateInvButtonStates();
+  // 立即隐藏补充信息操作栏（不等异步刷新）
+  var suppBar = document.getElementById('inv-supp-bar');
+  if (suppBar) suppBar.style.display = 'none';
   loadInventoryHybridData();
 }
 
