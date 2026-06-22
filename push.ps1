@@ -61,6 +61,7 @@ $filesToPush = @(
     "css/style.css",
     "database/schema.sql",
     "database/migrations/20260616_add_adjustments_permissions.sql",
+    "database/migrations/20260622_change_stock_to_numeric.sql",
     "js/admin-bindings.js",
     "js/app.js",
     "js/auth.js",
@@ -124,7 +125,7 @@ foreach ($relPath in $filesToPush) {
         $cloudSha = $resp.sha
     } catch {}
     
-    $msg = "v5.26 " + $(if ($cloudSha) { "update" } else { "add" }) + " $relPath"
+    $msg = "v5.34 " + $(if ($cloudSha) { "update" } else { "add" }) + " $relPath"
     $body = @{
         message = $msg
         content = $b64
