@@ -257,7 +257,14 @@ const SupaDB = {
                        'unit_price'];
     var safeUpdates = {};
     Object.keys(updates).forEach(function(k) {
-      if (SAFE_COLS.indexOf(k) >= 0) safeUpdates[k] = updates[k];
+      if (SAFE_COLS.indexOf(k) >= 0) {
+        var val = updates[k];
+        // 数值列确保转为 Number 类型，保留小数
+        if (k === 'stock' || k === 'safety_stock') {
+          val = Number(val) || 0;
+        }
+        safeUpdates[k] = val;
+      }
     });
     if (Object.keys(safeUpdates).length === 0) {
       console.warn('[SupaDB] updateInventoryItem: 无有效列可更新, id=' + id);
@@ -275,7 +282,7 @@ const SupaDB = {
       if (result.error) throw new Error(result.error.message);
       data = result.data;
     } catch (e) {
-      // 如果批量更新失败，可能是某些列不存在，逐个重试
+      // 如果批量更新失败，可能是某些列不存在或类型不匹配，逐个重试
       console.warn('[SupaDB] 批量更新失败，尝试逐列更新:', e.message);
       var keys = Object.keys(safeUpdates);
       for (var i = 0; i < keys.length; i++) {
@@ -284,11 +291,13 @@ const SupaDB = {
           single[keys[i]] = safeUpdates[keys[i]];
           var r = await sb.from('inventory_items').update(single).eq('id', id).select().single();
           if (r.error) {
-            console.warn('[SupaDB] 列 ' + keys[i] + ' 不存在，已跳过');
+            console.warn('[SupaDB] 列 "' + keys[i] + '" 更新失败: ' + r.error.message + '，已跳过');
           } else if (!data) {
             data = r.data;
           }
-        } catch (e2) { /* skip column */ }
+        } catch (e2) {
+          console.warn('[SupaDB] 列 "' + keys[i] + '" 更新异常: ' + e2.message + '，已跳过');
+        }
       }
       if (!data) {
         // 重新读取最新记录
@@ -303,8 +312,9 @@ const SupaDB = {
     // items: [{ id, safety_stock }]
     const sb = getSupabase();
     for (const item of items) {
+      var val = Number(item.safety_stock) || 0;
       await sb.from('inventory_items')
-        .update({ safety_stock: item.safety_stock })
+        .update({ safety_stock: val })
         .eq('id', item.id);
     }
     await writeAuditLog('BULK_UPDATE', 'inventory_items', null, null, {
@@ -318,6 +328,12 @@ const SupaDB = {
     if (!itemData.code) {
       itemData.code = await getNextCode('item_code', 'SKU', 5);
     }
+    // 数值列确保转为 Number 类型，保留小数
+    ['stock','safety_stock'].forEach(function(col) {
+      if (itemData[col] !== undefined && itemData[col] !== null) {
+        itemData[col] = Number(itemData[col]) || 0;
+      }
+    });
     const { data, error } = await sb
       .from('inventory_items')
       .insert(itemData)
