@@ -175,58 +175,78 @@
   // 审核通过
   window.approveUser = function(username) {
     if (typeof showConfirm === 'function') {
-      showConfirm('确认通过该用户的注册申请？', function() { _doApprove(username); });
+      showConfirm('确认通过该用户的注册申请？', function() { _doApprove(username); }, { confirmText: '确认通过', danger: false, icon: '✅' });
     } else {
       _doApprove(username);
     }
   };
-  function _doApprove(username) {
-    // update user status via SupaDB directly
-    SupaDB.updateUser(username, { status: 'active' }).catch(function(e) {
-      console.warn('[UserAdmin] Supabase approve failed:', e.message);
-    });
-    // refresh _appCache after write
-    refreshData('users');
-
+  async function _doApprove(username) {
+    // 1. 先乐观更新本地缓存，立即反映 UI
+    if (typeof _appCache !== 'undefined' && _appCache.users) {
+      var u = _appCache.users.find(function(x) { return x.username === username; });
+      if (u) { u.status = 'active'; u.is_active = true; }
+    }
     loadUserList();
-    if (typeof checkNotifications === 'function') checkNotifications();
     showToast('用户 ' + username + ' 已通过审核', 'success');
+    if (typeof checkNotifications === 'function') checkNotifications();
+    // 2. 持久化到 Supabase
+    try {
+      await SupaDB.updateUser(username, { status: 'active' });
+    } catch(e) {
+      console.warn('[UserAdmin] Supabase approve failed:', e.message);
+      showToast('云端同步失败，本地已生效', 'warning');
+    }
+    // 3. 后台刷新保持一致
+    try { await refreshData('users'); } catch(e) {}
   }
 
   // 拒绝申请
   window.rejectUser = function(username) {
     if (typeof showConfirm === 'function') {
-      showConfirm('确认拒绝该用户的注册申请？\n（该账号将被删除）', function() { _doReject(username); });
+      showConfirm('确认拒绝该用户的注册申请？\n（该账号将被删除）', function() { _doReject(username); }, { confirmText: '确认拒绝', danger: true, icon: '🗑️' });
     } else {
       _doReject(username);
     }
   };
-  function _doReject(username) {
-    // delete user from Supabase directly
-    SupaDB.deleteUser(username).catch(function(e) {
-      console.warn('[UserAdmin] Supabase delete failed:', e.message);
-    });
-    // refresh _appCache after write
-    refreshData('users');
-
+  async function _doReject(username) {
+    // 1. 先乐观更新本地缓存
+    if (typeof _appCache !== 'undefined' && _appCache.users) {
+      _appCache.users = _appCache.users.filter(function(x) { return x.username !== username; });
+    }
     loadUserList();
-    if (typeof checkNotifications === 'function') checkNotifications();
     showToast('已拒绝 ' + username + ' 的注册申请', 'info');
+    if (typeof checkNotifications === 'function') checkNotifications();
+    // 2. 持久化到 Supabase（删除用户）
+    try {
+      await SupaDB.deleteUser(username);
+    } catch(e) {
+      console.warn('[UserAdmin] Supabase delete failed:', e.message);
+      showToast('云端删除失败，本地已移除', 'warning');
+    }
+    // 3. 后台刷新保持一致
+    try { await refreshData('users'); } catch(e) {}
   }
 
   // 启用/禁用
-  window.toggleUserStatus = function(username, newStatus) {
-    // update user status via SupaDB directly
-    SupaDB.updateUser(username, { status: newStatus }).catch(function(e) {
-      console.warn('[UserAdmin] Supabase status change failed:', e.message);
-    });
-    // refresh _appCache after write
-    refreshData('users');
-
+  window.toggleUserStatus = async function(username, newStatus) {
+    // 1. 先乐观更新本地缓存
+    if (typeof _appCache !== 'undefined' && _appCache.users) {
+      var u = _appCache.users.find(function(x) { return x.username === username; });
+      if (u) { u.status = newStatus; u.is_active = (newStatus === 'active'); }
+    }
     loadUserList();
-    if (typeof checkNotifications === 'function') checkNotifications();
     const label = newStatus === 'active' ? '已启用' : '已禁用';
     showToast('用户 ' + username + ' ' + label, 'info');
+    if (typeof checkNotifications === 'function') checkNotifications();
+    // 2. 持久化到 Supabase
+    try {
+      await SupaDB.updateUser(username, { status: newStatus });
+    } catch(e) {
+      console.warn('[UserAdmin] Supabase status change failed:', e.message);
+      showToast('云端同步失败，本地已生效', 'warning');
+    }
+    // 3. 后台刷新保持一致
+    try { await refreshData('users'); } catch(e) {}
   };
 
   // 用户变更同步到 Supabase（保留为外部 fallback 入口）
