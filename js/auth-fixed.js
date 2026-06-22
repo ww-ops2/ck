@@ -50,7 +50,7 @@ function handleLogout() {
     currentUser = null;
     try { localStorage.removeItem('currentUser'); } catch(e) {}
     showLoginPage();
-  });
+  }, { confirmText: '确认退出', danger: false, icon: '🚪' });
 }
 
 async function showApp() {
