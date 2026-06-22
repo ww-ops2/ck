@@ -223,7 +223,7 @@ function handleLogout() {
     showLoginPage();
   };
   if (typeof showConfirm === 'function') {
-    showConfirm('确定要退出登录吗？', doLogout);
+    showConfirm('确定要退出登录吗？', doLogout, { confirmText: '确认退出', danger: false, icon: '🚪' });
   } else {
     doLogout();
   }

@@ -1156,7 +1156,13 @@ function _populateCategorySelect(selectEl) {
 /**
  * 自定义确认弹窗（替代原生 confirm）
  */
-function showConfirm(message, onConfirm) {
+function showConfirm(message, onConfirm, opts) {
+  opts = opts || {};
+  var confirmText = opts.confirmText || '\u786E\u8BA4';
+  var confirmClass = opts.danger ? 'btn btn-danger' : 'btn btn-accent';
+  var confirmStyle = opts.danger
+    ? 'padding:8px 24px;border-radius:8px;cursor:pointer;font-size:13px;background:var(--danger,#e74c3c);color:#fff;border:none;font-weight:600;'
+    : 'padding:8px 24px;border-radius:8px;cursor:pointer;font-size:13px;background:var(--accent);color:#fff;border:none;font-weight:600;';
   // 移除已有的弹窗
   var old = document.getElementById('custom-confirm-overlay');
   if (old) old.remove();
@@ -1170,7 +1176,7 @@ function showConfirm(message, onConfirm) {
 
   var icon = document.createElement('div');
   icon.style.cssText = 'font-size:36px;margin-bottom:12px;';
-  icon.textContent = '\u26A0\uFE0F';
+  icon.textContent = opts.icon || '\u26A0\uFE0F';
 
   var msg = document.createElement('div');
   msg.style.cssText = 'font-size:14px;color:var(--text-primary,#333);margin-bottom:24px;line-height:1.6;';
@@ -1185,9 +1191,9 @@ function showConfirm(message, onConfirm) {
   cancelBtn.style.cssText = 'padding:8px 24px;border-radius:8px;cursor:pointer;font-size:13px;';
 
   var confirmBtn = document.createElement('button');
-  confirmBtn.className = 'btn btn-danger';
-  confirmBtn.textContent = '\u786E\u8BA4\u5220\u9664';
-  confirmBtn.style.cssText = 'padding:8px 24px;border-radius:8px;cursor:pointer;font-size:13px;background:var(--danger,#e74c3c);color:#fff;border:none;font-weight:600;';
+  confirmBtn.className = confirmClass;
+  confirmBtn.textContent = confirmText;
+  confirmBtn.style.cssText = confirmStyle;
 
   function close() { overlay.remove(); }
   cancelBtn.addEventListener('click', close);

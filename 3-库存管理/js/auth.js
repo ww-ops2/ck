@@ -84,7 +84,7 @@ function handleLogout() {
     currentUser = null;
     localStorage.removeItem('currentUser');
     showLoginPage();
-  });
+  }, { confirmText: '确认退出', danger: false, icon: '🚪' });
 }
 
 /**

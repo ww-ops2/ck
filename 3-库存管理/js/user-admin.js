@@ -175,7 +175,7 @@
   // 审核通过
   window.approveUser = function(username) {
     if (typeof showConfirm === 'function') {
-      showConfirm('确认通过该用户的注册申请？', function() { _doApprove(username); });
+      showConfirm('确认通过该用户的注册申请？', function() { _doApprove(username); }, { confirmText: '确认通过', danger: false, icon: '✅' });
     } else {
       _doApprove(username);
     }
@@ -203,7 +203,7 @@
   // 拒绝申请
   window.rejectUser = function(username) {
     if (typeof showConfirm === 'function') {
-      showConfirm('确认拒绝该用户的注册申请？\n（该账号将被删除）', function() { _doReject(username); });
+      showConfirm('确认拒绝该用户的注册申请？\n（该账号将被删除）', function() { _doReject(username); }, { confirmText: '确认拒绝', danger: true, icon: '🗑️' });
     } else {
       _doReject(username);
     }
