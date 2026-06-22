@@ -146,22 +146,38 @@ const SupaDB = {
 
   async updateUser(username, updates) {
     const sb = getSupabase();
-    // 映射 status → is_active
+    // 映射 status → is_active，同时保留 status 字段
     var cloudUpdates = {};
     for (var key in updates) {
       if (updates.hasOwnProperty(key)) {
         if (key === 'status') {
           cloudUpdates.is_active = (updates[key] === 'active');
+          cloudUpdates.status = updates[key]; // 也存储原始 status
         } else {
           cloudUpdates[key] = updates[key];
         }
       }
     }
-    const { data, error } = await sb
+
+    // 先尝试批量更新（含 status 列）
+    var { data, error } = await sb
       .from('users')
       .update(cloudUpdates)
       .eq('username', username)
       .select();
+
+    // 如果 status 列不存在导致失败，去掉 status 重试
+    if (error && error.message && error.message.indexOf('status') >= 0) {
+      delete cloudUpdates.status;
+      var retry = await sb
+        .from('users')
+        .update(cloudUpdates)
+        .eq('username', username)
+        .select();
+      data = retry.data;
+      error = retry.error;
+    }
+
     if (error) throw new Error('用户更新失败: ' + error.message);
     var updatedId = (data && data.length > 0) ? data[0].id : null;
     await writeAuditLog('UPDATE', 'users', updatedId, username, updates);

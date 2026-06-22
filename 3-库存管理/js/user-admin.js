@@ -113,19 +113,21 @@
     const statusLabels = {
       pending: '<span style="background:#fff3cd;color:#856404;padding:2px 10px;border-radius:10px;font-size:12px;">待审核</span>',
       active: '<span style="background:#d4edda;color:#155724;padding:2px 10px;border-radius:10px;font-size:12px;">已启用</span>',
-      disabled: '<span style="background:#f8d7da;color:#721c24;padding:2px 10px;border-radius:10px;font-size:12px;">已禁用</span>'
+      disabled: '<span style="background:#f8d7da;color:#721c24;padding:2px 10px;border-radius:10px;font-size:12px;">已禁用</span>',
+      rejected: '<span style="background:#f8d7da;color:#721c24;padding:2px 10px;border-radius:10px;font-size:12px;">已拒绝</span>'
     };
 
     tbody.innerHTML = users.map(u => {
       const roleName = ROLE_LABELS[normalizeRole(u.role)] || (u.role || '');
       const statusHtml = statusLabels[u.status] || u.status || '';
       const isPending = u.status === 'pending';
+      const isRejected = u.status === 'rejected';
 
       let actions = '';
-      if (isPending) {
+      if (isPending || isRejected) {
         actions = `
-          <button class="btn btn-sm" style="background:#d4edda;border-color:#155724;color:#155724;" onclick="approveUser('${u.username}')">通过</button>
-          <button class="btn btn-sm" style="background:#f8d7da;border-color:#721c24;color:#721c24;margin-left:4px;" onclick="rejectUser('${u.username}')">拒绝</button>
+          <button class="btn btn-sm" style="background:#d4edda;border-color:#155724;color:#155724;" onclick="approveUser('${u.username}')">${isRejected ? '重新通过' : '通过'}</button>
+          ${isPending ? `<button class="btn btn-sm" style="background:#f8d7da;border-color:#721c24;color:#721c24;margin-left:4px;" onclick="rejectUser('${u.username}')">拒绝</button>` : ''}
         `;
       } else {
         actions = `
@@ -203,28 +205,35 @@
   // 拒绝申请
   window.rejectUser = function(username) {
     if (typeof showConfirm === 'function') {
-      showConfirm('确认拒绝该用户的注册申请？\n（该账号将被删除）', function() { _doReject(username); }, { confirmText: '确认拒绝', danger: true, icon: '🗑️' });
+      showConfirm('确认拒绝该用户的注册申请？', function() { _doReject(username); }, { confirmText: '确认拒绝', danger: true, icon: '🚫' });
     } else {
       _doReject(username);
     }
   };
   async function _doReject(username) {
-    // 1. 先乐观更新本地缓存
-    if (typeof _appCache !== 'undefined' && _appCache.users) {
-      _appCache.users = _appCache.users.filter(function(x) { return x.username !== username; });
-    }
-    loadUserList();
-    showToast('已拒绝 ' + username + ' 的注册申请', 'info');
-    if (typeof checkNotifications === 'function') checkNotifications();
-    // 2. 持久化到 Supabase（删除用户）
+    // 拒绝申请：标记为rejected状态（不删除，保留数据完整性）
     try {
-      await SupaDB.deleteUser(username);
+      await SupaDB.updateUser(username, { status: 'rejected', is_active: false });
     } catch(e) {
-      console.warn('[UserAdmin] Supabase delete failed:', e.message);
-      showToast('云端删除失败，本地已移除', 'warning');
+      console.warn('[UserAdmin] Supabase reject failed:', e.message);
+      showToast('拒绝操作失败: ' + e.message, 'error');
+      return;
     }
-    // 3. 后台刷新保持一致
-    try { await refreshData('users'); } catch(e) {}
+    // 写审计日志
+    try {
+      if (typeof SupaDB !== 'undefined' && typeof SupaDB.writeAuditLog === 'function') {
+        await SupaDB.writeAuditLog('reject_user', 'user', username, null, { username: username });
+      }
+    } catch(e) {}
+    // 更新本地缓存
+    if (typeof _appCache !== 'undefined' && _appCache.users) {
+      var u = _appCache.users.find(function(x) { return x.username === username; });
+      if (u) { u.status = 'rejected'; u.is_active = false; }
+    }
+    await refreshData('users');
+    loadUserList();
+    if (typeof checkNotifications === 'function') checkNotifications();
+    showToast('已拒绝 ' + username + ' 的注册申请', 'info');
   }
 
   // 启用/禁用
