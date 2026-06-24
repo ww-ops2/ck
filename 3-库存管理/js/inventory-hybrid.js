@@ -279,9 +279,10 @@ function renderInvKPI() {
   var items = _invHybrid.allItems;
   var totalItems = items.length;
   var totalStock = items.reduce(function(s, it) { return s + (it.stock || 0); }, 0);
-  var lowCount = items.filter(function(it) { return it.stock < (it.safety_stock || 10); }).length;
+  var lowCount = items.filter(function(it) { return it.stock < (it.safety_stock || 10) && it.stock > 0; }).length;
   var outCount = items.filter(function(it) { return it.stock === 0; }).length;
   var totalValue = items.reduce(function(s, it) { return s + (it.stock || 0) * (it.unit_price || 0); }, 0);
+  var categoryCount = _invHybrid.categoryNames ? _invHybrid.categoryNames.length : 0;
 
   var el1 = document.getElementById('inv-kpi-total');
   if (el1) el1.textContent = totalItems;
@@ -293,6 +294,8 @@ function renderInvKPI() {
   if (el4) el4.textContent = outCount;
   var el5 = document.getElementById('inv-kpi-value');
   if (el5) el5.textContent = '¥' + totalValue.toFixed(0);
+  var el6 = document.getElementById('inv-kpi-categories');
+  if (el6) el6.textContent = categoryCount;
 }
 
 // ============================================================
@@ -342,7 +345,11 @@ function renderInvInbox() {
   }
 
   if (items.length === 0) {
-    container.innerHTML = '<tr><td colspan="' + totalCols + '" class="empty-state" style="padding:40px;text-align:center;color:var(--text-muted);">暂无匹配数据</td></tr>';
+    container.innerHTML = '<tr><td colspan="' + totalCols + '" class="inv-empty">' +
+      '<div class="inv-empty-icon">📭</div>' +
+      '<div class="inv-empty-text">暂无匹配数据</div>' +
+      '<div class="inv-empty-sub">尝试调整筛选条件或新增物品</div>' +
+    '</td></tr>';
     hideInvActionBar();
     return;
   }
@@ -383,6 +390,8 @@ function renderInvInbox() {
       var canEdit = hasPermission('edit_inventory') || hasPermission('inventory.adjust') || hasPermission('inventory.edit');
       var unitPrice = item.unit_price || 0;
       var amount = (item.stock || 0) * unitPrice;
+      var stockClass = item.stock === 0 ? 'out' : (item.stock < (item.safety_stock || 10) ? 'low' : '');
+      var statusClass = item.stock === 0 ? 'out' : (item.stock < (item.safety_stock || 10) ? 'low' : 'normal');
 
       html += '<tr class="inv-item-row" data-inv-cat="' + summaryId + '" data-item-id="' + item.id + '" data-item-name="' + (item.name || '').replace(/"/g, '&quot;') + '" data-item-code="' + (item.code || '').replace(/"/g, '&quot;') + '" style="cursor:pointer;">';
 
@@ -391,22 +400,24 @@ function renderInvInbox() {
         html += '<td><input type="checkbox" class="inv-batch-cb" data-item-id="' + item.id + '" data-item-name="' + (item.name || '').replace(/"/g, '&quot;') + '" data-item-cat="' + (item.category || '').replace(/"/g, '&quot;') + '" data-item-brand="' + (item.brand || '').replace(/"/g, '&quot;') + '" data-item-model="' + (item.model || '').replace(/"/g, '&quot;') + '" data-item-unit="' + (item.unit || '') + '" data-item-code="' + (item.code || '') + '" data-item-safety="' + (item.safety_stock || 10) + '" data-item-stock="' + (item.stock || 0) + '" onchange="updateInvBatchCount()"></td>';
       }
 
-      // 数据列（10列，与表头严格对齐）
-      html += '<td style="font-weight:600;">' + item.name + '</td>';
-      html += '<td>' + (item.brand || '-') + '</td>';
-      html += '<td>' + (item.model || '-') + '</td>';
-      html += '<td style="text-align:center;color:var(--success);">' + (item.unit || '-') + '</td>';
-      html += '<td class="cell-number">¥' + Number(unitPrice).toFixed(2) + '</td>';
-      html += '<td class="cell-number" style="color:var(--success);font-weight:600;">' + item.stock + '</td>';
-      html += '<td class="cell-number" style="font-weight:600;color:var(--accent);">¥' + amount.toFixed(2) + '</td>';
-      html += '<td><span class="status-badge ' + status.class + '">' + status.text + '</span></td>';
-      html += '<td class="cell-center">' + (function() {
+      // 物品名称（含编号子行）
+      html += '<td><div class="item-name">' + item.name + '</div>';
+      if (item.code) html += '<div class="item-code">' + item.code + '</div>';
+      html += '</td>';
+      html += '<td>' + (item.brand || '<span style="color:var(--text-muted);">-</span>') + '</td>';
+      html += '<td>' + (item.model || '<span style="color:var(--text-muted);">-</span>') + '</td>';
+      html += '<td style="text-align:center;">' + (item.unit || '<span style="color:var(--text-muted);">-</span>') + '</td>';
+      html += '<td class="align-right">¥' + Number(unitPrice).toFixed(2) + '</td>';
+      html += '<td class="align-right"><span class="stock-value ' + stockClass + '">' + item.stock + '</span></td>';
+      html += '<td class="align-right"><span class="amount-value">¥' + amount.toFixed(2) + '</span></td>';
+      html += '<td class="align-center"><span class="inv-status ' + statusClass + '">' + status.text + '</span></td>';
+      html += '<td class="align-center">' + (function() {
         var pending = pendingMap[item.name];
         if (!pending || pending.length === 0) return '<span style="color:var(--text-muted);font-size:12px;">-</span>';
         var totalQty = pending.reduce(function(s, p) { return s + p.quantity; }, 0);
         return '<span class="pending-qty-badge" onclick="event.stopPropagation();_showPendingPopover(this,\'' + (item.name || '').replace(/'/g, "\\'") + '\')" title="点击查看采购明细">' + totalQty + '</span>';
       })() + '</td>';
-      html += '<td>' + (canEdit ? '<button class="btn btn-sm" onclick="editItem(\'' + String(item.id).replace(/'/g, "\\'") + '\')">编辑</button>' : '<span style="color:var(--text-muted);font-size:12px;">-</span>') + '</td>';
+      html += '<td class="align-center">' + (canEdit ? '<button class="inv-action-btn" onclick="event.stopPropagation();editItem(\'' + String(item.id).replace(/'/g, "\\'") + '\')">编辑</button>' : '<span style="color:var(--text-muted);font-size:12px;">-</span>') + '</td>';
       html += '</tr>';
     });
   });
