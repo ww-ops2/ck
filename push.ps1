@@ -59,6 +59,7 @@ $filesToPush = @(
     ".gitignore",
     "index.html",
     "css/style.css",
+    "css/redesign.css",
     "database/schema.sql",
     "database/migrations/20260616_add_adjustments_permissions.sql",
     "database/migrations/20260622_change_stock_to_numeric.sql",
