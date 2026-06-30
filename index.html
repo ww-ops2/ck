@@ -6,24 +6,1935 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <meta http-equiv="refresh" content="0;url=3-库存管理/index.html">
   <title>库存管理系统</title>
-  <style>
-    body { font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #f5f7fa; color: #333; }
-    .loading { text-align: center; }
-    .spinner { width: 40px; height: 40px; border: 3px solid #e0e0e0; border-top-color: #4a90d9; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    a { color: #4a90d9; text-decoration: none; }
-  </style>
+  <script>
+  // 强制拉取云端最新版本：检查URL是否带时间戳，没有则自动跳转加戳
+  (function() {
+    var url = window.location.href;
+    var sep = url.indexOf('?') >= 0 ? '&' : '?';
+    if (url.indexOf('_t=') < 0 && url.indexOf('file://') < 0) {
+      var newUrl = url + sep + '_t=' + Date.now();
+      window.history.replaceState(null, '', newUrl);
+    }
+  })();
+  </script>
+  <link rel="stylesheet" href="css/style.css?v=5.42">
+  <link rel="stylesheet" href="css/redesign.css?v=5.42">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
-  <div class="loading">
-    <div class="spinner"></div>
-    <p>正在跳转到库存管理系统...</p>
-    <p>如未自动跳转，请<a href="3-库存管理/index.html">点击这里</a></p>
+  <!-- ===== 登录界面 — 动画角色版 ===== -->
+  <div id="login-page" class="login-container">
+    <!-- 左侧：动画角色区域 -->
+    <div class="login-left">
+      <div class="login-characters-wrap">
+        <div class="login-characters" id="login-characters" style="width:550px;height:400px;">
+          <!-- 紫色长方形角色 — 后层 -->
+          <div class="login-char login-char-purple" id="login-char-purple"
+            style="left:70px;width:180px;height:400px;background:#6C3FF5;border-radius:10px 10px 0 0;z-index:1;">
+            <div class="login-char-eyes" id="login-purple-eyes" style="display:flex;gap:32px;left:45px;top:40px;">
+              <div class="login-eyeball" data-char="purple" data-eye="left" style="width:18px;height:18px;background:white;border-radius:50%;overflow:hidden;">
+                <div class="login-pupil" style="width:7px;height:7px;background:#2D2D2D;border-radius:50%;"></div>
+              </div>
+              <div class="login-eyeball" data-char="purple" data-eye="right" style="width:18px;height:18px;background:white;border-radius:50%;overflow:hidden;">
+                <div class="login-pupil" style="width:7px;height:7px;background:#2D2D2D;border-radius:50%;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 黑色长方形角色 — 中层 -->
+          <div class="login-char login-char-black" id="login-char-black"
+            style="left:240px;width:120px;height:310px;background:#2D2D2D;border-radius:8px 8px 0 0;z-index:2;">
+            <div class="login-char-eyes" id="login-black-eyes" style="display:flex;gap:24px;left:26px;top:32px;">
+              <div class="login-eyeball" data-char="black" data-eye="left" style="width:16px;height:16px;background:white;border-radius:50%;overflow:hidden;">
+                <div class="login-pupil" style="width:6px;height:6px;background:#2D2D2D;border-radius:50%;"></div>
+              </div>
+              <div class="login-eyeball" data-char="black" data-eye="right" style="width:16px;height:16px;background:white;border-radius:50%;overflow:hidden;">
+                <div class="login-pupil" style="width:6px;height:6px;background:#2D2D2D;border-radius:50%;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 橙色半圆角色 — 前左 -->
+          <div class="login-char login-char-orange" id="login-char-orange"
+            style="left:0px;width:240px;height:200px;background:#FF9B6B;border-radius:120px 120px 0 0;z-index:3;">
+            <div class="login-char-eyes" id="login-orange-eyes" style="display:flex;gap:32px;left:82px;top:90px;">
+              <div class="login-pupil-standalone" data-char="orange" data-eye="left" style="width:12px;height:12px;background:#2D2D2D;border-radius:50%;"></div>
+              <div class="login-pupil-standalone" data-char="orange" data-eye="right" style="width:12px;height:12px;background:#2D2D2D;border-radius:50%;"></div>
+            </div>
+          </div>
+
+          <!-- 黄色长方形角色 — 前右 -->
+          <div class="login-char login-char-yellow" id="login-char-yellow"
+            style="left:310px;width:140px;height:230px;background:#E8D754;border-radius:70px 70px 0 0;z-index:4;">
+            <div class="login-char-eyes" id="login-yellow-eyes" style="display:flex;gap:24px;left:52px;top:40px;">
+              <div class="login-pupil-standalone" data-char="yellow" data-eye="left" style="width:12px;height:12px;background:#2D2D2D;border-radius:50%;"></div>
+              <div class="login-pupil-standalone" data-char="yellow" data-eye="right" style="width:12px;height:12px;background:#2D2D2D;border-radius:50%;"></div>
+            </div>
+            <!-- 嘴巴 -->
+            <div class="login-yellow-mouth" id="login-yellow-mouth" style="width:80px;height:4px;background:#2D2D2D;border-radius:2px;left:40px;top:88px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 装饰元素 -->
+      <div class="login-left-deco1"></div>
+      <div class="login-left-deco2"></div>
+    </div>
+
+    <!-- 右侧：登录表单 -->
+    <div class="login-right">
+      <div class="login-form-container">
+        <!-- 顶部品牌 -->
+        <div class="login-form-brand">
+          <div class="login-brand-icon-sm">✦</div>
+          <span>库存管理系统</span>
+        </div>
+
+        <!-- 移动端 Logo -->
+        <div class="login-mobile-brand">
+          <div class="login-brand-icon-sm">✦</div>
+          <span>库存管理系统</span>
+        </div>
+
+        <div class="login-form-header">
+          <h1>遇见美好</h1>
+          <p>请输入您的登录信息</p>
+        </div>
+
+        <form id="login-form" class="login-form" autocomplete="off">
+          <div class="form-group">
+            <label for="login-phone">手机号码 / 账号</label>
+            <div class="login-input-wrap">
+              <input type="text" id="login-phone" placeholder="请输入手机号或账号" required autocomplete="off">
+            </div>
+          </div>
+          
+          <div class="form-group" id="login-password-group" style="display:none;">
+            <label for="login-password">管理员密码</label>
+            <div class="login-input-wrap login-input-password">
+              <input type="password" id="login-password" placeholder="请输入密码" autocomplete="new-password">
+              <button type="button" class="login-eye-btn" id="login-eye-btn">
+                <span class="login-eye-icon login-eye-open">👁</span>
+                <span class="login-eye-icon login-eye-off" style="display:none;">👁‍🗨</span>
+              </button>
+            </div>
+          </div>
+          
+          <button type="submit" class="btn btn-primary btn-block login-submit-btn">登 录</button>
+        </form>
+
+        <!-- 底部链接 -->
+        <div class="login-form-footer-links">
+          <a href="#" id="register-btn" onclick="event.preventDefault();if(typeof openRegisterModal==='function')openRegisterModal();">注册账号</a>
+          <a href="#">隐私政策</a>
+          <a href="#">服务条款</a>
+          <a href="#">帮助中心</a>
+        </div>
+      </div>
+    </div>
   </div>
-  <script>
-    window.location.href = '3-库存管理/index.html' + window.location.search + window.location.hash;
-  </script>
+
+  <!-- ===== 主应用界面 ===== -->
+  <div id="app-container" class="app-container" style="display: none;">
+    
+    <!-- 侧边栏导航 -->
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-icon"><svg viewBox="0 0 50 39" xmlns="http://www.w3.org/2000/svg"><path d="M16.4992 2H37.5808L22.0816 24.9729H1L16.4992 2Z"/><path d="M17.4224 27.102L11.4192 36H33.5008L49 13.0271H32.7024L23.2064 27.102H17.4224Z"/></svg></div>
+        <div class="logo-text">
+          <span class="brand">遇见美好</span>
+          <span class="sub">库存管理系统</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-section">
+          <div class="nav-section-title">库存管理</div>
+          <div class="nav-item active" data-module="dashboard" data-tooltip="仪表盘">
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 5-9"/></svg></span>
+            <span class="text">仪表盘</span>
+          </div>
+          <div class="nav-item" data-module="inventory" data-tooltip="库存概览">
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M9 12h6"/><path d="M9 16h6"/></svg></span>
+            <span class="text">库存概览</span>
+          </div>
+          <div class="nav-item" data-module="categories" data-tooltip="品类管理">
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></span>
+            <span class="text">品类管理</span>
+          </div>
+        </div>
+
+        <div class="nav-section">
+          <div class="nav-section-title">业务流程</div>
+          <div class="nav-item" data-module="purchase" data-tooltip="采购单管理">
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></span>
+            <span class="text">采购单管理</span>
+            <span class="badge" id="purchase-badge" style="display:none">0</span>
+          </div>
+          <div class="nav-item" data-module="stock-in" data-tooltip="入库管理">
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
+            <span class="text">入库管理</span>
+            <span class="badge" id="stockin-badge" style="display:none">0</span>
+          </div>
+          <div class="nav-item" data-module="requisition" data-tooltip="领用单管理">
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span>
+            <span class="text">领用单管理</span>
+            <span class="badge" id="requisition-badge" style="display:none">0</span>
+          </div>
+          <div class="nav-item" data-module="stock-out" data-tooltip="出库管理">
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span>
+            <span class="text">出库管理</span>
+            <span class="badge" id="stockout-badge" style="display:none">0</span>
+          </div>
+        </div>
+
+        <div class="nav-section">
+          <div class="nav-section-title">统计报表</div>
+          <div class="nav-item" data-module="monthly-summary" data-tooltip="月度汇总">
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
+            <span class="text">月度汇总</span>
+          </div>
+          <div class="nav-item" data-module="reports" data-tooltip="团期使用报表">
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span>
+            <span class="text">团期使用报表</span>
+          </div>
+          <div class="nav-item" data-module="analytics" data-tooltip="数据分析">
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
+            <span class="text">数据分析</span>
+          </div>
+          <div class="nav-item" data-module="history" data-tooltip="操作记录">
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+            <span class="text">操作记录</span>
+          </div>
+        </div>
+
+        <div class="nav-section admin-only" style="display: none;">
+          <div class="nav-section-title">系统管理</div>
+          <div class="nav-item" data-module="admin-users" data-tooltip="账号管理">
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+            <span class="text">账号管理</span>
+          </div>
+          <div class="nav-item" data-module="admin-settings" data-tooltip="系统设置">
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+            <span class="text">系统设置</span>
+          </div>
+        </div>
+      </nav>
+
+      <div class="nav-bottom">
+        <span class="status-dot"></span>
+        <span>系统运行正常</span>
+      </div>
+
+      <div class="sidebar-toggle" onclick="document.querySelector('.sidebar').classList.toggle('collapsed')">
+        <span class="toggle-icon"><svg viewBox="0 0 24 24"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg></span>
+        <span class="toggle-label">收起侧边栏</span>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="user-info">
+          <div class="user-avatar" id="user-avatar"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+          <div class="user-details">
+            <div class="user-name" id="user-name">未登录</div>
+            <div class="user-role" id="user-role">-</div>
+          </div>
+        </div>
+        <button class="btn-logout" id="logout-btn">退出</button>
+      </div>
+    </aside>
+
+    <!-- 主内容区域 -->
+    <main class="main-content">
+      
+      <!-- 顶部栏 -->
+      <header class="top-bar">
+        <div class="page-title" id="page-title">仪表盘</div>
+        <div class="top-actions">
+          <div class="search-box">
+            <input type="text" placeholder="搜索物品、单号..." id="global-search">
+          </div>
+          <button class="btn-icon" id="notification-btn" title="通知">
+            <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span class="notification-dot" id="notification-badge" style="display:none">0</span>
+          </button>
+          <button class="btn-icon" title="刷新" id="refresh-btn">
+            <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- 内容容器 -->
+      <div class="content-wrapper">
+        
+        <!-- ===== 仪表盘模块 (v5.42 新设计) ===== -->
+        <div id="module-dashboard" class="module-pane active">
+          <div class="dashboard-kpi-grid">
+            <div class="kpi-card-new anim-enter" data-kpi-type="total-items">
+              <div class="kpi-top">
+                <span class="kpi-label">总库存物品</span>
+                <span class="kpi-icon kpi-icon-primary">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
+                </span>
+              </div>
+              <div class="kpi-value" id="kpi-total-items">0</div>
+              <div class="kpi-change"><span>个品类</span></div>
+            </div>
+            <div class="kpi-card-new anim-enter" data-kpi-type="month-in">
+              <div class="kpi-top">
+                <span class="kpi-label">本月入库</span>
+                <span class="kpi-icon kpi-icon-success">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                </span>
+              </div>
+              <div class="kpi-value" id="kpi-month-in">0</div>
+              <div class="kpi-change"><span>件</span></div>
+            </div>
+            <div class="kpi-card-new anim-enter" data-kpi-type="month-out">
+              <div class="kpi-top">
+                <span class="kpi-label">本月出库</span>
+                <span class="kpi-icon kpi-icon-danger">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                </span>
+              </div>
+              <div class="kpi-value" id="kpi-month-out">0</div>
+              <div class="kpi-change"><span>件</span></div>
+            </div>
+            <div class="kpi-card-new anim-enter" data-kpi-type="pending-purchase">
+              <div class="kpi-top">
+                <span class="kpi-label">待处理采购单</span>
+                <span class="kpi-icon kpi-icon-warning">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                </span>
+              </div>
+              <div class="kpi-value" id="kpi-pending-purchase">0</div>
+              <div class="kpi-change"><span>单</span></div>
+            </div>
+            <div class="kpi-card-new anim-enter" data-kpi-type="pending-stockin">
+              <div class="kpi-top">
+                <span class="kpi-label">待确认入库</span>
+                <span class="kpi-icon kpi-icon-warning">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                </span>
+              </div>
+              <div class="kpi-value" id="kpi-pending-stockin">0</div>
+              <div class="kpi-change"><span>单</span></div>
+            </div>
+            <div class="kpi-card-new anim-enter" data-kpi-type="low-stock">
+              <div class="kpi-top">
+                <span class="kpi-label">低库存预警</span>
+                <span class="kpi-icon kpi-icon-danger">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                </span>
+              </div>
+              <div class="kpi-value" id="kpi-low-stock">0</div>
+              <div class="kpi-change"><span>项</span></div>
+            </div>
+            <div class="kpi-card-new anim-enter" data-kpi-type="pending-outbound">
+              <div class="kpi-top">
+                <span class="kpi-label">待确认出库</span>
+                <span class="kpi-icon kpi-icon-primary">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                </span>
+              </div>
+              <div class="kpi-value" id="kpi-pending-outbound">0</div>
+              <div class="kpi-change"><span>单</span></div>
+            </div>
+          </div>
+
+          <!-- KPI 卡片展开详情面板 -->
+          <div id="kpi-expand-panel" class="kpi-expand-panel">
+            <div class="kpi-expand-header">
+              <span class="kpi-expand-title" id="kpi-expand-title"></span>
+              <button class="kpi-expand-close" id="kpi-expand-close" title="关闭">&times;</button>
+            </div>
+            <div class="kpi-expand-body" id="kpi-expand-body"></div>
+          </div>
+
+          <div class="dashboard-chart-section">
+            <div class="chart-panel-new anim-enter">
+              <div class="chart-header">
+                <div class="chart-title"><span class="chart-dot" style="background:var(--accent)"></span>出入库趋势</div>
+                <select id="chart-period" class="chart-period-select">
+                  <option value="7">近7天</option>
+                  <option value="30" selected>近30天</option>
+                  <option value="90">近90天</option>
+                </select>
+              </div>
+              <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
+            </div>
+            <div class="chart-panel-new anim-enter">
+              <div class="chart-header">
+                <div class="chart-title"><span class="chart-dot" style="background:var(--success)"></span>库存分类占比</div>
+              </div>
+              <div class="chart-wrap"><canvas id="category-chart"></canvas></div>
+            </div>
+          </div>
+
+          <div class="activity-section-new anim-enter">
+            <div class="activity-header">
+              <div class="activity-title"><span class="chart-dot" style="background:var(--warning)"></span>最近动态</div>
+              <button class="btn btn-sm" style="background:none;border:none;font-size:0.75rem;color:var(--accent);cursor:pointer;font-weight:500;">查看全部 →</button>
+            </div>
+            <div class="activity-list" id="recent-activities"></div>
+          </div>
+        </div>
+
+        <!-- ===== 库存概览模块 (v5.42 新设计) ===== -->
+        <div id="module-inventory" class="module-pane">
+          <!-- KPI 概览行 -->
+          <div class="kpi-strip-new inv-kpi-strip">
+            <div class="kpi-mini-new km-accent anim-enter">
+              <div class="km-bar"></div>
+              <div class="km-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg> 物品总数</div>
+              <div class="km-value" id="inv-kpi-total">0</div>
+              <div class="km-sub"><span id="inv-kpi-categories">0</span> 个品类</div>
+            </div>
+            <div class="kpi-mini-new anim-enter" style="animation-delay:0.05s">
+              <div class="km-bar"></div>
+              <div class="km-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> 库存总量</div>
+              <div class="km-value" id="inv-kpi-stock">0</div>
+              <div class="km-sub">件/箱/包</div>
+            </div>
+            <div class="kpi-mini-new km-warning anim-enter" style="animation-delay:0.1s">
+              <div class="km-bar"></div>
+              <div class="km-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg> 低库存</div>
+              <div class="km-value" id="inv-kpi-low">0</div>
+              <div class="km-sub">低于安全库存</div>
+            </div>
+            <div class="kpi-mini-new km-danger anim-enter" style="animation-delay:0.15s">
+              <div class="km-bar"></div>
+              <div class="km-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg> 缺货</div>
+              <div class="km-value" id="inv-kpi-out">0</div>
+              <div class="km-sub">需立即补货</div>
+            </div>
+            <div class="kpi-mini-new km-success anim-enter" style="animation-delay:0.2s">
+              <div class="km-bar"></div>
+              <div class="km-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> 库存金额</div>
+              <div class="km-value" id="inv-kpi-value">¥0</div>
+              <div class="km-sub">总价值</div>
+            </div>
+          </div>
+
+          <!-- 工具栏 -->
+          <div class="inv-toolbar-new anim-enter" style="animation-delay:0.25s">
+            <div class="inv-tb-left">
+              <input type="text" id="inv-search-input" class="inv-search-new" placeholder="搜索物品名称、编号、品牌...">
+              <select id="inv-filter-category" class="inv-filter-new">
+                <option value="">全部分类</option>
+              </select>
+              <select id="inv-filter-status" class="inv-filter-new">
+                <option value="">全部状态</option>
+                <option value="normal">正常</option>
+                <option value="low">低库存</option>
+                <option value="out">缺货</option>
+              </select>
+            </div>
+            <div class="inv-tb-right">
+              <button class="btn btn-sm btn-outline-new" id="inv-batch-purchase-btn">一键购买</button>
+              <button class="btn btn-sm btn-outline-new" id="inv-supplement-btn">补充信息</button>
+              <button class="btn btn-sm btn-accent-new" id="add-item-btn">+ 新增物品</button>
+            </div>
+          </div>
+
+          <!-- 库存列表（卡片分类布局） -->
+          <div class="inv-board-new" id="inv-board-new">
+            <!-- 渲染占位：JS动态生成分类卡片 -->
+            <div class="anim-enter" style="animation-delay:0.35s;text-align:center;padding:40px 0;color:var(--text-muted);font-size:0.85rem;">加载中...</div>
+          </div>
+
+          <!-- 批量采购底部操作栏 -->
+          <div class="action-bar-new" id="inv-batch-bar" style="display:none;">
+            <div class="ab-left">
+              <label class="ab-check">
+                <input type="checkbox" id="inv-select-all-bottom" onchange="document.querySelectorAll('.inv-batch-cb').forEach(function(cb){cb.checked=this.checked;});updateInvBatchCount();"> 全选
+              </label>
+              <span class="ab-count" id="inv-batch-count">已选中 0 项</span>
+            </div>
+            <div class="ab-right">
+              <button class="btn btn-sm" id="inv-batch-cancel">取消</button>
+              <button class="btn btn-sm btn-accent-new" id="inv-batch-purchase-confirm">一键采购选中项</button>
+            </div>
+          </div>
+
+          <!-- 补充信息底部操作栏 -->
+          <div class="action-bar-new" id="inv-supp-bar" style="display:none;">
+            <div class="ab-left">
+              <span class="ab-count"><span id="inv-supp-changed-count">0</span> 项已修改</span>
+            </div>
+            <div class="ab-right">
+              <button class="btn btn-sm" id="inv-supp-cancel">取消</button>
+              <button class="btn btn-sm btn-accent-new" id="inv-supp-save">保存补充信息</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== 品类管理模块 ===== -->
+        <div id="module-categories" class="module-pane">
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title">品类管理</div>
+              <button class="btn btn-accent" id="add-category-btn">+ 新增品类</button>
+            </div>
+            <div class="category-grid" id="category-list">
+              <!-- 动态生成品类卡片 -->
+            </div>
+            <!-- 品类明细展开面板 -->
+            <div id="category-detail-panel" class="kpi-expand-panel" style="margin-top:16px;">
+              <div class="kpi-expand-header">
+                <span class="kpi-expand-title" id="category-detail-title"></span>
+                <button class="kpi-expand-close" id="category-detail-close" title="关闭">&times;</button>
+              </div>
+              <div class="kpi-expand-body" id="category-detail-body"></div>
+            </div>
+          </div>
+          <!-- 领用标准配置面板 -->
+          <div class="panel" id="consumption-standards-panel" style="margin-top:16px;">
+            <div class="panel-header">
+              <div class="panel-title">领用标准配置</div>
+            </div>
+            <p style="color:var(--text-muted);font-size:13px;">加载中...</p>
+          </div>
+        </div>
+
+        <!-- ===== 采购单管理模块 ===== -->
+        <div id="module-purchase" class="module-pane">
+          <!-- 月度概览 + 时间筛选 -->
+          <div class="panel" style="margin-bottom:16px;">
+            <div class="panel-header" style="border-bottom:none;padding-bottom:8px;">
+              <div class="panel-title">月度采购概览</div>
+              <div class="panel-actions">
+                <input type="month" id="purchase-month" value="">
+                <button class="btn btn-sm" id="purchase-month-this">本月</button>
+                <button class="btn btn-sm" id="purchase-month-last">上月</button>
+              </div>
+            </div>
+            <div class="kpi-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;" id="purchase-kpi-grid">
+              <div class="kpi-card"><div class="kpi-label">采购单数</div><div class="kpi-value" id="po-kpi-count">0</div></div>
+              <div class="kpi-card"><div class="kpi-label">采购总额</div><div class="kpi-value" id="po-kpi-amount">¥0</div></div>
+              <div class="kpi-card"><div class="kpi-label">入库完成</div><div class="kpi-value" id="po-kpi-stockin">0</div></div>
+              <div class="kpi-card"><div class="kpi-label">待处理</div><div class="kpi-value" id="po-kpi-pending">0</div></div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title">采购单列表</div>
+              <div class="panel-actions">
+                <button class="btn" id="import-purchase-btn">📄 导入Excel</button>
+                <button class="btn btn-accent" id="create-purchase-btn">+ 新建采购单</button>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table" id="purchase-table">
+                <thead>
+                  <tr>
+                    <th>采购单号</th>
+                    <th>采购日期</th>
+                    <th>采购人</th>
+                    <th>物品数量</th>
+                    <th>总金额</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="purchase-tbody">
+                  <tr><td colspan="7" class="empty-state">暂无采购单</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== 入库管理模块（混合视图） ===== -->
+        <div id="module-stock-in" class="module-pane">
+          <!-- KPI 概览行 -->
+          <div class="panel" style="margin-bottom:12px;">
+            <div class="panel-header" style="border-bottom:none;padding-bottom:8px;">
+              <div class="panel-title">入库管理</div>
+              <div class="panel-actions">
+                <input type="month" id="stockin-month" value="">
+                <button class="btn btn-sm" id="stockin-month-this">本月</button>
+                <button class="btn btn-sm" id="stockin-month-last">上月</button>
+              </div>
+            </div>
+            <div class="kpi-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">
+              <div class="kpi-card"><div class="kpi-label">待入库采购单</div><div class="kpi-value" id="si-kpi-pending">0</div></div>
+              <div class="kpi-card"><div class="kpi-label">部分入库</div><div class="kpi-value" id="si-kpi-partial">0</div></div>
+              <div class="kpi-card"><div class="kpi-label">本月入库单数</div><div class="kpi-value" id="si-kpi-count">0</div></div>
+              <div class="kpi-card"><div class="kpi-label">本月入库总量</div><div class="kpi-value" id="si-kpi-qty">0</div></div>
+              <div class="kpi-card"><div class="kpi-label">已完成</div><div class="kpi-value" id="si-kpi-completed">0</div></div>
+            </div>
+          </div>
+
+          <!-- 主体：左右分栏 -->
+          <div class="stockin-hybrid">
+            <!-- 左侧：PO看板 -->
+            <div class="stockin-board">
+              <div class="stockin-board-header">
+                <span class="stockin-board-title">采购单看板</span>
+                <div class="stockin-board-actions">
+                  <input type="text" class="stockin-board-search" id="stockin-board-search" placeholder="搜索采购单号..." style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;width:140px;background:var(--bg-input);color:var(--text-primary);">
+                </div>
+              </div>
+              <div class="stockin-board-tabs">
+                <button class="stockin-tab active" data-filter="all">全部</button>
+                <button class="stockin-tab" data-filter="pending_stockin">待入库</button>
+                <button class="stockin-tab" data-filter="partially_stockin">部分入库</button>
+                <button class="stockin-tab" data-filter="stockin_completed">已完成</button>
+              </div>
+              <div class="stockin-card-list" id="stockin-card-list">
+                <div class="stockin-loading">加载中...</div>
+              </div>
+            </div>
+
+            <!-- 右侧：入库收件箱 -->
+            <div class="stockin-inbox">
+              <div class="stockin-inbox-toolbar">
+                <div class="stockin-inbox-filters">
+                  <select id="stockin-filter-po" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg-input);color:var(--text-primary);">
+                    <option value="">全部采购单</option>
+                  </select>
+                  <select id="stockin-filter-status" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg-input);color:var(--text-primary);">
+                    <option value="">全部状态</option>
+                    <option value="pending">待入库</option>
+                    <option value="partial">部分入库</option>
+                    <option value="completed">已完成</option>
+                  </select>
+                </div>
+                <div class="stockin-inbox-info" id="stockin-inbox-info">已选 0 项</div>
+              </div>
+              <div class="table-scroll stockin-inbox-table-wrap">
+                <table class="data-table stockin-inbox-table" id="stockin-inbox-table">
+                  <colgroup>
+                    <col style="width:36px;">
+                    <col style="width:120px;">
+                    <col style="width:140px;">
+                    <col style="width:80px;">
+                    <col style="width:80px;">
+                    <col style="width:70px;">
+                    <col style="width:70px;">
+                    <col style="width:70px;">
+                    <col style="width:80px;">
+                    <col style="width:50px;">
+                    <col style="width:70px;">
+                    <col style="width:70px;">
+                    <col style="width:90px;">
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th><input type="checkbox" id="stockin-select-all"></th>
+                      <th>采购单号</th>
+                      <th>物品名称</th>
+                      <th>品牌</th>
+                      <th>型号</th>
+                      <th class="cell-number">采购数量</th>
+                      <th class="cell-number">已入库</th>
+                      <th class="cell-number">待入库</th>
+                      <th class="cell-number">本次入库</th>
+                      <th>单位</th>
+                      <th class="cell-number">单价</th>
+                      <th>状态</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stockin-inbox-tbody">
+                    <tr><td colspan="12" class="empty-state">请先在左侧选择采购单</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- 底部操作栏 -->
+          <div class="stockin-actionbar" id="stockin-actionbar" style="display:none;">
+            <div class="stockin-actionbar-left">
+              <span id="stockin-actionbar-count">已选择 0 项</span>
+            </div>
+            <div class="stockin-actionbar-right">
+              <button class="btn btn-sm" id="stockin-reset-btn" style="border:1px solid var(--border);">重置数量</button>
+              <button class="btn btn-sm btn-accent" id="stockin-confirm-btn" style="font-weight:600;">确认入库</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== 领用单管理模块 ===== -->
+        <div id="module-requisition" class="module-pane">
+          <!-- 月度概览 + 时间筛选 -->
+          <div class="panel" style="margin-bottom:16px;">
+            <div class="panel-header" style="border-bottom:none;padding-bottom:8px;">
+              <div class="panel-title">月度领用概览</div>
+              <div class="panel-actions">
+                <input type="month" id="requisition-month" value="">
+                <button class="btn btn-sm" id="req-month-this">本月</button>
+                <button class="btn btn-sm" id="req-month-last">上月</button>
+              </div>
+            </div>
+            <div class="kpi-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+              <div class="kpi-card"><div class="kpi-label">领用单数</div><div class="kpi-value" id="rq-kpi-count">0</div></div>
+              <div class="kpi-card"><div class="kpi-label">领用总量</div><div class="kpi-value" id="rq-kpi-qty">0</div></div>
+              <div class="kpi-card"><div class="kpi-label">已出库</div><div class="kpi-value" id="rq-kpi-outbound">0</div></div>
+              <div class="kpi-card"><div class="kpi-label">超额领用</div><div class="kpi-value" id="rq-kpi-overlimit" style="color:var(--danger);">0</div></div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title">领用单列表</div>
+              <button class="btn btn-accent" id="create-requisition-btn">+ 新建领用单</button>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table" id="requisition-table">
+                <thead>
+                  <tr>
+                    <th>领用单号</th>
+                    <th>团期</th>
+                    <th>团期名称</th>
+                    <th>使用场景</th>
+                    <th>申请人</th>
+                    <th>申请日期</th>
+                    <th>物品数量</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="requisition-tbody">
+                  <tr><td colspan="9" class="empty-state">暂无领用单</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== 出库管理模块 ===== -->
+        <div id="module-stock-out" class="module-pane">
+          <!-- 月度概览 + 时间筛选 -->
+          <div class="panel" style="margin-bottom:16px;">
+            <div class="panel-header" style="border-bottom:none;padding-bottom:8px;">
+              <div class="panel-title">月度出库概览</div>
+              <div class="panel-actions">
+                <input type="month" id="stockout-month" value="">
+                <button class="btn btn-sm" id="stockout-month-this">本月</button>
+                <button class="btn btn-sm" id="stockout-month-last">上月</button>
+              </div>
+            </div>
+            <div class="kpi-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+              <div class="kpi-card"><div class="kpi-label">出库单数</div><div class="kpi-value" id="so-kpi-count">0</div></div>
+              <div class="kpi-card"><div class="kpi-label">出库总量</div><div class="kpi-value" id="so-kpi-qty">0</div></div>
+              <div class="kpi-card"><div class="kpi-label">餐车出库</div><div class="kpi-value" id="so-kpi-canch">0</div></div>
+              <div class="kpi-card"><div class="kpi-label">客房出库</div><div class="kpi-value" id="so-kpi-kefang">0</div></div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title">出库记录列表</div>
+              <div class="panel-actions">
+                <select id="filter-stockout-status">
+                  <option value="">全部状态</option>
+                  <option value="pending">待确认</option>
+                  <option value="completed">已出库</option>
+                </select>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table" id="stockout-table">
+                <thead>
+                  <tr>
+                    <th>出库单号</th>
+                    <th>关联领用单</th>
+                    <th>团期</th>
+                    <th>团期名称</th>
+                    <th>使用场景</th>
+                    <th>出库日期</th>
+                    <th>物品数量</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="stockout-tbody">
+                  <tr><td colspan="9" class="empty-state">暂无出库记录</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== 月度汇总模块 ===== -->
+        <div id="module-monthly-summary" class="module-pane">
+          <!-- 时间筛选栏 -->
+          <div class="panel" style="margin-bottom:16px;">
+            <div class="ms-filter-bar">
+              <div class="ms-quick-btns">
+                <button class="btn btn-sm" id="ms-btn-this-month">本月</button>
+                <button class="btn btn-sm" id="ms-btn-last-month">上月</button>
+                <button class="btn btn-sm" id="ms-btn-this-quarter">本季度</button>
+                <button class="btn btn-sm" id="ms-btn-this-year">本年度</button>
+              </div>
+              <div class="ms-date-range">
+                <input type="date" id="ms-date-start" class="ms-date-input">
+                <span style="color:var(--text-muted);">~</span>
+                <input type="date" id="ms-date-end" class="ms-date-input">
+              </div>
+              <div class="ms-month-select">
+                <label style="font-size:13px;color:var(--text-secondary);">月份</label>
+                <input type="month" id="ms-month-picker" class="ms-date-input">
+              </div>
+              <span id="ms-range-label" style="font-size:13px;color:var(--text-muted);margin-left:auto;"></span>
+            </div>
+          </div>
+
+          <!-- KPI 卡片 -->
+          <div class="ms-kpi-grid">
+            <div class="kpi-card">
+              <div class="kpi-label">期初库存</div>
+              <div class="kpi-value" id="ms-kpi-begin-items">0</div>
+              <div class="kpi-change">种 / <span id="ms-kpi-begin-stock">0</span> 件</div>
+            </div>
+            <div class="kpi-card" style="border-left:3px solid var(--success);">
+              <div class="kpi-label">本期入库</div>
+              <div class="kpi-value income" id="ms-kpi-in-qty">0</div>
+              <div class="kpi-change"><span id="ms-kpi-in-count">0</span> 笔</div>
+            </div>
+            <div class="kpi-card" style="border-left:3px solid var(--warning);">
+              <div class="kpi-label">本期出库</div>
+              <div class="kpi-value cost" id="ms-kpi-out-qty">0</div>
+              <div class="kpi-change"><span id="ms-kpi-out-count">0</span> 笔</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">期末库存</div>
+              <div class="kpi-value" id="ms-kpi-end-items">0</div>
+              <div class="kpi-change">种 / <span id="ms-kpi-end-stock">0</span> 件</div>
+            </div>
+            <div class="kpi-card" style="border-left:3px solid var(--accent);">
+              <div class="kpi-label">库存周转率</div>
+              <div class="kpi-value" id="ms-kpi-turnover" style="color:var(--accent);">0%</div>
+              <div class="kpi-change">出库/平均库存</div>
+            </div>
+            <div class="kpi-card" style="border-left:3px solid var(--danger);">
+              <div class="kpi-label">低库存预警</div>
+              <div class="kpi-value danger" id="ms-kpi-low-stock">0</div>
+              <div class="kpi-change">项</div>
+            </div>
+          </div>
+
+          <!-- 图表区域 -->
+          <div class="grid-2" style="margin-top:16px;">
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title"><span class="dot" style="background:var(--accent)"></span>出入库趋势</div>
+              </div>
+              <div class="chart-wrap" style="min-height:260px;">
+                <canvas id="ms-inout-chart"></canvas>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title"><span class="dot" style="background:var(--success)"></span>品类出库占比</div>
+              </div>
+              <div class="chart-wrap" style="min-height:260px;">
+                <canvas id="ms-category-chart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel" style="margin-top:16px;">
+            <div class="panel-header">
+              <div class="panel-title"><span class="dot" style="background:var(--warning)"></span>近6月出库环比</div>
+            </div>
+            <div class="chart-wrap" style="min-height:220px;max-height:280px;">
+              <canvas id="ms-trend-chart"></canvas>
+            </div>
+          </div>
+
+          <!-- 明细报表 -->
+          <div class="panel" style="margin-top:16px;">
+            <div class="panel-header">
+              <div class="panel-title">出入库明细</div>
+              <div class="panel-actions">
+                <select id="ms-filter-category">
+                  <option value="">全部分类</option>
+                </select>
+                <button class="btn btn-sm" id="ms-export-btn">📥 导出Excel</button>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table" id="ms-detail-table">
+                <thead>
+                  <tr>
+                    <th>物品编号</th>
+                    <th>物品名称</th>
+                    <th>品牌/型号</th>
+                    <th>期初库存</th>
+                    <th>本期入库</th>
+                    <th>本期出库</th>
+                    <th>期末库存</th>
+                    <th>单位</th>
+                    <th>变动率</th>
+                  </tr>
+                </thead>
+                <tbody id="ms-detail-tbody">
+                  <tr><td colspan="9" class="empty-state">请选择时间范围</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== 团期使用报表模块 ===== -->
+        <div id="module-reports" class="module-pane">
+          <!-- KPI 概览卡片 -->
+          <div class="kpi-grid" id="report-kpi-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px;">
+            <div class="kpi-card">
+              <div class="kpi-label">团期总数</div>
+              <div class="kpi-value" id="rpt-kpi-tour-count">0</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">出库总量（件）</div>
+              <div class="kpi-value" id="rpt-kpi-total-out">0</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">使用总成本</div>
+              <div class="kpi-value" id="rpt-kpi-total-cost">¥0</div>
+            </div>
+          </div>
+          <div class="kpi-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px;">
+            <div class="kpi-card">
+              <div class="kpi-label">超额领用次数</div>
+              <div class="kpi-value" id="rpt-kpi-overlimit-count" style="color:var(--danger);">0</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">超额损失金额</div>
+              <div class="kpi-value" id="rpt-kpi-overlimit-loss" style="color:var(--danger);">¥0</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">涉及场景</div>
+              <div class="kpi-value" id="rpt-kpi-scenario-count">0</div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title">团期使用报表</div>
+              <div class="panel-actions">
+                <input type="month" id="report-month" value="">
+                <select id="report-scenario-filter">
+                  <option value="">全部场景</option>
+                  <option value="列车餐车">列车餐车</option>
+                  <option value="列车客房">列车客房</option>
+                  <option value="其他">其他</option>
+                </select>
+                <button class="btn" id="export-report-btn">📥 导出报表</button>
+              </div>
+            </div>
+
+            <!-- 图表区 -->
+            <div class="grid-2" style="margin-bottom:20px;">
+              <div class="chart-wrap">
+                <h4 style="margin:0 0 8px 0;font-size:13px;color:var(--text-secondary);">各团期出库量趋势</h4>
+                <canvas id="tour-period-chart"></canvas>
+              </div>
+              <div class="chart-wrap">
+                <h4 style="margin:0 0 8px 0;font-size:13px;color:var(--text-secondary);">场景消耗占比</h4>
+                <canvas id="scenario-chart"></canvas>
+              </div>
+            </div>
+
+            <!-- 品类对比图 -->
+            <div style="margin-bottom:20px;">
+              <div class="chart-wrap">
+                <h4 style="margin:0 0 8px 0;font-size:13px;color:var(--text-secondary);">各团期品类消耗对比</h4>
+                <canvas id="category-compare-chart"></canvas>
+              </div>
+            </div>
+
+            <!-- 团期明细表 -->
+            <div class="detail-section-title" style="margin-top:12px;">团期出库明细</div>
+            <div class="table-scroll" style="margin-top: 8px;">
+              <table class="data-table" id="report-table">
+                <thead>
+                  <tr>
+                    <th>团期日期</th>
+                    <th>团期名称</th>
+                    <th>使用场景</th>
+                    <th>物品名称</th>
+                    <th>类别</th>
+                    <th>出库数量</th>
+                    <th>成本</th>
+                    <th>领用标准</th>
+                    <th>状态</th>
+                  </tr>
+                </thead>
+                <tbody id="report-tbody">
+                  <tr>
+                    <td colspan="9" class="empty-state">请选择月份查看数据</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- 超额汇总 -->
+            <div id="report-overlimit-summary" style="margin-top:20px;display:none;">
+              <div class="detail-section-title" style="color:var(--danger);">超额领用汇总</div>
+              <div class="table-scroll" style="margin-top:8px;">
+                <table class="data-table" id="report-overlimit-table">
+                  <thead>
+                    <tr>
+                      <th>团期</th>
+                      <th>场景</th>
+                      <th>物品名称</th>
+                      <th>实际领用</th>
+                      <th>标准上限</th>
+                      <th>超出数量</th>
+                      <th>单价</th>
+                      <th>损失金额</th>
+                    </tr>
+                  </thead>
+                  <tbody id="report-overlimit-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== 数据分析模块 ===== -->
+        <div id="module-analytics" class="module-pane">
+          <div class="grid-2">
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">热门物品排行</div>
+              </div>
+              <div class="chart-wrap">
+                <canvas id="popular-items-chart"></canvas>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title">出入库汇总</div>
+              </div>
+              <div class="chart-wrap">
+                <canvas id="summary-chart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== 操作记录模块 ===== -->
+        <div id="module-history" class="module-pane">
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title">操作日志</div>
+              <div class="panel-actions">
+                <input type="date" id="log-date-start">
+                <span>至</span>
+                <input type="date" id="log-date-end">
+                <button class="btn" id="filter-log-btn">筛选</button>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table" id="log-table">
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>操作人</th>
+                    <th>操作类型</th>
+                    <th>详情</th>
+                    <th>IP地址</th>
+                  </tr>
+                </thead>
+                <tbody id="log-tbody">
+                  <tr>
+                    <td colspan="5" class="empty-state">暂无日志记录</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== 后台管理 - 账号管理模块 ===== -->
+        <div id="module-admin-users" class="module-pane">
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title">账号管理</div>
+              <button class="btn btn-accent" id="add-user-btn">+ 新增账号</button>
+
+              <!-- 用户管理模态框：新增/编辑账号 -->
+              <div id="modal-user" class="modal">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h2>新增账号</h2>
+                    <button class="modal-close">&times;</button>
+                  </div>
+                  <div class="modal-body">
+                    <form id="user-form">
+                      <div class="form-row">
+                        <div class="form-group">
+                          <label>用户名 (登录ID) *</label>
+                          <input type="text" id="user-username" required>
+                        </div>
+                        <div class="form-group">
+                          <label>显示名称</label>
+                          <input type="text" id="user-displayname">
+                        </div>
+                      </div>
+                      <div class="form-row">
+                        <div class="form-group">
+                          <label>角色 *</label>
+                          <select id="user-role">
+                            <option value="staff">员工</option>
+                            <option value="purchase">采购员</option>
+                            <option value="warehouse">仓库管理员</option>
+                            <option value="finance">财务</option>
+                            <option value="admin">管理员</option>
+                          </select>
+                        </div>
+                        <div class="form-group">
+                          <label>状态</label>
+                          <select id="user-status">
+                            <option value="active">启用</option>
+                            <option value="disabled">禁用</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div class="form-group">
+                        <label>备注 / 注册说明</label>
+                        <textarea id="user-remark" rows="2" placeholder="用户注册时填写的功能需求说明"></textarea>
+                      </div>
+                      <div class="form-group">
+                        <label>用户需求说明（只读）</label>
+                        <textarea id="user-description" rows="2" readonly style="background:var(--bg-secondary);color:var(--text-muted);font-size:12px;" placeholder="注册时填写的预计所需功能"></textarea>
+                      </div>
+                    </form>
+                  </div>
+                  <div class="modal-footer">
+                    <button class="btn modal-cancel" id="cancel-user-btn">取消</button>
+                    <button class="btn btn-accent modal-save" id="save-user-btn">保存</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table" id="users-table">
+                <thead>
+                  <tr>
+                    <th>用户ID</th>
+                    <th>手机号/账号</th>
+                    <th>姓名</th>
+                    <th>角色</th>
+                    <th>状态</th>
+                    <th>注册日期</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="users-tbody">
+                  <tr>
+                    <td colspan="7" class="empty-state">暂无用户数据</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+
+        <!-- ===== 后台管理 - 系统设置模块 ===== -->
+        <div id="module-admin-settings" class="module-pane">
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title">系统设置</div>
+            </div>
+            <div class="settings-form">
+              <div class="form-group">
+                <label>系统名称</label>
+                <input type="text" value="库存管理系统" id="setting-system-name">
+              </div>
+              <div class="form-group">
+                <label>默认安全库存天数</label>
+                <input type="number" value="7" id="setting-safety-days">
+              </div>
+              <div class="form-group">
+                <label>低库存预警阈值（%）</label>
+                <input type="number" value="20" id="setting-low-stock-threshold">
+              </div>
+              <div class="form-group">
+                <label>数据自动备份</label>
+                <select id="setting-auto-backup">
+                  <option value="daily">每天</option>
+                  <option value="weekly">每周</option>
+                  <option value="monthly">每月</option>
+                </select>
+              </div>
+              <button class="btn btn-accent" id="save-settings-btn">保存设置</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- ===== 模态框：采购单详情/编辑 ===== -->
+  <div id="modal-purchase-detail" class="modal">
+    <div class="modal-content modal-lg">
+      <div class="modal-header">
+        <h2 id="detail-modal-title">采购单详情</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" id="detail-modal-body">
+        <!-- 动态填充 -->
+      </div>
+      <div class="modal-footer" id="detail-modal-footer">
+        <button class="btn modal-cancel">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 模态框：新建/编辑物品 ===== -->
+  <div id="modal-item" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modal-item-title">新增物品</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="item-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label>物品名称 *</label>
+              <input type="text" name="name" required>
+            </div>
+            <div class="form-group">
+              <label>物品编码</label>
+              <input type="text" name="code" placeholder="自动生成">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>所属分类 *</label>
+              <select name="category" required>
+                <option value="">请选择</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>单位 *</label>
+              <input type="text" name="unit" list="unit-list" placeholder="选择或输入单位" required>
+              <datalist id="unit-list">
+                <option value="个"><option value="双"><option value="瓶">
+                <option value="箱"><option value="包"><option value="盒">
+                <option value="条"><option value="袋"><option value="件">
+                <option value="套"><option value="副"><option value="只">
+                <option value="米"><option value="千克"><option value="升">
+                <option value="罐"><option value="支"><option value="把">
+              </datalist>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>初始库存</label>
+              <input type="number" name="stock" value="0" min="0">
+            </div>
+            <div class="form-group">
+              <label>安全库存</label>
+              <input type="number" name="safety_stock" value="10" min="0">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>单价</label>
+              <input type="number" name="unit_price" value="0" min="0" step="0.01" placeholder="0.00">
+            </div>
+            <div class="form-group">
+              <label>&nbsp;</label>
+              <span style="font-size:12px;color:var(--text-muted);">元/单位</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>备注</label>
+            <textarea name="remark" rows="3"></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn modal-cancel">取消</button>
+        <button class="btn btn-accent modal-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 模态框：新建采购单 ===== -->
+  <div id="modal-purchase" class="modal">
+    <div class="modal-content modal-lg">
+      <div class="modal-header">
+        <h2>新建采购单</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="purchase-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label>采购日期 *</label>
+              <input type="date" name="purchase_date" required>
+            </div>
+            <div class="form-group">
+              <label>采购人 *</label>
+              <input type="text" name="purchaser" placeholder="请输入采购人姓名" required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>采购明细</label>
+            <div id="supplier-groups-container">
+              <!-- 供应商分组将动态添加到这里 -->
+            </div>
+            <button type="button" class="btn btn-accent" onclick="addSupplierGroup()" style="margin-top:12px;padding:10px 24px;font-size:14px;font-weight:600;">+ 添加供应商</button>
+          </div>
+          <div class="form-group">
+            <label>备注说明</label>
+            <textarea name="remark" rows="2" placeholder="可选填"></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn modal-cancel">取消</button>
+        <button class="btn btn-accent modal-save" id="submit-purchase-btn">提交采购单</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 模态框：新增类别 ===== -->
+  <div id="modal-category" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>新增类别</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="category-form">
+          <div class="form-group">
+            <label>类别名称 *</label>
+            <input type="text" id="new-category-name" placeholder="如：循环使用类、消耗类" required>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>类别编码</label>
+              <input type="text" id="new-category-code" placeholder="自动生成" readonly>
+            </div>
+            <div class="form-group">
+              <label>适用场景</label>
+              <select id="new-category-scenario">
+                <option value="通用">通用（餐车+客房）</option>
+                <option value="列车餐车">列车餐车</option>
+                <option value="列车客房">列车客房</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>备注</label>
+            <textarea id="new-category-remark" rows="2" placeholder="可选填"></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn modal-cancel">取消</button>
+        <button class="btn btn-accent modal-save" id="save-category-btn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 模态框：Excel导入采购单 ===== -->
+  <div id="modal-import" class="modal">
+    <div class="modal-content modal-lg">
+      <div class="modal-header">
+        <h2>导入采购单</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="import-steps">
+          <div class="step active" data-step="1">
+            <div class="step-number">1</div>
+            <div class="step-title">下载模板</div>
+          </div>
+          <div class="step" data-step="2">
+            <div class="step-number">2</div>
+            <div class="step-title">填写数据</div>
+          </div>
+          <div class="step" data-step="3">
+            <div class="step-number">3</div>
+            <div class="step-title">上传预览</div>
+          </div>
+          <div class="step" data-step="4">
+            <div class="step-number">4</div>
+            <div class="step-title">确认导入</div>
+          </div>
+        </div>
+
+        <!-- 步骤1：下载模板 -->
+        <div id="import-step-1" class="import-step-content active">
+          <div class="import-info">
+            <h3>📄 采购单导入模板</h3>
+            <p>请下载Excel模板，按照格式填写采购数据</p>
+            <div class="template-preview">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>采购日期</th>
+                    <th>采购人</th>
+                    <th>供应商</th>
+                    <th>类别</th>
+                    <th>物品名称</th>
+                    <th>品牌</th>
+                    <th>型号</th>
+                    <th>数量</th>
+                    <th>单位</th>
+                    <th>单价</th>
+                    <th>备注</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>2026-06-09</td>
+                    <td>张三</td>
+                    <td>XX供应商</td>
+                    <td>消耗类</td>
+                    <td>一次性拖鞋</td>
+                    <td>洁丽雅</td>
+                    <td>均码</td>
+                    <td>200</td>
+                    <td>双</td>
+                    <td>3.5</td>
+                    <td>列车客房用</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <button class="btn btn-accent" id="download-template-btn">📥 下载Excel模板</button>
+          </div>
+        </div>
+
+        <!-- 步骤2：上传文件 -->
+        <div id="import-step-2" class="import-step-content">
+          <div class="upload-area" id="upload-area">
+            <div class="upload-icon">📁</div>
+            <div class="upload-text">点击或拖拽Excel文件到此处</div>
+            <div class="upload-hint">支持 .xlsx, .xls 格式</div>
+            <input type="file" id="import-file-input" accept=".xlsx,.xls" style="display:none">
+          </div>
+        </div>
+
+        <!-- 步骤3：数据预览 -->
+        <div id="import-step-3" class="import-step-content">
+          <div class="preview-header">
+            <h3>数据预览</h3>
+            <div class="preview-stats">
+              <span>共 <strong id="preview-count">0</strong> 条记录</span>
+              <span>总金额：<strong id="preview-total">0.00</strong> 元</span>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table" id="import-preview-table">
+              <thead>
+                <tr>
+                  <th>行号</th>
+                  <th>采购日期</th>
+                  <th>采购人</th>
+                  <th>类别</th>
+                  <th>物品名称</th>
+                  <th>品牌</th>
+                  <th>型号</th>
+                  <th>数量</th>
+                  <th>单位</th>
+                  <th>单价</th>
+                  <th>金额</th>
+                  <th>状态</th>
+                </tr>
+              </thead>
+              <tbody id="import-preview-tbody">
+              </tbody>
+            </table>
+          </div>
+          <div class="import-errors" id="import-errors" style="display:none;">
+            <h4>⚠️ 发现以下问题：</h4>
+            <ul id="error-list"></ul>
+          </div>
+        </div>
+
+        <!-- 步骤4：确认导入 -->
+        <div id="import-step-4" class="import-step-content">
+          <div class="import-success">
+            <div class="success-icon">✅</div>
+            <h3>准备导入</h3>
+            <p>确认无误后将创建采购单并流转至仓库待入库</p>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn modal-cancel">取消</button>
+        <button class="btn" id="import-prev-btn" style="display:none;">上一步</button>
+        <button class="btn btn-accent" id="import-next-btn">下一步</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 模态框：入库确认 ===== -->
+  <div id="modal-stockin-confirm" class="modal">
+    <div class="modal-content modal-lg stockin-confirm-layout">
+      <div class="modal-header">
+        <h2>入库确认</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="stockin-confirm-flex">
+          <!-- 左侧：明细表格 -->
+          <div class="stockin-confirm-main">
+            <div class="stockin-info">
+              <div class="info-row">
+                <span class="info-label">来源：</span>
+                <span class="info-value" id="confirm-stockin-source">手动入库</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">入库日期：</span>
+                <span class="info-value"><input type="date" id="stockin-date" required style="padding:5px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px;"></span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">批次号：</span>
+                <span class="info-value"><input type="text" id="stockin-batch" placeholder="自动生成或手动输入" style="padding:5px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px;width:200px;"></span>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top:12px;">
+              <label>入库明细 <span style="font-size:11px;color:var(--text-muted);font-weight:normal;">（共 <span id="confirm-stockin-item-count">0</span> 项）</span></label>
+              <div class="table-scroll">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>采购单号</th>
+                      <th>物品名称</th>
+                      <th>品牌</th>
+                      <th>型号</th>
+                      <th>采购数量</th>
+                      <th>已入库</th>
+                      <th>待入库</th>
+                      <th>本次实收 *</th>
+                      <th>单位</th>
+                      <th>单价</th>
+                      <th>金额</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stockin-confirm-tbody">
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top:8px;">
+              <label>验收备注</label>
+              <textarea id="stockin-remark" rows="2" placeholder="如有差异请说明" style="font-size:13px;"></textarea>
+            </div>
+          </div>
+
+          <!-- 右侧：操作面板 -->
+          <div class="stockin-confirm-actions">
+            <div class="stockin-confirm-summary" id="stockin-confirm-summary">
+              <div class="stockin-confirm-stat">
+                <span class="stockin-confirm-stat-label">入库数量</span>
+                <span class="stockin-confirm-stat-value" id="confirm-stat-qty">0</span>
+              </div>
+              <div class="stockin-confirm-stat">
+                <span class="stockin-confirm-stat-label">入库金额</span>
+                <span class="stockin-confirm-stat-value" id="confirm-stat-amount">¥0.00</span>
+              </div>
+            </div>
+            <button class="btn btn-accent stockin-confirm-btn-main" id="confirm-stockin-btn">确认入库</button>
+            <button class="btn modal-cancel stockin-confirm-btn-cancel">取消</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 模态框：新建领用单 ===== -->
+  <div id="modal-requisition" class="modal">
+    <div class="modal-content modal-lg">
+      <div class="modal-header">
+        <h2>新建领用/出库申请</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="requisition-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label>申请日期 *</label>
+              <input type="date" name="apply_date" required>
+            </div>
+            <div class="form-group">
+              <label>团期日期 *</label>
+              <input type="date" name="tour_date" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>申请人 *</label>
+              <input type="text" name="applicant" placeholder="请输入申请人姓名" required>
+            </div>
+            <div class="form-group">
+              <label>团期名称 *</label>
+              <div class="tour-name-dropdown" id="tour-name-dropdown">
+                <input type="text" name="tour_name" id="tour-name-input" placeholder="搜索或输入新团期名称" autocomplete="off" required>
+                <div class="tour-name-list" id="tour-name-list" style="display:none;"></div>
+              </div>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>使用场景 *</label>
+              <select name="scenario" required>
+                <option value="">请选择</option>
+                <option value="列车餐车">列车餐车</option>
+                <option value="列车客房">列车客房</option>
+                <option value="其他">其他</option>
+              </select>
+            </div>
+            <div class="form-group"></div>
+          </div>
+          <div class="form-group">
+            <label>添加出库物品</label>
+            <div class="item-picker">
+              <div class="item-picker-toolbar">
+                <select id="req-filter-category" class="item-picker-select">
+                  <option value="">全部分类</option>
+                </select>
+                <input type="text" id="req-search-input" class="item-picker-search" placeholder="搜索物品名称...">
+              </div>
+              <div id="req-available-items" class="item-picker-list">
+                <div class="empty-state" style="padding:16px;text-align:center;color:var(--text-muted);">加载中...</div>
+              </div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>已选物品 (<span id="req-selected-count">0</span>)</label>
+            <div class="table-scroll" style="max-height:200px;overflow-y:auto;">
+              <table class="data-table" id="req-selected-table">
+                <thead>
+                  <tr>
+                    <th>物品编号</th>
+                    <th>物品名称</th>
+                    <th>分类</th>
+                    <th>品牌</th>
+                    <th>型号</th>
+                    <th>单位</th>
+                    <th>领用中数量</th>
+                    <th>当前库存</th>
+                    <th>领用数量</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="req-selected-tbody">
+                  <tr><td colspan="10" class="empty-state">暂未选择物品</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>备注说明</label>
+            <textarea name="remark" rows="2" placeholder="可选填"></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn modal-cancel">取消</button>
+        <button class="btn btn-accent" id="submit-requisition-btn">提交申请</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 模态框：领用单详情 ===== -->
+  <div id="modal-requisition-detail" class="modal">
+    <div class="modal-content modal-lg">
+      <div class="modal-header">
+        <h2>领用单详情</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" id="requisition-detail-body">
+        <!-- 动态填充 -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn modal-cancel">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 模态框：确认出库 ===== -->
+  <div id="modal-confirm-stockout" class="modal">
+    <div class="modal-content modal-lg">
+      <div class="modal-header">
+        <h2>确认出库</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="stockout-info" style="margin-bottom:16px;">
+          <div class="detail-info-grid" id="stockout-confirm-info">
+            <!-- 动态填充基本信息 -->
+          </div>
+        </div>
+        <div class="detail-section-title">出库明细 <span style="font-weight:400;font-size:12px;color:var(--text-muted);">（可修正实际出库数量）</span></div>
+        <div class="table-scroll">
+          <table class="data-table" id="stockout-confirm-table">
+            <thead>
+              <tr>
+                <th>物品名称</th>
+                <th>编号</th>
+                <th>申请数量</th>
+                <th>实际出库</th>
+                <th>单位</th>
+                <th>差异</th>
+              </tr>
+            </thead>
+            <tbody id="stockout-confirm-tbody">
+            </tbody>
+          </table>
+        </div>
+        <div id="stockout-diff-summary" style="margin-top:16px;display:none;">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn modal-cancel">取消</button>
+        <button class="btn" id="stockout-preview-diff-btn" style="background:var(--warning);border-color:var(--warning);color:#fff;">预览差异</button>
+        <button class="btn btn-accent" id="stockout-final-confirm-btn" style="display:none;">确认出库</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 模态框：出库完成结果 ===== -->
+  <div id="modal-stockout-result" class="modal">
+    <div class="modal-content">
+      <div class="modal-header" style="background:var(--success);color:#fff;">
+        <h2 style="color:#fff;">出库完成</h2>
+        <button class="modal-close" style="color:#fff;">&times;</button>
+      </div>
+      <div class="modal-body" id="stockout-result-body">
+        <!-- 动态填充 -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-accent modal-cancel">确认关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 模态框：编辑领用单 ===== -->
+  <div id="modal-edit-requisition" class="modal">
+    <div class="modal-content modal-lg">
+      <div class="modal-header">
+        <h2>编辑领用单</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="edit-requisition-form">
+          <input type="hidden" id="edit-req-id">
+          <div class="form-row">
+            <div class="form-group">
+              <label>申请日期 *</label>
+              <input type="date" name="edit_apply_date" required>
+            </div>
+            <div class="form-group">
+              <label>团期日期 *</label>
+              <input type="date" name="edit_tour_date" required>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>申请人 *</label>
+              <input type="text" name="edit_applicant" required>
+            </div>
+            <div class="form-group">
+              <label>团期名称 *</label>
+              <div class="tour-name-dropdown" id="edit-tour-name-dropdown">
+                <input type="text" name="edit_tour_name" id="edit-tour-name-input" placeholder="搜索或输入团期名称" autocomplete="off" required>
+                <div class="tour-name-list" id="edit-tour-name-list" style="display:none;"></div>
+              </div>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>使用场景 *</label>
+              <select name="edit_scenario" required>
+                <option value="">请选择</option>
+                <option value="列车餐车">列车餐车</option>
+                <option value="列车客房">列车客房</option>
+                <option value="其他">其他</option>
+              </select>
+            </div>
+            <div class="form-group"></div>
+          </div>
+          <div class="form-group">
+            <label>领用物品</label>
+            <div class="item-picker">
+              <div class="item-picker-toolbar">
+                <select id="edit-req-filter-category" class="item-picker-select">
+                  <option value="">全部分类</option>
+                </select>
+                <input type="text" id="edit-req-search-input" class="item-picker-search" placeholder="搜索物品名称...">
+              </div>
+              <div id="edit-req-available-items" class="item-picker-list">
+                <div class="empty-state" style="padding:16px;text-align:center;color:var(--text-muted);">加载中...</div>
+              </div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>已选物品 (<span id="edit-req-selected-count">0</span>)</label>
+            <div class="table-scroll" style="max-height:200px;overflow-y:auto;">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>物品编号</th>
+                    <th>物品名称</th>
+                    <th>分类</th>
+                    <th>品牌</th>
+                    <th>型号</th>
+                    <th>单位</th>
+                    <th>库存</th>
+                    <th>领用数量</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="edit-req-selected-tbody">
+                  <tr><td colspan="9" class="empty-state">暂未选择物品</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>备注说明</label>
+            <textarea name="edit_remark" rows="2" placeholder="可选填"></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn modal-cancel">取消</button>
+        <button class="btn btn-accent" id="save-requisition-btn">保存修改</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 模态框：入库详情 ===== -->
+  <div id="modal-stockin-detail" class="modal">
+    <div class="modal-content modal-lg">
+      <div class="modal-header">
+        <h2>📥 入库单详情</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" id="stockin-detail-body">
+      </div>
+      <div class="modal-footer">
+        <button class="btn modal-cancel">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript模块 -->
+
+  <!-- ===== 模态框：角色权限编辑 ===== -->
+  <div id="modal-role" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="role-modal-title">编辑角色权限</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="role-permissions-list"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn modal-cancel">取消</button>
+        <button class="btn btn-accent" id="save-role-perms-btn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 模态框：用户权限编辑 ===== -->
+  <div id="modal-user-perms" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="user-perms-modal-title">编辑用户权限</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label>角色</label>
+            <select id="user-perms-role-select">
+              <option value="staff">员工</option>
+              <option value="purchase">采购员</option>
+              <option value="warehouse">仓库管理员</option>
+              <option value="finance">财务</option>
+              <option value="admin">管理员</option>
+            </select>
+          </div>
+        </div>
+        <div id="user-permissions-list" style="margin-top:12px;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn modal-cancel">取消</button>
+        <button class="btn btn-accent" id="save-user-perms-btn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 模态框：用户注册 ===== -->
+  <div id="modal-register" class="modal">
+    <div class="modal-content" style="max-width:460px;">
+      <div class="modal-header">
+        <h2>用户注册</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="register-form" autocomplete="off">
+          <div class="form-group">
+            <label>手机号码（登录账号）*</label>
+            <input type="text" id="reg-phone" placeholder="请输入手机号码" required autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label>姓名 *</label>
+            <input type="text" id="reg-name" placeholder="请输入真实姓名（将显示在采购单、领用单等单据上）" required autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label>选择角色 *</label>
+            <select id="reg-role" required>
+              <option value="">请选择角色</option>
+              <option value="staff">员工</option>
+              <option value="purchase">采购员</option>
+              <option value="warehouse">仓库管理员</option>
+              <option value="finance">财务</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>预计所需功能</label>
+            <textarea id="reg-description" rows="4" placeholder="选填，描述您需要使用本系统的哪些功能，以便管理员为您分配权限"></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn modal-cancel">取消</button>
+        <button class="btn btn-accent" id="register-submit-btn">提交注册</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="js/supabase-db.js?v=5.42"></script>
+  <script src="js/supabase-sync.js?v=5.42"></script>
+  <script src="js/migrate-data.js?v=5.42"></script>
+  <script src="js/toast.js?v=5.42"></script>
+  <script src="js/login-characters.js?v=5.42"></script>
+  <script src="js/auth-fix.js?v=5.42"></script>
+  <script src="js/navigation.js?v=5.42"></script>
+  <script src="js/purchase.js?v=5.42"></script>
+  <script src="js/stock-in.js?v=5.42"></script>
+  <script src="js/requisition.js?v=5.42"></script>
+  <script src="js/monthly-summary.js?v=5.42"></script>
+  <script src="js/tour-reports.js?v=5.42"></script>
+  <script src="js/business-flow.js?v=5.42"></script>
+  <script src="js/app.js?v=5.42"></script>
+  <script src="js/inventory-hybrid.js?v=5.42"></script>
+  <script src="js/admin-bindings.js?v=5.42"></script>
+
+  <script src="js/user-admin.js?v=5.42"></script>
 </body>
 </html>
