@@ -1533,7 +1533,7 @@ function _injectMonthlySummaryModule() {
 let _kpiActiveType = null;
 
 function _initKPIExpandHandlers() {
-  const cards = document.querySelectorAll('.kpi-card[data-kpi-type]');
+  const cards = document.querySelectorAll('.kpi-card-new[data-kpi-type]');
   cards.forEach(card => {
     if (card._kpiBound) return;
     card._kpiBound = true;
@@ -1557,7 +1557,7 @@ function _initKPIExpandHandlers() {
 function _kpiCloseExpand() {
   const panel = document.getElementById('kpi-expand-panel');
   if (panel) panel.classList.remove('open');
-  document.querySelectorAll('.kpi-card.active').forEach(c => c.classList.remove('active'));
+  document.querySelectorAll('.kpi-card-new.active').forEach(c => c.classList.remove('active'));
   _kpiActiveType = null;
 }
 
@@ -1568,8 +1568,8 @@ function _kpiOpenExpand(type, cards) {
   if (!panel || !titleEl || !bodyEl) return;
 
   // 高亮当前卡片
-  document.querySelectorAll('.kpi-card.active').forEach(c => c.classList.remove('active'));
-  const activeCard = document.querySelector(`.kpi-card[data-kpi-type="${type}"]`);
+  document.querySelectorAll('.kpi-card-new.active').forEach(c => c.classList.remove('active'));
+  const activeCard = document.querySelector(`.kpi-card-new[data-kpi-type="${type}"]`);
   if (activeCard) activeCard.classList.add('active');
 
   // 设置标题
