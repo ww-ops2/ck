@@ -264,12 +264,45 @@
 .inv-board-new .items-table tbody tr.item-expanded { background: #f5f1ec; }
 .inv-board-new .items-table tbody tr:last-child td { border-bottom: none; }
 
+/* Numeric cell alignment */
+.inv-board-new .num-cell,
+.inv-board-new .items-table td.num-cell {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.inv-board-new .price-cell { color: var(--text-secondary) !important; font-size: 0.75rem; }
+.inv-board-new .amount-cell { font-weight: 500 !important; color: var(--text-display) !important; }
+
+/* Stock inline display */
+.inv-board-new .stock-num {
+  font-weight: 600;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  display: inline-block;
+  min-width: 2rem;
+  text-align: right;
+  vertical-align: middle;
+  line-height: 1;
+}
+.inv-board-new .stock-num.s-safe { color: var(--success); }
+.inv-board-new .stock-num.s-low { color: var(--warning); }
+.inv-board-new .stock-num.s-out { color: var(--danger); }
+
 /* Stock Progress Bar */
-.stock-bar-wrap { width: 50px; height: 4px; background: var(--ink-light); border-radius: 2px; overflow: hidden; margin-top: 2px; }
-.stock-bar { height: 100%; border-radius: 2px; transition: width 0.5s ease; }
-.stock-bar.s-safe { background: var(--success); }
-.stock-bar.s-low { background: var(--warning); }
-.stock-bar.s-out { background: var(--danger); }
+.inv-board-new .stock-bar-wrap {
+  display: inline-block;
+  vertical-align: middle;
+  width: 45px;
+  height: 4px;
+  background: var(--ink-light);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.inv-board-new .stock-bar { height: 100%; border-radius: 2px; transition: width 0.5s ease; display: block; }
+.inv-board-new .stock-bar.s-safe { background: var(--success); }
+.inv-board-new .stock-bar.s-low { background: var(--warning); }
+.inv-board-new .stock-bar.s-out { background: var(--danger); }
 
 /* Status Tags for new design */
 .status-tag-new {
