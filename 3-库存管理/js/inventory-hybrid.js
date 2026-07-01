@@ -137,8 +137,8 @@ function initInventoryHybrid() {
       renderInvInbox();
     } catch(renderErr) {
       console.error('[InventoryHybrid] 兜底渲染也失败:', renderErr.message);
-      var container = document.getElementById('inv-tbody');
-      if (container) container.innerHTML = '<tr><td colspan="10" style="padding:40px;text-align:center;color:var(--danger);">加载失败，请刷新页面重试</td></tr>';
+      var container = document.getElementById('inv-board-new');
+      if (container) container.innerHTML = '<div style="padding:40px;text-align:center;color:var(--danger);">加载失败，请刷新页面重试</div>';
     }
   });
 }
@@ -232,9 +232,9 @@ async function loadInventoryHybridData(skipSupabaseFetch) {
     console.log('[InventoryHybrid] 渲染完成:', items.length, '项,', _invHybrid.categoryNames.length, '个分类');
   } catch(renderErr) {
     console.error('[InventoryHybrid] 渲染异常:', renderErr.message, renderErr.stack);
-    var container = document.getElementById('inv-tbody');
+    var container = document.getElementById('inv-board-new');
     if (container) {
-      container.innerHTML = '<tr><td colspan="10" style="padding:40px;text-align:center;color:var(--danger);">数据渲染失败：' + renderErr.message + '<br><button class="btn btn-sm" onclick="loadInventoryHybridData()" style="margin-top:12px;">重试</button></td></tr>';
+      container.innerHTML = '<div style="padding:40px;text-align:center;color:var(--danger);">数据渲染失败：' + renderErr.message + '<br><button class="btn btn-sm" onclick="loadInventoryHybridData()" style="margin-top:12px;">重试</button></div>';
     }
   }
 }
@@ -299,10 +299,10 @@ function renderInvKPI() {
 }
 
 // ============================================================
-// 物品明细表格（单栏视图）— 分类手风琴 + 正确列对齐
+// 物品明细渲染（卡片分类布局）— v5.42 新设计
 // ============================================================
 function renderInvInbox() {
-  var container = document.getElementById('inv-tbody');
+  var container = document.getElementById('inv-board-new');
   if (!container) return;
 
   // 补充信息模式：调用专用渲染
@@ -315,41 +315,12 @@ function renderInvInbox() {
   var pendingMap = _invHybrid.pendingMap;
   var batchMode = _invHybrid.batchMode;
 
-  // 基础列数（不含checkbox）：物品名称,品牌,型号,单位,单价,库存,金额,状态,采购中,操作 = 10
-  var baseCols = 10;
-  var totalCols = batchMode ? baseCols + 1 : baseCols;
-
-  // 动态管理 checkbox 列
-  var thead = document.getElementById('inv-thead');
-  var colgroup = document.getElementById('inv-colgroup');
-  if (batchMode) {
-    // 插入 checkbox 列到 thead 和 colgroup
-    if (thead && !thead.querySelector('#inv-select-all-th')) {
-      var batchTh = document.createElement('th');
-      batchTh.id = 'inv-select-all-th';
-      batchTh.className = 'inv-batch-th';
-      thead.insertBefore(batchTh, thead.firstChild);
-    }
-    if (colgroup && !colgroup.querySelector('.inv-batch-col')) {
-      var batchCol = document.createElement('col');
-      batchCol.style.width = '36px';
-      batchCol.className = 'inv-batch-col';
-      colgroup.insertBefore(batchCol, colgroup.firstChild);
-    }
-  } else {
-    // 移除 checkbox 列
-    var batchTh = document.getElementById('inv-select-all-th');
-    if (batchTh) batchTh.remove();
-    var batchCol = colgroup ? colgroup.querySelector('.inv-batch-col') : null;
-    if (batchCol) batchCol.remove();
-  }
-
   if (items.length === 0) {
-    container.innerHTML = '<tr><td colspan="' + totalCols + '" class="inv-empty">' +
-      '<div class="inv-empty-icon">📭</div>' +
-      '<div class="inv-empty-text">暂无匹配数据</div>' +
-      '<div class="inv-empty-sub">尝试调整筛选条件或新增物品</div>' +
-    '</td></tr>';
+    container.innerHTML = '<div class="anim-enter" style="text-align:center;padding:60px 0;color:var(--text-muted);font-size:0.85rem;">' +
+      '<div style="font-size:2rem;margin-bottom:8px;">📭</div>' +
+      '<div style="font-weight:500;">暂无匹配数据</div>' +
+      '<div style="font-size:0.75rem;margin-top:4px;">尝试调整筛选条件或新增物品</div>' +
+    '</div>';
     hideInvActionBar();
     return;
   }
@@ -364,83 +335,92 @@ function renderInvInbox() {
   var catNames = Object.keys(grouped).sort();
 
   var html = '';
-
-  catNames.forEach(function(catName) {
+  catNames.forEach(function(catName, ci) {
     var catItems = grouped[catName];
     var icon = _invCatIcons[catName] || '📁';
     var totalStock = catItems.reduce(function(s, it) { return s + (it.stock || 0); }, 0);
-    var lowCount = catItems.filter(function(it) { return it.stock < (it.safety_stock || 10); }).length;
+    var lowCount = catItems.filter(function(it) { return (it.stock||0) > 0 && (it.stock||0) < (it.safety_stock||10); }).length;
+    var outCount = catItems.filter(function(it) { return (it.stock||0) === 0; }).length;
 
-    // 分类手风琴标题行（可折叠）
-    var summaryId = 'inv-summary-' + catName.replace(/\s+/g, '-');
-    html += '<tr class="inv-category-separator" onclick="toggleInvCategory(\'' + summaryId + '\')">';
-    html += '<td colspan="' + totalCols + '" style="padding:0!important;">';
-    html += '<div class="inv-separator-inner">';
-    html += '<span class="inv-separator-icon">' + icon + '</span>';
-    html += '<span class="inv-separator-name">' + catName + '</span>';
-    html += '<span class="inv-separator-stats">' + catItems.length + ' 种 · 库存 ' + totalStock + '</span>';
-    if (lowCount > 0) html += '<span class="status-badge warning" style="margin-left:8px;font-size:11px;">' + lowCount + ' 项低库存</span>';
-    html += '<span class="inv-separator-toggle" id="' + summaryId + '-toggle">▼</span>';
-    html += '</div>';
-    html += '</td></tr>';
+    html += '<div class="cat-card-new anim-enter" style="animation-delay:' + (0.35 + ci * 0.06) + 's">';
+    html += '  <div class="cat-header is-open" id="inv-cat-hdr-' + ci + '" onclick="toggleInvCard(' + ci + ')">';
+    html += '    <div class="cat-icon">' + icon + '</div>';
+    html += '    <div class="cat-info">';
+    html += '      <div class="cat-name">' + catName;
+    if (lowCount > 0) html += ' <span class="status-tag-new t-low"><span class="sd"></span>' + lowCount + ' 项低库存</span>';
+    if (outCount > 0) html += ' <span class="status-tag-new t-out"><span class="sd"></span>' + outCount + ' 项缺货</span>';
+    html += '      </div>';
+    html += '      <div class="cat-stats">' + catItems.length + ' 种物品 · 共 ' + totalStock + ' 件</div>';
+    html += '    </div>';
+    html += '    <span class="cat-toggle is-open" id="inv-cat-tog-' + ci + '">▼</span>';
+    html += '  </div>';
+    html += '  <div class="items-wrap is-open" id="inv-cat-wrp-' + ci + '">';
+    html += '    <table class="items-table"><thead><tr>';
+    if (batchMode) html += '      <th style="width:32px"><input type="checkbox" class="inv-batch-th-cb" checked onchange="(function(cb){document.querySelectorAll(\'.inv-batch-cb\').forEach(function(c){c.checked=cb.checked;});updateInvBatchCount();})(this)"></th>';
+    html += '      <th style="width:14%">物品名称</th><th style="width:8%">品牌</th><th style="width:7%">型号</th>';
+    html += '      <th style="width:5%;text-align:center">单位</th><th style="width:10%;text-align:right">单价</th>';
+    html += '      <th style="width:18%;text-align:right">库存</th><th style="width:14%;text-align:right">金额</th>';
+    html += '      <th style="width:10%;text-align:right">状态</th><th style="width:14%;text-align:right">操作</th>';
+    html += '    </tr></thead><tbody>';
 
-    // 分类下的物品行
     catItems.forEach(function(item) {
       var status = getStockStatus(item);
       var canEdit = hasPermission('edit_inventory') || hasPermission('inventory.adjust') || hasPermission('inventory.edit');
       var unitPrice = item.unit_price || 0;
       var amount = (item.stock || 0) * unitPrice;
-      var stockClass = item.stock === 0 ? 'out' : (item.stock < (item.safety_stock || 10) ? 'low' : '');
-      var statusClass = item.stock === 0 ? 'out' : (item.stock < (item.safety_stock || 10) ? 'low' : 'normal');
+      var pct = Math.min(100, ((item.stock||0) / ((item.safety_stock||10) || 1)) * 100);
+      var ss = item.stock === 0 ? 'out' : (item.stock < (item.safety_stock||10) ? 'low' : 'safe');
 
-      html += '<tr class="inv-item-row" data-inv-cat="' + summaryId + '" data-item-id="' + item.id + '" data-item-name="' + (item.name || '').replace(/"/g, '&quot;') + '" data-item-code="' + (item.code || '').replace(/"/g, '&quot;') + '" style="cursor:pointer;">';
+      var safeDisp = item.safety_stock || 10;
 
-      // 批量模式才输出 checkbox td
+      html += '<tr class="item-row" data-item-id="' + item.id + '" data-item-name="' + (item.name || '').replace(/"/g, '&quot;') + '" data-item-code="' + (item.code || '').replace(/"/g, '&quot;') + '">';
       if (batchMode) {
-        html += '<td><input type="checkbox" class="inv-batch-cb" data-item-id="' + item.id + '" data-item-name="' + (item.name || '').replace(/"/g, '&quot;') + '" data-item-cat="' + (item.category || '').replace(/"/g, '&quot;') + '" data-item-brand="' + (item.brand || '').replace(/"/g, '&quot;') + '" data-item-model="' + (item.model || '').replace(/"/g, '&quot;') + '" data-item-unit="' + (item.unit || '') + '" data-item-code="' + (item.code || '') + '" data-item-safety="' + (item.safety_stock || 10) + '" data-item-stock="' + (item.stock || 0) + '" onchange="updateInvBatchCount()"></td>';
+        html += '  <td style="text-align:center"><input type="checkbox" class="inv-batch-cb" checked data-item-id="' + item.id + '" data-item-name="' + (item.name || '').replace(/"/g, '&quot;') + '" data-item-cat="' + (item.category || '').replace(/"/g, '&quot;') + '" data-item-brand="' + (item.brand || '').replace(/"/g, '&quot;') + '" data-item-model="' + (item.model || '').replace(/"/g, '&quot;') + '" data-item-unit="' + (item.unit || '') + '" data-item-code="' + (item.code || '') + '" data-item-safety="' + (item.safety_stock || 10) + '" data-item-stock="' + (item.stock || 0) + '" onchange="updateInvBatchCount()"></td>';
       }
-
-      // 物品名称（含编号子行）
-      html += '<td><div class="item-name">' + item.name + '</div>';
-      if (item.code) html += '<div class="item-code">' + item.code + '</div>';
-      html += '</td>';
-      html += '<td>' + (item.brand || '<span style="color:var(--text-muted);">-</span>') + '</td>';
-      html += '<td>' + (item.model || '<span style="color:var(--text-muted);">-</span>') + '</td>';
-      html += '<td style="text-align:center;">' + (item.unit || '<span style="color:var(--text-muted);">-</span>') + '</td>';
-      html += '<td class="align-right">¥' + Number(unitPrice).toFixed(2) + '</td>';
-      html += '<td class="align-right"><span class="stock-value ' + stockClass + '">' + item.stock + '</span></td>';
-      html += '<td class="align-right"><span class="amount-value">¥' + amount.toFixed(2) + '</span></td>';
-      html += '<td class="align-center"><span class="inv-status ' + statusClass + '">' + status.text + '</span></td>';
-      html += '<td class="align-center">' + (function() {
-        var pending = pendingMap[item.name];
-        if (!pending || pending.length === 0) return '<span style="color:var(--text-muted);font-size:12px;">-</span>';
-        var totalQty = pending.reduce(function(s, p) { return s + p.quantity; }, 0);
-        return '<span class="pending-qty-badge" onclick="event.stopPropagation();_showPendingPopover(this,\'' + (item.name || '').replace(/'/g, "\\'") + '\')" title="点击查看采购明细">' + totalQty + '</span>';
-      })() + '</td>';
-      html += '<td class="align-center">' + (canEdit ? '<button class="inv-action-btn" onclick="event.stopPropagation();editItem(\'' + String(item.id).replace(/'/g, "\\'") + '\')">编辑</button>' : '<span style="color:var(--text-muted);font-size:12px;">-</span>') + '</td>';
+      html += '  <td><div class="item-cell-main"><span class="item-name"><span class="h-toggle" style="font-size:0.6rem;color:var(--text-muted);margin-right:4px;">▶</span>' + item.name + '</span><span class="item-code">' + (item.code || '') + '</span></div></td>';
+      html += '  <td style="color:var(--text-secondary)">' + (item.brand || '<span style="color:var(--text-muted);">-</span>') + '</td>';
+      html += '  <td style="color:var(--text-secondary);font-size:0.72rem">' + (item.model || '<span style="color:var(--text-muted);">-</span>') + '</td>';
+      html += '  <td style="text-align:center">' + (item.unit || '<span style="color:var(--text-muted);">-</span>') + '</td>';
+      html += '  <td class="num-cell price-cell">¥' + Number(unitPrice).toFixed(2) + '</td>';
+       html += '  <td class="num-cell"><span class="stock-num s-' + ss + '">' + item.stock + '</span><span style="display:inline-block;font-size:0.6rem;color:var(--text-muted);margin:0 3px 0 4px;vertical-align:middle;">/' + safeDisp + '</span><span class="stock-bar-wrap" style="display:inline-block;vertical-align:middle;width:45px;"><span class="stock-bar s-' + ss + '" style="display:block;width:' + pct + '%"></span></span></td>';
+      html += '  <td class="num-cell amount-cell">¥' + amount.toFixed(2) + '</td>';
+      html += '  <td style="text-align:center"><span class="status-tag-new t-' + ss + '"><span class="sd"></span>' + status.text + '</span></td>';
+      html += '  <td style="text-align:right">' + (canEdit ? '<button class="action-btn" onclick="event.cancelBubble=true;editItem(\'' + String(item.id).replace(/'/g, "\\'") + '\')">编辑</button>' : '<span style="color:var(--text-muted);font-size:0.68rem">-</span>') + '</td>';
       html += '</tr>';
     });
+
+    html += '</tbody></table></div></div>';
   });
 
   container.innerHTML = html;
 
-  // 绑定商品行点击展开入库记录（补充信息模式下不绑定，避免DOM冲突）
+  // 事件委托：点击商品行展开/收起出入库记录
   if (!_invHybrid.supplementMode) {
-    container.querySelectorAll('.inv-item-row').forEach(function(row) {
-      row.addEventListener('click', function(e) {
-        // 排除按钮和链接点击
-        if (e.target.closest('button') || e.target.closest('a') || e.target.closest('.pending-qty-badge')) return;
-        toggleInvItemHistory(row);
-      });
+    container.addEventListener('click', function invRowClick(e) {
+      var tr = e.target.closest('.item-row');
+      if (!tr) return;
+      if (e.target.closest('.action-btn')) return;
+      toggleInvItemHistory(tr);
     });
   }
 
-  // 批量采购模式：显示底部操作栏 + 全选checkbox
+  // 批量模式：显示底部操作栏
   if (batchMode) {
     showInvBatchBar();
   } else {
     hideInvActionBar();
   }
+}
+
+// 切换分类卡片折叠
+function toggleInvCard(index) {
+  var wrap = document.getElementById('inv-cat-wrp-' + index);
+  var tog = document.getElementById('inv-cat-tog-' + index);
+  var hdr = document.getElementById('inv-cat-hdr-' + index);
+  if (!wrap) return;
+  var isOpen = wrap.classList.toggle('is-open');
+  if (tog) tog.classList.toggle('is-open');
+  if (hdr) hdr.classList.toggle('is-open');
 }
 
 /**
@@ -487,67 +467,88 @@ function toggleInvItemHistory(row) {
     panel.style.maxHeight = '400px';
   });
 
-  // 从 _appCache.stockInRecords 查找该商品的入库记录
-  var records = [];
+  // 从缓存合并出入库记录，形成统一时间线
+  var timeline = [];
   var siRecords = (typeof _appCache !== 'undefined' && _appCache.stockInRecords) ? _appCache.stockInRecords : [];
+  var soRecords = (typeof _appCache !== 'undefined' && _appCache.stockOutRecords) ? _appCache.stockOutRecords : [];
+
+  // 入库
   siRecords.forEach(function(si) {
     (si.items || []).forEach(function(siItem) {
       var match = false;
       if (itemCode && (siItem.item_code === itemCode || siItem.code === itemCode)) match = true;
       if (!match && itemName && siItem.name === itemName) match = true;
       if (match) {
-        records.push({
+        timeline.push({
           date: si.stockin_date || (si.created_at ? si.created_at.slice(0, 10) : '-'),
-          siCode: si.code || '-',
-          poCode: si.purchase_order_code || '-',
-          batchCode: si.batch_code || '-',
-          qty: siItem.actual_quantity || 0,
-          unit: siItem.unit || '-',
+          type: 'in', code: si.code || '-',
+          qty: siItem.actual_quantity || 0, unit: siItem.unit || '-',
           price: siItem.price || 0,
           amount: (siItem.actual_quantity || 0) * (siItem.price || 0),
-          confirmedBy: si.confirmed_by || '-',
-          supplier: siItem.supplier || '-'
+          by: si.confirmed_by || '-',
+          note: (function(){try{return '批次 '+si.batch_code;}catch(e){return '';}})()
         });
       }
     });
   });
 
-  // 渲染入库记录
+  // 出库
+  soRecords.forEach(function(so) {
+    (so.items || []).forEach(function(soItem) {
+      var match = false;
+      if (itemCode && (soItem.item_code === itemCode || soItem.code === itemCode)) match = true;
+      if (!match && itemName && soItem.name === itemName) match = true;
+      if (match) {
+        timeline.push({
+          date: so.stockout_date || (so.created_at ? so.created_at.slice(0, 10) : '-'),
+          type: 'out', code: so.code || '-',
+          qty: soItem.actual_quantity || soItem.quantity || 0, unit: soItem.unit || '-',
+          by: so.confirmed_by || so.created_by || '-',
+          note: (function(){try{var reqCode = so.requisition_code || '-'; return '领用单 '+reqCode;}catch(e){return '';}})()
+        });
+      }
+    });
+  });
+
+  // 渲染历史记录
   var contentEl = historyRow.querySelector('.inv-history-content');
   var loadingEl = historyRow.querySelector('.inv-history-loading');
 
-  if (records.length === 0) {
+  if (timeline.length === 0) {
     if (loadingEl) loadingEl.textContent = '';
-    contentEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:16px 0;">暂无入库记录</div>';
+    contentEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:16px 0;">暂无出入库记录</div>';
     return;
   }
 
   // 按日期倒序
-  records.sort(function(a, b) { return (b.date || '').localeCompare(a.date || ''); });
+  timeline.sort(function(a, b) { return (b.date || '').localeCompare(a.date || ''); });
 
-  var totalIn = records.reduce(function(s, r) { return s + r.qty; }, 0);
-  if (loadingEl) loadingEl.textContent = '共 ' + records.length + ' 条 · 累计入库 ' + totalIn;
+  var totalIn = timeline.filter(function(r){return r.type==='in';}).reduce(function(s,r){return s+r.qty;},0);
+  var totalOut = timeline.filter(function(r){return r.type==='out';}).reduce(function(s,r){return s+r.qty;},0);
+  if (loadingEl) loadingEl.textContent = '共 ' + timeline.length + ' 条 · 入库 ' + totalIn + ' · 出库 ' + totalOut;
 
-  var tableHtml = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
-  tableHtml += '<thead><tr style="background:#eef1f5;">';
-  tableHtml += '<th style="padding:6px 10px;text-align:left;font-weight:500;color:var(--text-secondary);">入库日期</th>';
-  tableHtml += '<th style="padding:6px 10px;text-align:left;font-weight:500;color:var(--text-secondary);">入库单号</th>';
-  tableHtml += '<th style="padding:6px 10px;text-align:left;font-weight:500;color:var(--text-secondary);">批次号</th>';
-  tableHtml += '<th style="padding:6px 10px;text-align:right;font-weight:500;color:var(--text-secondary);">数量</th>';
-  tableHtml += '<th style="padding:6px 10px;text-align:right;font-weight:500;color:var(--text-secondary);">单价</th>';
-  tableHtml += '<th style="padding:6px 10px;text-align:right;font-weight:500;color:var(--text-secondary);">金额</th>';
-  tableHtml += '<th style="padding:6px 10px;text-align:left;font-weight:500;color:var(--text-secondary);">操作人</th>';
+  var tableHtml = '<table class="hi-table" style="width:100%;border-collapse:collapse;font-size:0.72rem;">';
+  tableHtml += '<thead><tr style="background:#efebe6;">';
+  tableHtml += '<th style="padding:5px 8px;text-align:left;font-weight:500;color:var(--text-secondary);white-space:nowrap;">日期</th>';
+  tableHtml += '<th style="padding:5px 8px;text-align:left;font-weight:500;color:var(--text-secondary);white-space:nowrap;width:42px;">类型</th>';
+  tableHtml += '<th style="padding:5px 8px;text-align:left;font-weight:500;color:var(--text-secondary);white-space:nowrap;">单据号</th>';
+  tableHtml += '<th style="padding:5px 8px;text-align:right;font-weight:500;color:var(--text-secondary);white-space:nowrap;">数量</th>';
+  tableHtml += '<th style="padding:5px 8px;text-align:left;font-weight:500;color:var(--text-secondary);white-space:nowrap;">操作人</th>';
+  tableHtml += '<th style="padding:5px 8px;text-align:left;font-weight:500;color:var(--text-secondary);white-space:nowrap;">备注</th>';
   tableHtml += '</tr></thead><tbody>';
 
-  records.forEach(function(r) {
-    tableHtml += '<tr style="border-bottom:1px solid var(--border);">';
-    tableHtml += '<td style="padding:7px 10px;">' + r.date + '</td>';
-    tableHtml += '<td style="padding:7px 10px;font-family:monospace;font-size:12px;">' + r.siCode + '</td>';
-    tableHtml += '<td style="padding:7px 10px;font-family:monospace;font-size:12px;">' + r.batchCode + '</td>';
-    tableHtml += '<td style="padding:7px 10px;text-align:right;font-weight:600;color:var(--success);">' + r.qty + ' ' + r.unit + '</td>';
-    tableHtml += '<td style="padding:7px 10px;text-align:right;">¥' + r.price.toFixed(2) + '</td>';
-    tableHtml += '<td style="padding:7px 10px;text-align:right;font-weight:600;">¥' + r.amount.toFixed(2) + '</td>';
-    tableHtml += '<td style="padding:7px 10px;">' + r.confirmedBy + '</td>';
+  timeline.forEach(function(r) {
+    var typeLabel = r.type === 'in'
+      ? '<span style="color:var(--success);font-weight:600">入库</span>'
+      : '<span style="color:var(--danger);font-weight:600">出库</span>';
+    var qtyColor = r.type === 'in' ? 'var(--success)' : 'var(--danger)';
+    tableHtml += '<tr style="border-bottom:1px solid #ede8e2;">';
+    tableHtml += '<td style="padding:5px 8px;">' + r.date + '</td>';
+    tableHtml += '<td style="padding:5px 8px;">' + typeLabel + '</td>';
+    tableHtml += '<td style="padding:5px 8px;font-family:monospace;font-size:0.65rem;">' + r.code + '</td>';
+    tableHtml += '<td style="padding:5px 8px;text-align:right;font-weight:600;color:' + qtyColor + ';">' + r.qty + ' ' + r.unit + '</td>';
+    tableHtml += '<td style="padding:5px 8px;">' + r.by + '</td>';
+    tableHtml += '<td style="padding:5px 8px;font-size:0.68rem;color:var(--text-muted);">' + r.note + '</td>';
     tableHtml += '</tr>';
   });
 
@@ -742,7 +743,7 @@ function toggleInvSupplementMode() {
 
 function renderInvSupplementTable() {
   var items = getInvFilteredItems();
-  var tableWrap = document.getElementById('inv-table-wrap');
+  var tableWrap = document.getElementById('inv-board-new');
   var bar = document.getElementById('inv-supp-bar');
 
   if (!tableWrap) return;
@@ -819,7 +820,7 @@ function _suppUpdateChangeCount() {
 
   var changed = 0;
   var originalItems = _invHybrid.suppOriginalItems || [];
-  var tableWrap = document.getElementById('inv-table-wrap');
+  var tableWrap = document.getElementById('inv-board-new');
 
   originalItems.forEach(function(item) {
     var itemIdStr = String(item.id);
@@ -851,7 +852,7 @@ function _suppUpdateChangeCount() {
 // 补充信息保存 — 修复 UUID + category_name 问题
 // ============================================================
 async function _saveInvSupplement() {
-  var tableWrap = document.getElementById('inv-table-wrap');
+  var tableWrap = document.getElementById('inv-board-new');
   if (!tableWrap) return;
 
   // 防止重复点击：禁用按钮 + 显示保存中状态
