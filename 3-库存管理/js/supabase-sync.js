@@ -52,30 +52,46 @@ async function syncFromSupabase(options) {
   _isInitialLoading = true;
 
   try {
-    // 并行拉取所有数据
-    const [
-      categoriesResult,
-      inventoryResult,
-      purchaseOrdersResult,
-      stockInResult,
-      requisitionsResult,
-      stockOutResult,
-      adjustmentsResult,
-      usersResult,
-      consumptionResult,
-      settingsResult
-    ] = await Promise.all([
-      sb.from('categories').select('*').order('id'),
-      sb.from('inventory_items').select('*').order('id'),
-      sb.from('purchase_orders').select('*, purchase_order_items(*)').order('created_at', { ascending: false }),
-      sb.from('stock_in_records').select('*, stock_in_items(*)').order('created_at', { ascending: false }),
-      sb.from('requisitions').select('*, requisition_items(*)').order('created_at', { ascending: false }),
-      sb.from('stock_out_records').select('*, stock_out_items(*)').order('created_at', { ascending: false }),
-      sb.from('inventory_adjustments').select('*').order('created_at', { ascending: false }).limit(500),
-      sb.from('users').select('*').order('id'),
-      sb.from('consumption_standards').select('*').order('id'),
-      sb.from('settings').select('*')
-    ]);
+    // 逐个查询每个表，失败互不影响（Promise.all 一个失败全部丢失）
+    var tableQueries = {
+      categories: sb.from('categories').select('*').order('id'),
+      inventory: sb.from('inventory_items').select('*').order('id'),
+      purchaseOrders: sb.from('purchase_orders').select('*, purchase_order_items(*)').order('created_at', { ascending: false }),
+      stockIn: sb.from('stock_in_records').select('*, stock_in_items(*)').order('created_at', { ascending: false }),
+      requisitions: sb.from('requisitions').select('*, requisition_items(*)').order('created_at', { ascending: false }),
+      stockOut: sb.from('stock_out_records').select('*, stock_out_items(*)').order('created_at', { ascending: false }),
+      adjustments: sb.from('inventory_adjustments').select('*').order('created_at', { ascending: false }).limit(500),
+      users: sb.from('users').select('*').order('id'),
+      consumption: sb.from('consumption_standards').select('*').order('id'),
+      settings: sb.from('settings').select('*')
+    };
+  
+    // 用 allSettled 替代 all，失败的表不影响其他表
+    var settledResults = await Promise.allSettled(
+      Object.values(tableQueries).map(function(q) { return q; })
+    );
+    var queryKeys = Object.keys(tableQueries);
+    var results = {};
+    settledResults.forEach(function(r, i) {
+      var key = queryKeys[i];
+      if (r.status === 'fulfilled') {
+        results[key] = r.value;
+      } else {
+        console.warn('[Sync] 表 ' + key + ' 查询失败:', r.reason?.message || '未知错误');
+        results[key] = { data: null, error: r.reason };
+      }
+    });
+  
+    var categoriesResult = results.categories;
+    var inventoryResult = results.inventory;
+    var purchaseOrdersResult = results.purchaseOrders;
+    var stockInResult = results.stockIn;
+    var requisitionsResult = results.requisitions;
+    var stockOutResult = results.stockOut;
+    var adjustmentsResult = results.adjustments;
+    var usersResult = results.users;
+    var consumptionResult = results.consumption;
+    var settingsResult = results.settings;
 
     // ---- 品类 ----
     if (categoriesResult.data) {
