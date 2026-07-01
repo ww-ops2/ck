@@ -86,7 +86,11 @@ function initInventoryHybrid() {
     var addItemBtn = document.getElementById('add-item-btn');
     if (addItemBtn) {
       addItemBtn.addEventListener('click', function() {
-        if (typeof editItem === 'function') editItem(null);
+        if (typeof openNewItemModal === 'function') {
+          openNewItemModal();
+        } else if (typeof editItem === 'function') {
+          editItem(null);
+        }
       });
     }
 
@@ -363,8 +367,8 @@ function renderInvInbox() {
     html += '    <table class="items-table"><thead><tr>';
     if (batchMode) html += '      <th style="width:32px"><input type="checkbox" class="inv-batch-th-cb" checked onchange="(function(cb){document.querySelectorAll(\'.inv-batch-cb\').forEach(function(c){c.checked=cb.checked;});updateInvBatchCount();})(this)"></th>';
     html += '      <th style="width:14%">物品名称</th><th style="width:8%">品牌</th><th style="width:7%">型号</th>';
-    html += '      <th style="width:5%;text-align:center">单位</th><th style="width:10%;text-align:right">单价</th>';
-    html += '      <th style="width:18%;text-align:right">库存</th><th style="width:14%;text-align:right">金额</th>';
+    html += '      <th style="width:10%;text-align:right">单价</th><th style="width:18%;text-align:right">库存</th>';
+    html += '      <th style="width:5%;text-align:center">单位</th><th style="width:14%;text-align:right">金额</th>';
     html += '      <th style="width:10%;text-align:right">状态</th><th style="width:14%;text-align:right">操作</th>';
     html += '    </tr></thead><tbody>';
 
@@ -373,21 +377,18 @@ function renderInvInbox() {
       var canEdit = hasPermission('edit_inventory') || hasPermission('inventory.adjust') || hasPermission('inventory.edit');
       var unitPrice = item.unit_price || 0;
       var amount = (item.stock || 0) * unitPrice;
-      var pct = Math.min(100, ((item.stock||0) / ((item.safety_stock||10) || 1)) * 100);
       var ss = item.stock === 0 ? 'out' : (item.stock < (item.safety_stock||10) ? 'low' : 'safe');
-
-      var safeDisp = item.safety_stock || 10;
 
       html += '<tr class="item-row" data-item-id="' + item.id + '" data-item-name="' + (item.name || '').replace(/"/g, '&quot;') + '" data-item-code="' + (item.code || '').replace(/"/g, '&quot;') + '">';
       if (batchMode) {
         html += '  <td style="text-align:center"><input type="checkbox" class="inv-batch-cb" checked data-item-id="' + item.id + '" data-item-name="' + (item.name || '').replace(/"/g, '&quot;') + '" data-item-cat="' + (item.category || '').replace(/"/g, '&quot;') + '" data-item-brand="' + (item.brand || '').replace(/"/g, '&quot;') + '" data-item-model="' + (item.model || '').replace(/"/g, '&quot;') + '" data-item-unit="' + (item.unit || '') + '" data-item-code="' + (item.code || '') + '" data-item-safety="' + (item.safety_stock || 10) + '" data-item-stock="' + (item.stock || 0) + '" onchange="updateInvBatchCount()"></td>';
       }
-      html += '  <td><div class="item-cell-main"><span class="item-name"><span class="h-toggle" style="font-size:0.6rem;color:var(--text-muted);margin-right:4px;">▶</span>' + item.name + '</span><span class="item-code">' + (item.code || '') + '</span></div></td>';
-      html += '  <td style="color:var(--text-secondary)">' + (item.brand || '<span style="color:var(--text-muted);">-</span>') + '</td>';
-      html += '  <td style="color:var(--text-secondary);font-size:0.72rem">' + (item.model || '<span style="color:var(--text-muted);">-</span>') + '</td>';
+      html += '  <td><div class="item-cell-main"><span class="item-name"><span class="h-toggle" style="font-size:0.6rem;color:var(--text-muted);margin-right:4px;">▶</span>' + item.name + '</span><span class="item-code" style="display:block;font-size:0.6rem;color:var(--text-muted);font-family:monospace;margin-top:2px;">' + (item.code || '') + '</span></div></td>';
+      html += '  <td style="color:var(--text-secondary);padding-left:2rem;white-space:nowrap">' + (item.brand || '<span style="color:var(--text-muted);">-</span>') + '</td>';
+      html += '  <td style="color:var(--text-secondary);font-size:0.72rem;padding-left:3rem;white-space:nowrap">' + (item.model || '<span style="color:var(--text-muted);">-</span>') + '</td>';
+      html += '  <td class="num-cell price-cell" style="padding-right:1rem">¥' + Number(unitPrice).toFixed(2) + '</td>';
+      html += '  <td class="num-cell"><span class="stock-num s-' + ss + '">' + item.stock + '</span></td>';
       html += '  <td style="text-align:center">' + (item.unit || '<span style="color:var(--text-muted);">-</span>') + '</td>';
-      html += '  <td class="num-cell price-cell">¥' + Number(unitPrice).toFixed(2) + '</td>';
-       html += '  <td class="num-cell"><span class="stock-num s-' + ss + '">' + item.stock + '</span><span style="display:inline-block;font-size:0.6rem;color:var(--text-muted);margin:0 3px 0 4px;vertical-align:middle;">/' + safeDisp + '</span><span class="stock-bar-wrap" style="display:inline-block;vertical-align:middle;width:45px;"><span class="stock-bar s-' + ss + '" style="display:block;width:' + pct + '%"></span></span></td>';
       html += '  <td class="num-cell amount-cell">¥' + amount.toFixed(2) + '</td>';
       html += '  <td style="text-align:center"><span class="status-tag-new t-' + ss + '"><span class="sd"></span>' + status.text + '</span></td>';
       html += '  <td style="text-align:right">' + (canEdit ? '<button class="action-btn" onclick="event.cancelBubble=true;editItem(\'' + String(item.id).replace(/'/g, "\\'") + '\')">编辑</button>' : '<span style="color:var(--text-muted);font-size:0.68rem">-</span>') + '</td>';
