@@ -153,7 +153,12 @@ async function loadInventoryHybridData(skipSupabaseFetch) {
   if (!skipSupabaseFetch) {
     try {
       if (typeof SupaDB !== 'undefined' && SupaDB.getInventory) {
-        items = await SupaDB.getInventory({});
+        items = await Promise.race([
+          SupaDB.getInventory({}),
+          new Promise(function(_, reject) {
+            setTimeout(function() { reject(new Error('Supabase请求超时(8s)')); }, 8000);
+          })
+        ]);
         console.log('[InventoryHybrid] 从 Supabase 获取库存:', items.length);
         if (items && items.length > 0) {
           _appCache.inventory = JSON.parse(JSON.stringify(items));
