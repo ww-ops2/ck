@@ -18,7 +18,8 @@
     }
   })();
   </script>
-  <link rel="stylesheet" href="css/style.css?v=5.41">
+  <link rel="stylesheet" href="css/style.css?v=5.42">
+  <link rel="stylesheet" href="css/redesign.css?v=5.42">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
@@ -267,45 +268,81 @@
       <!-- 内容容器 -->
       <div class="content-wrapper">
         
-        <!-- ===== 仪表盘模块 ===== -->
+        <!-- ===== 仪表盘模块 (v5.42 新设计) ===== -->
         <div id="module-dashboard" class="module-pane active">
-          <div class="kpi-grid">
-            <div class="kpi-card" data-kpi-type="total-items" style="cursor:pointer;">
-              <div class="kpi-label">总库存物品</div>
+          <div class="dashboard-kpi-grid">
+            <div class="kpi-card-new anim-enter" data-kpi-type="total-items">
+              <div class="kpi-top">
+                <span class="kpi-label">总库存物品</span>
+                <span class="kpi-icon kpi-icon-primary">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
+                </span>
+              </div>
               <div class="kpi-value" id="kpi-total-items">0</div>
-              <div class="kpi-change">个品类</div>
+              <div class="kpi-change"><span>个品类</span></div>
             </div>
-            <div class="kpi-card" data-kpi-type="month-in" style="cursor:pointer;">
-              <div class="kpi-label">本月入库</div>
-              <div class="kpi-value income" id="kpi-month-in">0</div>
-              <div class="kpi-change">件</div>
+            <div class="kpi-card-new anim-enter" data-kpi-type="month-in">
+              <div class="kpi-top">
+                <span class="kpi-label">本月入库</span>
+                <span class="kpi-icon kpi-icon-success">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                </span>
+              </div>
+              <div class="kpi-value" id="kpi-month-in">0</div>
+              <div class="kpi-change"><span>件</span></div>
             </div>
-            <div class="kpi-card" data-kpi-type="month-out" style="cursor:pointer;">
-              <div class="kpi-label">本月出库</div>
-              <div class="kpi-value cost" id="kpi-month-out">0</div>
-              <div class="kpi-change">件</div>
+            <div class="kpi-card-new anim-enter" data-kpi-type="month-out">
+              <div class="kpi-top">
+                <span class="kpi-label">本月出库</span>
+                <span class="kpi-icon kpi-icon-danger">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                </span>
+              </div>
+              <div class="kpi-value" id="kpi-month-out">0</div>
+              <div class="kpi-change"><span>件</span></div>
             </div>
-            <div class="kpi-card" data-kpi-type="pending-purchase" style="cursor:pointer;">
-              <div class="kpi-label">待处理采购单</div>
-              <div class="kpi-value warning" id="kpi-pending-purchase">0</div>
-              <div class="kpi-change">单</div>
+            <div class="kpi-card-new anim-enter" data-kpi-type="pending-purchase">
+              <div class="kpi-top">
+                <span class="kpi-label">待处理采购单</span>
+                <span class="kpi-icon kpi-icon-warning">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                </span>
+              </div>
+              <div class="kpi-value" id="kpi-pending-purchase">0</div>
+              <div class="kpi-change"><span>单</span></div>
             </div>
-            <div class="kpi-card" data-kpi-type="pending-stockin" style="cursor:pointer;">
-              <div class="kpi-label">待确认入库</div>
-              <div class="kpi-value warning" id="kpi-pending-stockin">0</div>
-              <div class="kpi-change">单</div>
+            <div class="kpi-card-new anim-enter" data-kpi-type="pending-stockin">
+              <div class="kpi-top">
+                <span class="kpi-label">待确认入库</span>
+                <span class="kpi-icon kpi-icon-warning">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                </span>
+              </div>
+              <div class="kpi-value" id="kpi-pending-stockin">0</div>
+              <div class="kpi-change"><span>单</span></div>
             </div>
-            <div class="kpi-card" data-kpi-type="low-stock" style="cursor:pointer;">
-              <div class="kpi-label">低库存预警</div>
-              <div class="kpi-value danger" id="kpi-low-stock">0</div>
-              <div class="kpi-change">项</div>
+            <div class="kpi-card-new anim-enter" data-kpi-type="low-stock">
+              <div class="kpi-top">
+                <span class="kpi-label">低库存预警</span>
+                <span class="kpi-icon kpi-icon-danger">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                </span>
+              </div>
+              <div class="kpi-value" id="kpi-low-stock">0</div>
+              <div class="kpi-change"><span>项</span></div>
             </div>
-            <div class="kpi-card" data-kpi-type="pending-outbound" style="cursor:pointer;">
-              <div class="kpi-label">待确认出库</div>
-              <div class="kpi-value warning" id="kpi-pending-outbound">0</div>
-              <div class="kpi-change">单</div>
+            <div class="kpi-card-new anim-enter" data-kpi-type="pending-outbound">
+              <div class="kpi-top">
+                <span class="kpi-label">待确认出库</span>
+                <span class="kpi-icon kpi-icon-primary">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                </span>
+              </div>
+              <div class="kpi-value" id="kpi-pending-outbound">0</div>
+              <div class="kpi-change"><span>单</span></div>
             </div>
           </div>
+
           <!-- KPI 卡片展开详情面板 -->
           <div id="kpi-expand-panel" class="kpi-expand-panel">
             <div class="kpi-expand-header">
@@ -315,138 +352,120 @@
             <div class="kpi-expand-body" id="kpi-expand-body"></div>
           </div>
 
-          <div class="grid-2">
-            <div class="panel">
-              <div class="panel-header">
-                <div class="panel-title"><span class="dot" style="background:var(--accent)"></span>出入库趋势</div>
-                <select id="chart-period">
+          <div class="dashboard-chart-section">
+            <div class="chart-panel-new anim-enter">
+              <div class="chart-header">
+                <div class="chart-title"><span class="chart-dot" style="background:var(--accent)"></span>出入库趋势</div>
+                <select id="chart-period" class="chart-period-select">
                   <option value="7">近7天</option>
                   <option value="30" selected>近30天</option>
                   <option value="90">近90天</option>
                 </select>
               </div>
-              <div class="chart-wrap">
-                <canvas id="trend-chart"></canvas>
-              </div>
+              <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
             </div>
-
-            <div class="panel">
-              <div class="panel-header">
-                <div class="panel-title"><span class="dot" style="background:var(--success)"></span>库存分类占比</div>
+            <div class="chart-panel-new anim-enter">
+              <div class="chart-header">
+                <div class="chart-title"><span class="chart-dot" style="background:var(--success)"></span>库存分类占比</div>
               </div>
-              <div class="chart-wrap">
-                <canvas id="category-chart"></canvas>
-              </div>
+              <div class="chart-wrap"><canvas id="category-chart"></canvas></div>
             </div>
           </div>
 
-          <div class="panel">
-            <div class="panel-header">
-              <div class="panel-title"><span class="dot" style="background:var(--warning)"></span>最近动态</div>
-              <button class="btn btn-sm">查看全部</button>
+          <div class="activity-section-new anim-enter">
+            <div class="activity-header">
+              <div class="activity-title"><span class="chart-dot" style="background:var(--warning)"></span>最近动态</div>
+              <button class="btn btn-sm" style="background:none;border:none;font-size:0.75rem;color:var(--accent);cursor:pointer;font-weight:500;">查看全部 →</button>
             </div>
-            <div class="activity-list" id="recent-activities">
-              <div class="activity-item">
-                <div class="activity-icon"><svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
-                <div class="activity-content">
-                  <div class="activity-text">系统初始化完成</div>
-                  <div class="activity-time">刚刚</div>
-                </div>
-              </div>
-            </div>
+            <div class="activity-list" id="recent-activities"></div>
           </div>
         </div>
 
-        <!-- ===== 库存概览模块 ===== -->
+        <!-- ===== 库存概览模块 (v5.42 新设计) ===== -->
         <div id="module-inventory" class="module-pane">
           <!-- KPI 概览行 -->
-          <div class="panel" style="margin-bottom:12px;">
-            <div class="panel-header" style="border-bottom:none;padding-bottom:8px;">
-              <div class="panel-title">库存概览</div>
-              <div class="panel-actions">
-                <input type="text" id="inv-search-input" placeholder="🔍 搜索物品名称/编号/品牌..." style="width:200px;padding:5px 10px;border:1.5px solid var(--border);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:13px;margin-left:12px;">
-                <select id="inv-filter-category" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg-input);color:var(--text-primary);">
-                  <option value="">全部分类</option>
-                </select>
-                <select id="inv-filter-status" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg-input);color:var(--text-primary);">
-                  <option value="">全部状态</option>
-                  <option value="normal">正常</option>
-                  <option value="low">低库存</option>
-                  <option value="out">缺货</option>
-                </select>
-                <button class="btn" id="inv-batch-purchase-btn">一键购买</button>
-                <button class="btn" id="inv-supplement-btn">补充信息</button>
-                <button class="btn btn-accent" id="add-item-btn">+ 新增物品</button>
-              </div>
+          <div class="kpi-strip-new inv-kpi-strip">
+            <div class="kpi-mini-new km-accent anim-enter">
+              <div class="km-bar"></div>
+              <div class="km-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg> 物品总数</div>
+              <div class="km-value" id="inv-kpi-total">0</div>
+              <div class="km-sub"><span id="inv-kpi-categories">0</span> 个品类</div>
             </div>
-            <div class="kpi-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">
-              <div class="kpi-card"><div class="kpi-label">物品总数</div><div class="kpi-value" id="inv-kpi-total">0</div></div>
-              <div class="kpi-card"><div class="kpi-label">库存总量</div><div class="kpi-value" id="inv-kpi-stock">0</div></div>
-              <div class="kpi-card"><div class="kpi-label">低库存</div><div class="kpi-value" id="inv-kpi-low">0</div></div>
-              <div class="kpi-card"><div class="kpi-label">缺货</div><div class="kpi-value" id="inv-kpi-out">0</div></div>
-              <div class="kpi-card"><div class="kpi-label">库存金额</div><div class="kpi-value" id="inv-kpi-value">¥0</div></div>
+            <div class="kpi-mini-new anim-enter" style="animation-delay:0.05s">
+              <div class="km-bar"></div>
+              <div class="km-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> 库存总量</div>
+              <div class="km-value" id="inv-kpi-stock">0</div>
+              <div class="km-sub">件/箱/包</div>
+            </div>
+            <div class="kpi-mini-new km-warning anim-enter" style="animation-delay:0.1s">
+              <div class="km-bar"></div>
+              <div class="km-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg> 低库存</div>
+              <div class="km-value" id="inv-kpi-low">0</div>
+              <div class="km-sub">低于安全库存</div>
+            </div>
+            <div class="kpi-mini-new km-danger anim-enter" style="animation-delay:0.15s">
+              <div class="km-bar"></div>
+              <div class="km-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg> 缺货</div>
+              <div class="km-value" id="inv-kpi-out">0</div>
+              <div class="km-sub">需立即补货</div>
+            </div>
+            <div class="kpi-mini-new km-success anim-enter" style="animation-delay:0.2s">
+              <div class="km-bar"></div>
+              <div class="km-label"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> 库存金额</div>
+              <div class="km-value" id="inv-kpi-value">¥0</div>
+              <div class="km-sub">总价值</div>
             </div>
           </div>
 
-          <!-- 单栏明细表格 -->
-          <div class="panel">
-            <div class="table-scroll inv-table-wrap" id="inv-table-wrap">
-              <table class="data-table inv-table" id="inv-table">
-                <colgroup id="inv-colgroup">
-                  <col style="width:16%;">
-                  <col style="width:8%;">
-                  <col style="width:9%;">
-                  <col style="width:7%;">
-                  <col style="width:9%;">
-                  <col style="width:8%;">
-                  <col style="width:9%;">
-                  <col style="width:8%;">
-                  <col style="width:8%;">
-                  <col style="width:60px;">
-                </colgroup>
-                <thead>
-                  <tr id="inv-thead">
-                    <th>物品名称</th>
-                    <th>品牌</th>
-                    <th>型号</th>
-                    <th>单位</th>
-                    <th>单价</th>
-                    <th>库存</th>
-                    <th>金额</th>
-                    <th>状态</th>
-                    <th>采购中</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody id="inv-tbody">
-                  <tr><td colspan="10" class="empty-state">加载中...</td></tr>
-                </tbody>
-              </table>
+          <!-- 工具栏 -->
+          <div class="inv-toolbar-new anim-enter" style="animation-delay:0.25s">
+            <div class="inv-tb-left">
+              <input type="text" id="inv-search-input" class="inv-search-new" placeholder="搜索物品名称、编号、品牌...">
+              <select id="inv-filter-category" class="inv-filter-new">
+                <option value="">全部分类</option>
+              </select>
+              <select id="inv-filter-status" class="inv-filter-new">
+                <option value="">全部状态</option>
+                <option value="normal">正常</option>
+                <option value="low">低库存</option>
+                <option value="out">缺货</option>
+              </select>
             </div>
+            <div class="inv-tb-right">
+              <button class="btn btn-sm btn-outline-new" id="inv-batch-purchase-btn">一键购买</button>
+              <button class="btn btn-sm btn-outline-new" id="inv-supplement-btn">补充信息</button>
+              <button class="btn btn-sm btn-accent-new" id="add-item-btn">+ 新增物品</button>
+            </div>
+          </div>
+
+          <!-- 库存列表（卡片分类布局） -->
+          <div class="inv-board-new" id="inv-board-new">
+            <!-- 渲染占位：JS动态生成分类卡片 -->
+            <div class="anim-enter" style="animation-delay:0.35s;text-align:center;padding:40px 0;color:var(--text-muted);font-size:0.85rem;">加载中...</div>
           </div>
 
           <!-- 批量采购底部操作栏 -->
-          <div class="inv-actionbar" id="inv-batch-bar" style="display:none;">
-            <div class="inv-actionbar-left">
-              <label style="display:flex;align-items:center;gap:4px;font-size:13px;color:var(--text-secondary);cursor:pointer;">
+          <div class="action-bar-new" id="inv-batch-bar" style="display:none;">
+            <div class="ab-left">
+              <label class="ab-check">
                 <input type="checkbox" id="inv-select-all-bottom" onchange="document.querySelectorAll('.inv-batch-cb').forEach(function(cb){cb.checked=this.checked;});updateInvBatchCount();"> 全选
               </label>
-              <span id="inv-batch-count" style="font-size:13px;color:var(--text-muted);">已选中 0 项</span>
+              <span class="ab-count" id="inv-batch-count">已选中 0 项</span>
             </div>
-            <div class="inv-actionbar-right">
+            <div class="ab-right">
               <button class="btn btn-sm" id="inv-batch-cancel">取消</button>
-              <button class="btn btn-sm btn-accent" id="inv-batch-purchase-confirm" style="font-weight:600;">一键采购选中项</button>
+              <button class="btn btn-sm btn-accent-new" id="inv-batch-purchase-confirm">一键采购选中项</button>
             </div>
           </div>
 
           <!-- 补充信息底部操作栏 -->
-          <div class="inv-actionbar" id="inv-supp-bar" style="display:none;">
-            <div class="inv-actionbar-left">
-              <span style="font-size:13px;color:var(--text-muted);"><span id="inv-supp-changed-count">0</span> 项已修改</span>
+          <div class="action-bar-new" id="inv-supp-bar" style="display:none;">
+            <div class="ab-left">
+              <span class="ab-count"><span id="inv-supp-changed-count">0</span> 项已修改</span>
             </div>
-            <div class="inv-actionbar-right">
+            <div class="ab-right">
               <button class="btn btn-sm" id="inv-supp-cancel">取消</button>
-              <button class="btn btn-sm btn-accent" id="inv-supp-save" style="font-weight:600;">保存补充信息</button>
+              <button class="btn btn-sm btn-accent-new" id="inv-supp-save">保存补充信息</button>
             </div>
           </div>
         </div>
@@ -1899,23 +1918,23 @@
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="js/supabase-db.js?v=5.41"></script>
-  <script src="js/supabase-sync.js?v=5.41"></script>
-  <script src="js/migrate-data.js?v=5.41"></script>
-  <script src="js/toast.js?v=5.41"></script>
-  <script src="js/login-characters.js?v=5.41"></script>
-  <script src="js/auth-fix.js?v=5.41"></script>
-  <script src="js/navigation.js?v=5.41"></script>
-  <script src="js/purchase.js?v=5.41"></script>
-  <script src="js/stock-in.js?v=5.41"></script>
-  <script src="js/requisition.js?v=5.41"></script>
-  <script src="js/monthly-summary.js?v=5.41"></script>
-  <script src="js/tour-reports.js?v=5.41"></script>
-  <script src="js/business-flow.js?v=5.41"></script>
-  <script src="js/app.js?v=5.41"></script>
-  <script src="js/inventory-hybrid.js?v=5.41"></script>
-  <script src="js/admin-bindings.js?v=5.41"></script>
+  <script src="js/supabase-db.js?v=5.42"></script>
+  <script src="js/supabase-sync.js?v=5.42"></script>
+  <script src="js/migrate-data.js?v=5.42"></script>
+  <script src="js/toast.js?v=5.42"></script>
+  <script src="js/login-characters.js?v=5.42"></script>
+  <script src="js/auth-fix.js?v=5.42"></script>
+  <script src="js/navigation.js?v=5.42"></script>
+  <script src="js/purchase.js?v=5.42"></script>
+  <script src="js/stock-in.js?v=5.42"></script>
+  <script src="js/requisition.js?v=5.42"></script>
+  <script src="js/monthly-summary.js?v=5.42"></script>
+  <script src="js/tour-reports.js?v=5.42"></script>
+  <script src="js/business-flow.js?v=5.42"></script>
+  <script src="js/app.js?v=5.42"></script>
+  <script src="js/inventory-hybrid.js?v=5.42"></script>
+  <script src="js/admin-bindings.js?v=5.42"></script>
 
-  <script src="js/user-admin.js?v=5.41"></script>
+  <script src="js/user-admin.js?v=5.42"></script>
 </body>
 </html>
