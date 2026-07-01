@@ -357,10 +357,10 @@ function renderInvInbox() {
     html += '  <div class="items-wrap is-open" id="inv-cat-wrp-' + ci + '">';
     html += '    <table class="items-table"><thead><tr>';
     if (batchMode) html += '      <th style="width:32px"><input type="checkbox" class="inv-batch-th-cb" checked onchange="(function(cb){document.querySelectorAll(\'.inv-batch-cb\').forEach(function(c){c.checked=cb.checked;});updateInvBatchCount();})(this)"></th>';
-    html += '      <th style="width:26%">物品名称</th><th style="width:10%">品牌</th><th style="width:8%">型号</th>';
-    html += '      <th style="width:6%;text-align:center">单位</th><th style="width:9%;text-align:right">单价</th>';
-    html += '      <th style="width:12%;text-align:right">库存</th><th style="width:10%;text-align:right">金额</th>';
-    html += '      <th style="width:8%;text-align:center">状态</th><th style="width:11%;text-align:right">操作</th>';
+    html += '      <th style="width:22%">物品名称</th><th style="width:9%">品牌</th><th style="width:8%">型号</th>';
+    html += '      <th style="width:5%;text-align:center">单位</th><th style="width:9%;text-align:right">单价</th>';
+    html += '      <th style="width:15%;text-align:right">库存</th><th style="width:10%;text-align:right">金额</th>';
+    html += '      <th style="width:8%;text-align:center">状态</th><th style="width:14%;text-align:right">操作</th>';
     html += '    </tr></thead><tbody>';
 
     catItems.forEach(function(item) {
@@ -382,7 +382,7 @@ function renderInvInbox() {
       html += '  <td style="color:var(--text-secondary);font-size:0.72rem">' + (item.model || '<span style="color:var(--text-muted);">-</span>') + '</td>';
       html += '  <td style="text-align:center">' + (item.unit || '<span style="color:var(--text-muted);">-</span>') + '</td>';
       html += '  <td class="num-cell price-cell">¥' + Number(unitPrice).toFixed(2) + '</td>';
-      html += '  <td class="num-cell"><div class="stock-badge"><span class="stock-num s-' + ss + '">' + item.stock + '</span><div style="display:flex;flex-direction:column;align-items:flex-start;margin-left:4px"><span style="font-size:0.6rem;color:var(--text-muted)">/ ' + safeDisp + '</span><div class="stock-bar-wrap"><div class="stock-bar s-' + ss + '" style="width:' + pct + '%"></div></div></div></div></td>';
+       html += '  <td class="num-cell"><span class="stock-num s-' + ss + '">' + item.stock + '</span><span style="display:inline-block;font-size:0.6rem;color:var(--text-muted);margin:0 3px 0 4px;vertical-align:middle;">/' + safeDisp + '</span><span class="stock-bar-wrap" style="display:inline-block;vertical-align:middle;width:45px;"><span class="stock-bar s-' + ss + '" style="display:block;width:' + pct + '%"></span></span></td>';
       html += '  <td class="num-cell amount-cell">¥' + amount.toFixed(2) + '</td>';
       html += '  <td style="text-align:center"><span class="status-tag-new t-' + ss + '"><span class="sd"></span>' + status.text + '</span></td>';
       html += '  <td style="text-align:right">' + (canEdit ? '<button class="action-btn" onclick="event.cancelBubble=true;editItem(\'' + String(item.id).replace(/'/g, "\\'") + '\')">编辑</button>' : '<span style="color:var(--text-muted);font-size:0.68rem">-</span>') + '</td>';
