@@ -62,26 +62,54 @@
   }
 
   const PERM_LABELS = {
+    // 各模块「仅查看」权限（授权即可进入模块但不可增改）
+    view_dashboard: '查看仪表盘',
+    view_inventory: '查看库存',
+    view_categories: '查看品类',
+    view_purchase: '查看采购单',
+    view_stockin: '查看入库',
+    view_requisition: '查看领用单',
+    view_stockout: '查看出库',
+    view_monthly: '查看月度汇总',
+    view_reports: '查看团期报表',
+    view_analytics: '查看数据分析',
+    view_history: '查看操作记录',
+    view_users: '查看账号',
+    view_roles: '查看角色权限',
+    // 动作权限
+    manage_inventory: '库存管理',
+    edit_inventory: '编辑库存项',
+    adjust_stock: '库存调整',
+    supplement_info: '补充信息',
+    manage_categories: '品类管理',
     create_purchase: '创建采购单',
     edit_purchase: '编辑采购单',
-    view_purchase: '查看采购单',
     delete_purchase: '删除采购单',
     confirm_stockin: '入库确认',
-    confirm_stockout: '出库确认',
     create_requisition: '创建领用单',
     edit_requisition: '编辑领用单',
     withdraw_requisition: '撤回领用单',
     delete_requisition: '删除领用单',
-    manage_inventory: '库存管理',
-    adjust_stock: '库存调整',
-    edit_inventory: '编辑库存项',
-    manage_categories: '品类管理',
-    view_inventory: '查看库存',
+    approve_requisition: '审核领用单',
+    confirm_stockout: '出库确认',
     export_reports: '导出报表',
-    admin_settings: '系统设置',
-    supplement_info: '补充信息'
+    admin_settings: '系统设置'
   };
   const ALL_PERMISSIONS = Object.keys(PERM_LABELS);
+
+  // 权限按模块分组展示，便于「仅查看」授权一目了然
+  const PERM_GROUPS = [
+    { title: '仪表盘', perms: ['view_dashboard'] },
+    { title: '库存管理', perms: ['view_inventory', 'manage_inventory', 'edit_inventory', 'adjust_stock', 'supplement_info'] },
+    { title: '品类管理', perms: ['view_categories', 'manage_categories'] },
+    { title: '采购单', perms: ['view_purchase', 'create_purchase', 'edit_purchase', 'delete_purchase'] },
+    { title: '入库管理', perms: ['view_stockin', 'confirm_stockin'] },
+    { title: '领用单', perms: ['view_requisition', 'create_requisition', 'edit_requisition', 'withdraw_requisition', 'delete_requisition', 'approve_requisition'] },
+    { title: '出库管理', perms: ['view_stockout', 'confirm_stockout'] },
+    { title: '报表与汇总', perms: ['view_reports', 'view_monthly', 'view_analytics', 'export_reports'] },
+    { title: '操作记录', perms: ['view_history'] },
+    { title: '系统管理', perms: ['view_users', 'view_roles', 'admin_settings'] }
+  ];
 
   const ROLE_LABELS = {
     staff: '员工',
@@ -280,11 +308,11 @@
 
   function getDefaultPermsForRole(role) {
     const defs = {
-      admin: ['admin_settings','manage_inventory','view_inventory','export_reports','create_purchase','edit_purchase','delete_purchase','confirm_stockin','confirm_stockout','manage_categories','adjust_stock','edit_inventory','create_requisition','edit_requisition'],
-      purchase: ['create_purchase','edit_purchase','view_purchase','view_inventory','manage_categories','supplement_info'],
-      warehouse: ['view_purchase','confirm_stockin','confirm_stockout','adjust_stock','manage_inventory','view_inventory','supplement_info'],
-      finance: ['view_purchase','view_inventory','export_reports'],
-      staff: ['create_requisition','edit_requisition','view_inventory']
+      admin: ['all'],
+      purchase: ['view_dashboard','view_inventory','view_categories','view_purchase','view_reports','view_analytics','create_purchase','edit_purchase','delete_purchase','supplement_info','manage_categories','export_reports'],
+      warehouse: ['view_dashboard','view_inventory','view_categories','view_stockin','view_stockout','view_reports','view_analytics','edit_inventory','manage_inventory','adjust_stock','confirm_stockin','confirm_stockout','approve_requisition','supplement_info','manage_categories','export_reports'],
+      finance: ['view_dashboard','view_inventory','view_categories','view_purchase','view_stockin','view_requisition','view_stockout','view_reports','view_analytics','view_history','view_monthly','export_reports'],
+      staff: ['view_dashboard','view_inventory','view_requisition','view_stockout','create_requisition','edit_requisition','withdraw_requisition']
     };
     return defs[role] || defs['staff'];
   }
@@ -296,9 +324,15 @@
     const roleSelect = document.getElementById('user-perms-role-select');
     const container = document.getElementById('user-permissions-list');
 
-    // render checkboxes
+    // render checkboxes (grouped by module)
     function renderPerms(selectedPerms) {
-      container.innerHTML = ALL_PERMISSIONS.map(p => `<label style="display:block;margin:6px 0;"><input type="checkbox" data-perm="${p}"> ${PERM_LABELS[p] || p}</label>`).join('');
+      const groupsHtml = PERM_GROUPS.map(g => {
+        const items = g.perms.filter(p => PERM_LABELS[p]).map(p =>
+          `<label style="display:flex;align-items:center;gap:6px;margin:5px 0;font-size:13px;"><input type="checkbox" data-perm="${p}"> ${PERM_LABELS[p] || p}</label>`
+        ).join('');
+        return `<div style="margin:10px 0;"><div style="font-weight:600;font-size:12px;color:var(--text-muted);margin-bottom:4px;border-bottom:1px solid var(--border, #eee);padding-bottom:3px;">${g.title}</div>${items}</div>`;
+      }).join('');
+      container.innerHTML = groupsHtml;
       container.querySelectorAll('input[type=checkbox]').forEach(cb => { if (selectedPerms.includes(cb.dataset.perm)) cb.checked = true; });
     }
 
