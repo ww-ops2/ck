@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS role_permissions (
 );
 
 CREATE TABLE IF NOT EXISTS user_permissions (
-  user_id INTEGER NOT NULL,
+  user_id BIGINT NOT NULL,
   permission TEXT NOT NULL,
   PRIMARY KEY (user_id, permission)
 );
