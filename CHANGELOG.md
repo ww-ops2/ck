@@ -1,5 +1,28 @@
 # 更新日志 (Changelog)
 
+## [v5.43] - 2026-08-06
+
+### 修复
+- 数据库迁移：放宽 `purchase_orders` / `requisitions` 状态约束，支持审核流与部分入库。
+- 补齐 `requisitions` 审核字段（approved_by / approved_by_name / approved_at / reject_reason）。
+- 新建 `consumption_standards`、`settings` 系统设置表。
+- 删除数据库审计触发器，解决审计日志双写问题。
+- 回填 `inventory_items.category_id`、`stock_in_items.inventory_item_id` 等历史数据。
+- 重写 `js/requisition.js`：领用单创建/修改/撤回/删除/审核/驳回/确认出库全部接入 `SupaDB` 持久化。
+- 重写 `js/auth-fix.js` 权限系统：按数据库 `role_permissions` 动态加载权限，支持角色授权测试。
+- 修复 `getNextCode` 编号序列污染 bug。
+- 修复 `supabase-db.js` 审核日志 `user_id` 写入失败问题。
+- CSS 去重、字体引入修复、版本号统一升级到 v5.43。
+
+### 新增
+- 仪表盘 KPI 按角色/权限显隐。
+- Sidebar 待办角标（采购/入库/领用/出库）实时同步。
+- 领用详情弹窗支持审核通过/驳回操作。
+
+### 测试
+- 全量 JS 语法检查通过。
+- REST API 回归测试：采购→入库→领用→审核→出库完整链路 16/16 通过。
+
 ## [v1.2] - 2026-06-09
 
 ### ✨ 新增功能
