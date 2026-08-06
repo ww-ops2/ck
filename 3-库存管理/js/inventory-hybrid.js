@@ -270,12 +270,18 @@ function buildInvPendingMap() {
   _invHybrid.pendingMap = pendingMap;
 }
 
-// 更新分类筛选下拉
+// 更新分类筛选下拉（合并主数据 categories，保证与品类管理勾稽一致）
 function updateInvCategorySelect() {
   var selectId = 'inv-filter-category';
-  var catNames = _invHybrid.categoryNames;
   var select = document.getElementById(selectId);
   if (!select) return;
+  var catNames = (_invHybrid.categoryNames || []).slice();
+  if (typeof getCategoriesForDropdown === 'function') {
+    getCategoriesForDropdown().forEach(function(c) {
+      if (catNames.indexOf(c.name) === -1) catNames.push(c.name);
+    });
+  }
+  catNames.sort(function(a, b) { return a.localeCompare(b, 'zh'); });
   var currentVal = select.value;
   select.innerHTML = '<option value="">全部分类</option>' +
     catNames.map(function(c) { return '<option value="' + c + '"' + (c === currentVal ? ' selected' : '') + '>' + c + '</option>'; }).join('');
@@ -637,7 +643,15 @@ function updateInvButtonStates() {
 
   var addItemBtn = document.getElementById('add-item-btn');
   if (addItemBtn) {
-    addItemBtn.style.display = _invHybrid.supplementMode ? 'none' : '';
+    if (_invHybrid.supplementMode) {
+      addItemBtn.style.display = 'none';
+    } else {
+      // 仅查看（无编辑/管理/调整权限）时隐藏新增入口
+      const canAdd = (typeof hasPermission === 'function')
+        ? (hasPermission('edit_inventory') || hasPermission('manage_inventory') || hasPermission('adjust_stock'))
+        : true;
+      addItemBtn.style.display = canAdd ? '' : 'none';
+    }
   }
 }
 
@@ -754,9 +768,11 @@ function renderInvSupplementTable() {
 
   if (!tableWrap) return;
 
-  // 分类下拉选项
+  // 分类下拉选项（统一走 getCategoriesForDropdown，与品类管理保持一致）
   var catOptions = '';
-  if (typeof categories !== 'undefined' && categories.length > 0) {
+  if (typeof getCategoriesForDropdown === 'function') {
+    catOptions = getCategoriesForDropdown().map(function(c) { return '<option value="' + c.name + '">' + c.name + '</option>'; }).join('');
+  } else if (typeof categories !== 'undefined' && categories.length > 0) {
     catOptions = categories.map(function(c) { return '<option value="' + c.name + '">' + c.name + '</option>'; }).join('');
   } else {
     catOptions = '<option value="未分类">未分类</option><option value="循环使用类">循环使用类</option><option value="消耗类">消耗类</option>';
