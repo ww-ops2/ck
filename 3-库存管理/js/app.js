@@ -336,17 +336,41 @@ function countLowStock() {
 function loadTrendChart() {
   const ctx = document.getElementById('trend-chart');
   if (!ctx) return;
-  
+
   // 销毁旧图表
   if (trendChart) {
     trendChart.destroy();
   }
-  
-  // 生成模拟数据
-  const labels = generateDateLabels(30);
-  const inData = generateRandomData(30, 10, 100);
-  const outData = generateRandomData(30, 5, 80);
-  
+
+  // 基于真实出入库记录聚合最近 N 天数据
+  const days = 30;
+  const labels = generateDateLabels(days);
+  const idxByDate = {};
+  labels.forEach((lab, i) => { idxByDate[lab] = i; });
+  const inData = new Array(days).fill(0);
+  const outData = new Array(days).fill(0);
+
+  function _recQty(rec) {
+    if (Number(rec.total_quantity) > 0) return Number(rec.total_quantity);
+    if (Array.isArray(rec.items)) return rec.items.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
+    return 0;
+  }
+
+  (_appCache.stockInRecords || []).forEach(r => {
+    if (!r) return;
+    const d = new Date(r.stockin_date || r.created_at);
+    if (isNaN(d.getTime())) return;
+    const key = (d.getMonth() + 1) + '/' + d.getDate();
+    if (key in idxByDate) inData[idxByDate[key]] += _recQty(r);
+  });
+  (_appCache.stockOutRecords || []).forEach(r => {
+    if (!r) return;
+    const d = new Date(r.stockout_date || r.created_at);
+    if (isNaN(d.getTime())) return;
+    const key = (d.getMonth() + 1) + '/' + d.getDate();
+    if (key in idxByDate) outData[idxByDate[key]] += _recQty(r);
+  });
+
   trendChart = new Chart(ctx, {
     type: 'line',
     data: {
@@ -385,7 +409,8 @@ function loadTrendChart() {
         },
         y: {
           grid: { color: 'rgba(168,158,169,0.3)' },
-          ticks: { color: '#a89ea9' }
+          ticks: { color: '#a89ea9' },
+          beginAtZero: true
         }
       }
     }
@@ -398,32 +423,36 @@ function loadTrendChart() {
 function loadCategoryChart() {
   const ctx = document.getElementById('category-chart');
   if (!ctx) return;
-  
+
   // 销毁旧图表
   if (categoryChart) {
     categoryChart.destroy();
   }
-  
-  // 统计各分类物品数量
+
+  // 统计各分类物品数量（基于真实库存，按 category_name 聚合）
   const categories = {};
-  mockData.items.forEach(item => {
-    categories[item.category] = (categories[item.category] || 0) + 1;
+  const inv = (_appCache.inventory && _appCache.inventory.length > 0) ? _appCache.inventory : [];
+  inv.forEach(item => {
+    const cat = item.category_name || item.category || '未分类';
+    categories[cat] = (categories[cat] || 0) + 1;
   });
-  
+
+  // 真实库存为空时回退到示例数据（仅用于演示，避免空白图）
+  if (Object.keys(categories).length === 0) {
+    mockData.items.forEach(item => {
+      categories[item.category] = (categories[item.category] || 0) + 1;
+    });
+  }
+
+  const palette = ['#ec003f', '#ff2056', '#c70036', '#ffa1ad', '#7c3aed', '#0284c7', '#16a34a', '#f59e0b'];
+
   categoryChart = new Chart(ctx, {
     type: 'doughnut',
     data: {
       labels: Object.keys(categories),
       datasets: [{
         data: Object.values(categories),
-        backgroundColor: [
-          '#ec003f',
-          '#ff2056',
-          '#c70036',
-          '#ffa1ad',
-          '#7c3aed',
-          '#0284c7'
-        ],
+        backgroundColor: Object.keys(categories).map((_, i) => palette[i % palette.length]),
         borderWidth: 0
       }]
     },
@@ -434,6 +463,15 @@ function loadCategoryChart() {
         legend: {
           position: 'right',
           labels: { color: '#5c5060' }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(ctx) {
+              const total = ctx.dataset.data.reduce((a, b) => a + b, 0) || 1;
+              const val = ctx.parsed;
+              return ctx.label + ': ' + val + ' 件 (' + (val / total * 100).toFixed(1) + '%)';
+            }
+          }
         }
       }
     }
@@ -446,9 +484,63 @@ function loadCategoryChart() {
 function loadRecentActivities() {
   const container = document.getElementById('recent-activities');
   if (!container) return;
-  
-  // 这里应该从数据库加载真实数据
-  // 目前显示静态内容
+
+  // 收集各模块的最近操作，按时间倒序取前 N 条
+  const acts = [];
+  const push = function (time, type, text) {
+    const t = new Date(time);
+    if (isNaN(t.getTime())) return;
+    acts.push({ t: t, type: type, text: text });
+  };
+  const recQty = function (rec) {
+    if (Number(rec.total_quantity) > 0) return Number(rec.total_quantity);
+    if (Array.isArray(rec.items)) return rec.items.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
+    return 0;
+  };
+
+  (_appCache.stockInRecords || []).forEach(r => {
+    push(r.stockin_date || r.created_at, 'in', '入库 ' + recQty(r) + ' 件' + (r.code ? '（' + r.code + '）' : ''));
+  });
+  (_appCache.stockOutRecords || []).forEach(r => {
+    push(r.stockout_date || r.created_at, 'out', '出库 ' + recQty(r) + ' 件' + (r.code ? '（' + r.code + '）' : ''));
+  });
+  (_appCache.requisitions || []).forEach(r => {
+    const stMap = { pending_approval: '待审批', approved: '已通过', pending_outbound: '待出库', outbound_completed: '已出库', rejected: '已驳回', withdrawn: '已撤回' };
+    push(r.created_at, 'req', '领用单提交' + (r.requester ? '（' + r.requester + '）' : '') + ' · ' + (stMap[r.status] || r.status || ''));
+  });
+  (_appCache.purchaseOrders || []).forEach(r => {
+    push(r.created_at, 'po', '新建采购单' + (r.code ? ' ' + r.code : ''));
+  });
+
+  acts.sort((a, b) => b.t - a.t);
+  const top = acts.slice(0, 12);
+
+  if (top.length === 0) {
+    container.innerHTML = '<div style="padding:18px;text-align:center;color:#999;font-size:13px;">暂无动态</div>';
+    return;
+  }
+
+  const tagStyle = {
+    in:  'background:rgba(22,163,74,.12);color:#16a34a;',
+    out: 'background:rgba(231,0,11,.10);color:#e7000b;',
+    req: 'background:rgba(124,58,237,.12);color:#7c3aed;',
+    po:  'background:rgba(2,132,199,.12);color:#0284c7;'
+  };
+  const tagText = { in: '入库', out: '出库', req: '领用', po: '采购' };
+
+  container.innerHTML = top.map(a => {
+    const diff = Math.floor((Date.now() - a.t.getTime()) / 1000);
+    let rel;
+    if (diff < 60) rel = '刚刚';
+    else if (diff < 3600) rel = Math.floor(diff / 60) + ' 分钟前';
+    else if (diff < 86400) rel = Math.floor(diff / 3600) + ' 小时前';
+    else rel = Math.floor(diff / 86400) + ' 天前';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid #f2eef1;">'
+      + '<span style="font-size:12px;padding:2px 8px;border-radius:10px;' + (tagStyle[a.type] || '') + '">' + (tagText[a.type] || '') + '</span>'
+      + '<span style="flex:1;color:#4a3f4a;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + a.text + '</span>'
+      + '<span style="font-size:12px;color:#aaa;white-space:nowrap;">' + rel + '</span>'
+      + '</div>';
+  }).join('');
 }
 
 /**
