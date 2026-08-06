@@ -158,6 +158,11 @@ function loadModuleData(moduleName) {
         loadUserList();
       }
       break;
+    case 'history':
+      if (typeof loadAuditLogs === 'function') {
+        loadAuditLogs();
+      }
+      break;
     default:
       break;
   }
