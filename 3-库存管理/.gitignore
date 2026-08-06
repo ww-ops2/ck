@@ -1,0 +1,9 @@
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+*.qoderworkcn/
+push.ps1
+PROJECT_BRIEF.md
+backups/
+backup_*
