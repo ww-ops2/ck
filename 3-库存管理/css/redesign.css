@@ -449,3 +449,27 @@
   to { opacity: 1; transform: translateY(0); }
 }
 .anim-enter { animation: fadeSlideUp 0.45s ease both; }
+
+/* ===== 由 style.css 尾部重复块合并而来（v5.43 去重）===== */
+/* KPI 环比趋势色 */
+.trend-up { color: var(--success); }
+.trend-down { color: var(--danger); }
+.trend-neutral { color: var(--text-muted); }
+
+/* 库存水位条（库存列表 / 概览用） */
+.stock-bar-wrap {
+  width: 56px;
+  height: 4px;
+  background: var(--ink-light);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 2px;
+}
+.stock-bar {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+.stock-bar.s-safe { background: var(--success); }
+.stock-bar.s-low  { background: var(--warning); }
+.stock-bar.s-out  { background: var(--danger); }
