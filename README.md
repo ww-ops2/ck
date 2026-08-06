@@ -32,15 +32,31 @@
 
 ## 📁 目录结构
 
-`
+```
 3-库存管理/
 ├── README.md                     # 本文件
 ├── PROJECT_DIRECTORY.md          # 详细项目方案
-├── index.html                    # 主页面（待创建）
-├── css/                          # 样式文件（待创建）
-├── js/                           # JavaScript模块（待创建）
-└── docs/                         # 文档（待创建）
-`
+├── CHANGELOG.md                  # 更新日志
+├── index.html                    # 主页面
+├── css/                          # 样式文件
+│   ├── style.css
+│   └── redesign.css
+├── js/                           # JavaScript 模块
+│   ├── app.js                    # 仪表盘与全局交互
+│   ├── auth-fix.js               # 认证与权限
+│   ├── supabase-db.js            # 统一数据访问层
+│   ├── supabase-sync.js          # 数据同步
+│   ├── purchase.js               # 采购单
+│   ├── stock-in.js               # 入库
+│   ├── requisition.js            # 领用与出库
+│   ├── inventory-hybrid.js       # 库存管理
+│   ├── user-admin.js             # 用户与权限管理
+│   └── ...
+├── database/                     # 数据库迁移与结构说明
+│   ├── migrations/20260806_v5.43_fullfix.sql
+│   └── ONLINE_SCHEMA_REAL.md
+└── docs/                         # 文档与测试报告
+```
 
 ---
 
@@ -154,5 +170,6 @@ git push origin main
 
 ---
 
-**版本**: v1.0  
-**创建日期**: 2026-06-09
+**版本**: v5.43  
+**创建日期**: 2026-06-09  
+**最近更新**: 2026-08-06（数据库迁移、权限系统、领用审核流、全量回归测试）
