@@ -121,12 +121,10 @@ foreach ($relPath in $filesToPush) {
     $localSize = $contentBytes.Length
     $totalSize += $localSize
 
-    # 每个文件同时推送两份：
-    #   1) 3-库存管理/$relPath —— 与本地工作目录对应的源镜像
-    #   2) $relPath            —— 仓库根目录（GitHub Pages 实际发布目录）
-    # 历史教训：根目录曾有一份无人更新的旧副本，导致线上永远显示旧版。
+    # 仅推送到仓库根目录 $relPath —— 这是 GitHub Pages 实际发布的目录。
+    # 历史教训：仓库根曾因「根目录旧副本」「3-库存管理 重复子目录」「编码损坏的乱码目录」
+    # 导致 GitHub Pages 构建失败 / 始终显示旧版。现已清理为单一根目录副本，杜绝多副本。
     $targets = @(
-        "3-库存管理/$relPath",
         "$relPath"
     )
 
