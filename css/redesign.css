@@ -241,23 +241,23 @@
 .inv-board-new .items-wrap.is-open { display: block; }
 .inv-board-new .items-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
 .inv-board-new .items-table th {
-  text-align: left; padding: 0.5rem 0.7rem;
-  font-size: 0.62rem; font-weight: 600;
+  text-align: left; padding: 0.4rem 0.55rem;
+  font-size: 0.63rem; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--text-muted); background: var(--ink-faint);
   border-bottom: 1px solid var(--border-light);
   white-space: nowrap;
 }
-.inv-board-new .items-table th:last-child { text-align: right; padding-right: 1.2rem; }
-.inv-board-new .items-table th:first-child { padding-left: 1.2rem; }
+.inv-board-new .items-table th:last-child { text-align: right; padding-right: 1rem; }
+.inv-board-new .items-table th:first-child { padding-left: 1rem; }
 .inv-board-new .items-table td {
-  padding: 0.45rem 0.7rem;
+  padding: 0.45rem 0.55rem;
   border-bottom: 1px solid var(--ink-faint);
   color: var(--text-primary);
   vertical-align: middle;
 }
-.inv-board-new .items-table td:first-child { padding-left: 1.2rem; }
-.inv-board-new .items-table td:last-child { text-align: right; padding-right: 1.2rem; }
+.inv-board-new .items-table td:first-child { padding-left: 1rem; }
+.inv-board-new .items-table td:last-child { text-align: right; padding-right: 1rem; }
 .inv-board-new .items-table tbody tr { transition: background 0.15s; }
 .inv-board-new .items-table tbody tr.item-row { cursor: pointer; }
 .inv-board-new .items-table tbody tr.item-row:hover { background: var(--ink-faint); }
@@ -294,7 +294,7 @@
   display: inline-block;
   vertical-align: middle;
   width: 45px;
-  height: 4px;
+  height: 3px;
   background: var(--ink-light);
   border-radius: 2px;
   overflow: hidden;
@@ -449,3 +449,27 @@
   to { opacity: 1; transform: translateY(0); }
 }
 .anim-enter { animation: fadeSlideUp 0.45s ease both; }
+
+/* ===== 由 style.css 尾部重复块合并而来（v5.43 去重）===== */
+/* KPI 环比趋势色 */
+.trend-up { color: var(--success); }
+.trend-down { color: var(--danger); }
+.trend-neutral { color: var(--text-muted); }
+
+/* 库存水位条（库存列表 / 概览用） */
+.stock-bar-wrap {
+  width: 56px;
+  height: 4px;
+  background: var(--ink-light);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 2px;
+}
+.stock-bar {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+.stock-bar.s-safe { background: var(--success); }
+.stock-bar.s-low  { background: var(--warning); }
+.stock-bar.s-out  { background: var(--danger); }
