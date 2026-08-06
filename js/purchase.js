@@ -511,6 +511,7 @@ async function submitPurchaseOrder() {
   const supplierGroups = document.querySelectorAll('.supplier-group');
   if (supplierGroups.length === 0) {
     showToast('请至少添加一个供应商', 'warning');
+    hideButtonLoading('submit-purchase-btn');
     return;
   }
 
@@ -564,10 +565,11 @@ async function submitPurchaseOrder() {
     });
   });
   
-  if (hasError) return;
+  if (hasError) { hideButtonLoading('submit-purchase-btn'); return; }
 
   if (allItems.length === 0) {
     showToast('请至少添加一个物品', 'warning');
+    hideButtonLoading('submit-purchase-btn');
     return;
   }
   
@@ -716,11 +718,11 @@ function renderCategoryList() {
   loadCategoriesFromStorage();
   console.log('[品类管理] loadCategoriesFromStorage 后 categories:', categories.length);
 
-  // 新增品类按钮权限：仅管理员可见
+  // 新增品类按钮权限：仅持有 manage_categories 权限可见（仅查看用户隐藏）
   const addCatBtn = document.getElementById('add-category-btn');
   if (addCatBtn) {
-    const role = currentUser ? currentUser.role : '';
-    addCatBtn.style.display = (role === 'admin') ? '' : 'none';
+    const canManage = (typeof hasPermission === 'function') ? hasPermission('manage_categories') : true;
+    addCatBtn.style.display = canManage ? '' : 'none';
   }
 
   // 只有管理员才能编辑和删除品类
@@ -872,13 +874,16 @@ function deleteCategory(index) {
   showConfirm(`确定删除品类"${cat.name}"吗？`, function() {
     categories.splice(index, 1);
     if (typeof _appCache !== 'undefined') _appCache.categories = categories.slice();
+    let p = Promise.resolve();
     if (typeof SupaDB !== 'undefined' && SupaDB.deleteCategory && cat.id) {
-      SupaDB.deleteCategory(cat.id).catch(function(e) {
+      p = SupaDB.deleteCategory(cat.id).catch(function(e) {
         console.warn('品类删除同步到Supabase失败:', e.message);
+        if (typeof showToast === 'function') showToast('品类删除同步失败：' + e.message, 'error');
       });
     }
     renderCategoryList();
     refreshAllCategoryDropdowns();
+    return p;
   });
 }
 
@@ -1296,10 +1301,18 @@ async function executeStockIn(order) {
       if (typeof loadStockInRecords === 'function') loadStockInRecords();
       showToast(`入库成功！批次号：${inserted.code || batchCode}，已同步至云端`, 'success', 4000);
       return;
-    } catch (e) {
-      console.warn('云端入库失败，退回本地处理：', e.message);
-      // 继续本地处理
+  } catch (e) {
+    // 云端写入失败：明确报错并中止，绝不再静默落到浏览器内存
+    // （之前的本地回退只写 _appCache，刷新即丢失且他人不可见，违反多人协作）
+    console.error('云端入库失败:', e.message);
+    if (typeof showToast === 'function') {
+      showToast('入库保存失败，未能写入云端：' + e.message + '。请检查网络后重试，期间不要刷新页面以免数据丢失。', 'error', 6000);
+    } else {
+      alert('入库保存失败：' + e.message);
     }
+    hideButtonLoading('confirm-stockin-btn');
+    return;
+  }
   }
 
   // 回退到本地处理（若云端不可用或失败）
@@ -1969,7 +1982,7 @@ function bindCategoryEvents() {
     addCatBtn._bound = true;
     addCatBtn.addEventListener('click', (e) => { e.preventDefault(); openCategoryModal(e); });
     // 根据权限控制可见性（若有 hasPermission）
-    try { if (typeof hasPermission === 'function') addCatBtn.style.display = hasPermission('create_category') ? '' : 'none'; } catch(e) { /* ignore */ }
+    try { if (typeof hasPermission === 'function') addCatBtn.style.display = hasPermission('manage_categories') ? '' : 'none'; } catch(e) { /* ignore */ }
   }
 }
 
@@ -1994,6 +2007,8 @@ function saveNewCategory() {
     return;
   }
   
+  const catBtn = document.getElementById('save-category-btn');
+  showButtonLoading(catBtn, '保存中...');
   // 添加类别
   categories.push({
     code: code,
@@ -2010,6 +2025,7 @@ function saveNewCategory() {
   syncCategoryToInventory(code, name);
   
   // 关闭模态框
+  hideButtonLoading(catBtn);
   closeModal();
   
   // 刷新所有类别下拉框
@@ -2058,6 +2074,15 @@ function refreshAllCategoryDropdowns() {
   allDatalists.forEach(datalist => {
     datalist.innerHTML = getCategoryOptionsForDatalist();
   });
+
+  // 刷新库存概览相关下拉，保持与品类管理勾稽一致
+  const modalSel = document.querySelector('#modal-item select[name="category"]');
+  if (modalSel && typeof _populateCategorySelect === 'function') {
+    _populateCategorySelect(modalSel);
+  }
+  if (typeof updateInvCategorySelect === 'function') {
+    updateInvCategorySelect();
+  }
 }
 
 /**
