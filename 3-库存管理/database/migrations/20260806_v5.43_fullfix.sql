@@ -100,6 +100,11 @@ CREATE INDEX IF NOT EXISTS idx_si_items_inv ON stock_in_items(inventory_item_id)
 CREATE INDEX IF NOT EXISTS idx_inv_category ON inventory_items(category_id);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at DESC);
 
+-- ------------------------------------------------------------
+-- 8.1 user_permissions.user_id 类型修正（与 users.id BIGINT 保持一致）
+-- ------------------------------------------------------------
+ALTER TABLE user_permissions ALTER COLUMN user_id TYPE BIGINT;
+
 COMMIT;
 
 -- ============================================================
