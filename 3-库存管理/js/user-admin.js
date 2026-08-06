@@ -338,6 +338,7 @@
 
     // load existing user perms (async from Supabase)
     let existing = [];
+    let hasCustomPerms = false;
 
     // render initial checkboxes with role defaults
     if (roleSelect) roleSelect.value = normalizeRole(user.role || 'staff');
@@ -356,10 +357,12 @@
             if (!isNaN(num)) nid = num;
           }
           const { data: permData } = await sb.from('user_permissions').select('permission').eq('user_id', nid);
-          if (permData) {
+          if (permData && permData.length > 0) {
             existing = permData.map(p => p.permission);
-            const merged = Array.from(new Set([...(base||[]), ...(existing||[])]));
-            renderPerms(merged);
+            hasCustomPerms = true;
+            // 若管理员曾为该用户单独配置过权限，直接以个性化权限为准，
+            // 不再合并角色默认，否则取消角色默认权限后重新打开会恢复。
+            renderPerms(existing);
           }
         }
       } catch(e) {
@@ -367,13 +370,14 @@
       }
     })();
 
-    // role change -> update checkboxes to role defaults + existing
+    // role change -> use new role defaults (switching role resets to template)
     if (roleSelect && !roleSelect._boundRole) {
       roleSelect._boundRole = true;
       roleSelect.addEventListener('change', () => {
         const newBase = getDefaultPermsForRole(normalizeRole(roleSelect.value));
-        const newMerged = Array.from(new Set([...(newBase||[]), ...(existing||[])]));
-        renderPerms(newMerged);
+        existing = [];
+        hasCustomPerms = false;
+        renderPerms(newBase);
       });
     }
 
@@ -393,28 +397,29 @@
           await SupaDB.updateUser(user.username, { role: newRole });
 
           // sync permissions via Supabase directly (no dedicated SupaDB method)
-          try {
-            const sb = typeof getSupabase === 'function' ? getSupabase() : null;
-            if (sb) {
-              // convert legacy 'u'-prefixed id to numeric
-              var nid = user.id;
-              if (typeof nid === 'string' && nid.charAt(0) === 'u') {
-                var stripped = nid.substring(1);
-                var num = Number(stripped);
-                if (!isNaN(num)) nid = num;
-              }
-              // delete existing permissions for this user
-              await sb.from('user_permissions').delete().eq('user_id', nid);
-              // insert new permissions
-              if (perms.length > 0) {
-                const permInserts = perms.map(p => ({ user_id: nid, permission: p }));
-                await sb.from('user_permissions').insert(permInserts);
-              }
+          const sb = typeof getSupabase === 'function' ? getSupabase() : null;
+          if (sb) {
+            // convert legacy 'u'-prefixed id to numeric
+            var nid = user.id;
+            if (typeof nid === 'string' && nid.charAt(0) === 'u') {
+              var stripped = nid.substring(1);
+              var num = Number(stripped);
+              if (!isNaN(num)) nid = num;
             }
-          } catch (e) { console.warn('[UserAdmin] Permission sync failed:', e.message || e); }
+            // delete existing permissions for this user
+            const { error: delErr } = await sb.from('user_permissions').delete().eq('user_id', nid);
+            if (delErr) throw new Error('清空旧权限失败: ' + delErr.message);
+            // insert new permissions
+            if (perms.length > 0) {
+              const permInserts = perms.map(p => ({ user_id: nid, permission: p }));
+              const { error: insErr } = await sb.from('user_permissions').insert(permInserts);
+              if (insErr) throw new Error('写入新权限失败: ' + insErr.message);
+            }
+          }
 
-          // refresh _appCache after write
+          // refresh _appCache and clear permission cache so target user picks up changes on next load
           await refreshData('users');
+          if (typeof clearPermissionCache === 'function') clearPermissionCache();
 
           if (typeof showToast === 'function') showToast('用户权限已保存','success');
           if (typeof loadUserList === 'function') loadUserList();
