@@ -1,13 +1,12 @@
 /**
  * 团期使用报表模块
  * 按团期维度统计消耗情况、成本、超额及报损分析
- * 数据来源：localStorage stockOutRecords + requisitions + purchaseOrders + inventory
+ * 数据来源：stockOutRecords + requisitions + purchaseOrders + inventory（均为 Supabase 落库数据）
+ * 团期名称为主数据（tour_names 表），报表页可维护，领用单下拉引用
  */
 
-let _tourPeriodChart = null;
-let _scenarioChart = null;
-let _categoryCompareChart = null;
 let _rptFilteredData = []; // 缓存当前筛选结果
+let _rptSelectedTourName = null; // 当前右侧选中的团期名称
 
 /**
  * 根据物品名称查找最近采购单价
@@ -37,26 +36,56 @@ function _rptLookupPrice(itemName) {
 }
 
 /**
- * 批量构建价格映射表
+ * 批量构建价格映射表（勾稽核心）
+ * 单价来源优先级：
+ *   1) inventory_items.unit_price（用户在「库存」补充信息中维护的权威成本，优先）
+ *   2) 采购单 items.price（历史来源，兜底）
+ * 按小写物品名匹配，避免大小写/空格差异导致漏配。
  */
 function _rptBuildPriceMap() {
-  const priceMap = {};
+  const priceMap = {}; // 小写物品名 -> { price, source }
+  const norm = (s) => String(s || '').trim().toLowerCase();
+
+  // 1) 采购单最新单价（历史来源，作为兜底）
   try {
     const poData = (_appCache && _appCache.purchaseOrders) ? _appCache.purchaseOrders : [];
     poData.forEach(po => {
       if (po.items) {
         po.items.forEach(it => {
           if (it.name && it.price) {
+            const k = norm(it.name);
             const poDate = po.order_date || po.created_at || '';
-            if (!priceMap[it.name] || poDate >= (priceMap[it.name].date || '')) {
-              priceMap[it.name] = { price: it.price, date: poDate };
+            if (!priceMap[k] || (priceMap[k].source !== 'inventory' && poDate >= (priceMap[k].date || ''))) {
+              priceMap[k] = { price: it.price, date: poDate, source: 'purchase' };
             }
           }
         });
       }
     });
   } catch (e) { /* ignore */ }
+
+  // 2) 库存物品单价（用户在「库存」中维护的权威成本，优先覆盖）
+  try {
+    const invData = (_appCache && _appCache.inventory) ? _appCache.inventory : [];
+    invData.forEach(inv => {
+      const k = norm(inv.name);
+      const p = Number(inv.unit_price) || 0;
+      if (k && p > 0) {
+        priceMap[k] = { price: p, date: '', source: 'inventory' };
+      }
+    });
+  } catch (e) { /* ignore */ }
+
   return priceMap;
+}
+
+/**
+ * 按物品名称解析单价（大小写归一化）
+ */
+function _rptResolvePrice(name, priceMap) {
+  const k = String(name || '').trim().toLowerCase();
+  const hit = priceMap[k];
+  return hit ? (hit.price || 0) : 0;
 }
 
 /**
@@ -79,6 +108,88 @@ function initTourReports() {
   if (exportBtn) {
     exportBtn.addEventListener('click', exportTourReport);
   }
+
+  // 团期名称主数据维护（新增）
+  _initTourNameManage();
+
+  // 右侧详情月份筛选
+  const detailMonthFilter = document.getElementById('detail-month-filter');
+  if (detailMonthFilter) {
+    detailMonthFilter.addEventListener('change', function () {
+      if (!_rptSelectedTourName) return;
+      _rptRenderTourDetailForMonth(_rptSelectedTourName, this.value);
+    });
+  }
+}
+
+/**
+ * 团期名称新增管理：展开内联表单 → 落库 tour_names → 刷新缓存与列表
+ */
+function _initTourNameManage() {
+  const addBtn = document.getElementById('add-tour-btn');
+  const form = document.getElementById('add-tour-form');
+  const input = document.getElementById('new-tour-name');
+  const confirmBtn = document.getElementById('add-tour-confirm');
+  const cancelBtn = document.getElementById('add-tour-cancel');
+  if (!addBtn || !form || !input) return;
+
+  addBtn.addEventListener('click', function () {
+    const open = form.style.display !== 'none';
+    form.style.display = open ? 'none' : 'block';
+    if (!open) { input.value = ''; input.focus(); }
+  });
+
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', function () {
+      form.style.display = 'none';
+      input.value = '';
+    });
+  }
+
+  if (confirmBtn) {
+    const originalText = confirmBtn.textContent || '保存';
+    confirmBtn.addEventListener('click', async function () {
+      const name = input.value.trim();
+      if (!name) {
+        if (typeof showToast === 'function') showToast('请输入团期名称', 'warning');
+        return;
+      }
+      // 先置为 loading，给用户即时反馈
+      confirmBtn.disabled = true;
+      confirmBtn.innerHTML = '<span class="btn-spinner"></span>保存中…';
+      try {
+        // 去重校验：直接读库，避免 _appCache 未加载导致漏判；同时做空白/大小写归一化二次校验
+        const currentNames = await SupaDB.getTourNames();
+        const normalize = (s) => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+        const exists = (currentNames || []).some(t => normalize(t.name) === normalize(name));
+        if (exists) {
+          if (typeof showToast === 'function') showToast('该团期名称已存在，请勿重复添加', 'warning');
+          return;
+        }
+        await SupaDB.createTourName(name);
+        await refreshData('tourNames');
+        form.style.display = 'none';
+        input.value = '';
+        if (typeof showToast === 'function') showToast('团期名称「' + name + '」已新增', 'success');
+        if (typeof loadReports === 'function') loadReports();
+      } catch (e) {
+        const msg = String(e.message || e || '');
+        // 409/唯一约束冲突 → 明确提示重复
+        if (msg.indexOf('409') !== -1 || /unique|duplicate|已经存在|已存在|重复/i.test(msg)) {
+          if (typeof showToast === 'function') showToast('该团期名称已存在，请勿重复添加', 'warning');
+        } else {
+          if (typeof showToast === 'function') showToast('新增失败：' + msg, 'error');
+        }
+      } finally {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = originalText;
+      }
+    });
+  }
+
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && confirmBtn) confirmBtn.click();
+  });
 }
 
 /**
@@ -138,7 +249,7 @@ function loadReports() {
     if (so.items) {
       so.items.forEach(it => {
         const qty = it.quantity || 0;
-        const unitPrice = (priceMap[it.name] ? priceMap[it.name].price : 0);
+        const unitPrice = _rptResolvePrice(it.name, priceMap);
         const cost = qty * unitPrice;
         totalOutQty += qty;
         totalCost += cost;
@@ -168,7 +279,7 @@ function loadReports() {
     if (req.items) {
       req.items.forEach(it => {
         const qty = it.quantity || 0;
-        const unitPrice = (priceMap[it.name] ? priceMap[it.name].price : 0);
+        const unitPrice = _rptResolvePrice(it.name, priceMap);
         const cost = qty * unitPrice;
         totalOutQty += qty;
         totalCost += cost;
@@ -230,16 +341,8 @@ function loadReports() {
   // 更新 KPI
   _rptUpdateKPI(tourSet.size, totalOutQty, totalCost, overLimitRows.length, totalOverLimitLoss, scenarioSet.size);
 
-  // 渲染图表
-  _rptRenderTourPeriodChart(detailRows, tourSet);
-  _rptRenderScenarioChart(detailRows, scenarioSet);
-  _rptRenderCategoryCompareChart(detailRows);
-
-  // 渲染明细表
-  _rptRenderDetailTable(detailRows);
-
-  // 渲染超额汇总
-  _rptRenderOverLimitTable(overLimitRows);
+  // 渲染团期列表（左栏：主数据 ∪ 使用数据）+ 默认选中第一个
+  _rptRenderTourList(detailRows);
 }
 
 // ============== KPI 更新 ==============
@@ -257,244 +360,289 @@ function _rptUpdateKPI(tourCount, totalOut, totalCost, overLimitCount, overLimit
   set('rpt-kpi-scenario-count', scenarioCount);
 }
 
-// ============== 团期出库趋势图 ==============
+// ============== 团期列表（左栏：主数据 ∪ 使用数据）+ 选中详情（右栏） ==============
 
-function _rptRenderTourPeriodChart(detailRows, tourSet) {
-  const ctx = document.getElementById('tour-period-chart');
-  if (!ctx) return;
+/**
+ * 为指定团期构建明细行（来源：全量出库记录 + 待出库领用单）
+ * @param {string} tourName 团期名称
+ * @param {string} month 格式 YYYY-MM，空字符串表示不过滤月份
+ */
+function _rptBuildTourDetailRows(tourName, month) {
+  const stockOutRecords = (_appCache && _appCache.stockOutRecords) ? _appCache.stockOutRecords : [];
+  const requisitions = (_appCache && _appCache.requisitions) ? _appCache.requisitions : [];
+  const priceMap = _rptBuildPriceMap();
+  const rows = [];
 
-  if (_tourPeriodChart) _tourPeriodChart.destroy();
+  const matchesMonth = (dateStr) => {
+    if (!month) return true;
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return false;
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}` === month;
+  };
 
-  // 按团期聚合出库量
-  const tourMap = {};
-  detailRows.forEach(row => {
-    const key = `${row.tour_date} ${row.tour_name}`;
-    if (!tourMap[key]) tourMap[key] = 0;
-    tourMap[key] += row.quantity;
-  });
-
-  const labels = Object.keys(tourMap).sort();
-  const data = labels.map(l => tourMap[l]);
-
-  _tourPeriodChart = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: labels.map(l => l.length > 15 ? l.slice(0, 15) + '...' : l),
-      datasets: [{
-        label: '出库量',
-        data: data,
-        backgroundColor: 'rgba(99, 102, 241, 0.6)',
-        borderColor: 'rgba(99, 102, 241, 1)',
-        borderWidth: 1,
-        borderRadius: 4
-      }]
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            title: (items) => labels[items[0].dataIndex]
-          }
-        }
-      },
-      scales: {
-        y: { beginAtZero: true, title: { display: true, text: '数量' } }
-      }
+  stockOutRecords.forEach(so => {
+    if ((so.tour_name || '').trim() !== tourName) return;
+    if (!matchesMonth(so.stockout_date || so.created_at)) return;
+    const scenario = _rptNormalizeScenario(so.scenario);
+    if (so.items) {
+      so.items.forEach(it => {
+        const qty = it.quantity || 0;
+        const unitPrice = _rptResolvePrice(it.name, priceMap);
+        rows.push({
+          tour_date: so.tour_date || '',
+          tour_name: tourName,
+          scenario: scenario,
+          item_name: it.name,
+          item_code: it.code || '',
+          category: it.category || '-',
+          unit: it.unit || '',
+          quantity: qty,
+          unit_price: unitPrice,
+          cost: qty * unitPrice,
+          source: '出库记录',
+          source_code: so.code || ''
+        });
+      });
     }
   });
-}
 
-// ============== 场景消耗占比图 ==============
-
-function _rptRenderScenarioChart(detailRows, scenarioSet) {
-  const ctx = document.getElementById('scenario-chart');
-  if (!ctx) return;
-
-  if (_scenarioChart) _scenarioChart.destroy();
-
-  const scenarioMap = {};
-  detailRows.forEach(row => {
-    const s = row.scenario || '未知';
-    if (!scenarioMap[s]) scenarioMap[s] = 0;
-    scenarioMap[s] += row.quantity;
-  });
-
-  const labels = Object.keys(scenarioMap);
-  const data = labels.map(l => scenarioMap[l]);
-
-  const colors = [
-    'rgba(59, 130, 246, 0.7)',
-    'rgba(239, 68, 68, 0.7)',
-    'rgba(16, 185, 129, 0.7)',
-    'rgba(245, 158, 11, 0.7)'
-  ];
-
-  _scenarioChart = new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-      labels: labels,
-      datasets: [{
-        data: data,
-        backgroundColor: colors.slice(0, labels.length),
-        borderWidth: 2,
-        borderColor: '#fff'
-      }]
-    },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: { position: 'bottom' }
-      }
+  requisitions.forEach(req => {
+    if ((req.tour_name || '').trim() !== tourName) return;
+    if (req.status === 'cancelled' || req.status === 'withdrawn' || req.status === 'outbound_completed') return;
+    if (!matchesMonth(req.apply_date || req.created_at)) return;
+    const scenario = _rptNormalizeScenario(req.scenario);
+    if (req.items) {
+      req.items.forEach(it => {
+        const qty = it.quantity || 0;
+        const unitPrice = _rptResolvePrice(it.name, priceMap);
+        rows.push({
+          tour_date: req.tour_date || '',
+          tour_name: tourName,
+          scenario: scenario,
+          item_name: it.name,
+          item_code: it.code || '',
+          category: it.category || '-',
+          unit: it.unit || '',
+          quantity: qty,
+          unit_price: unitPrice,
+          cost: qty * unitPrice,
+          source: '待出库领用单',
+          source_code: req.code || ''
+        });
+      });
     }
   });
+
+  return rows;
 }
 
-// ============== 品类对比图表 ==============
+/**
+ * 渲染右侧详情区的月份筛选下拉
+ */
+function _rptRenderDetailMonthFilter(tourName) {
+  const select = document.getElementById('detail-month-filter');
+  if (!select) return;
+  const rows = _rptBuildTourDetailRows(tourName, '');
+  const months = [...new Set(rows.map(r => {
+    const d = new Date(r.tour_date || '');
+    if (isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }).filter(Boolean))].sort().reverse();
 
-function _rptRenderCategoryCompareChart(detailRows) {
-  const ctx = document.getElementById('category-compare-chart');
-  if (!ctx) return;
+  const globalMonthInput = document.getElementById('report-month');
+  const globalMonth = globalMonthInput ? globalMonthInput.value : '';
 
-  if (_categoryCompareChart) _categoryCompareChart.destroy();
-
-  // 按团期 × 品类聚合成本
-  const tourCatMap = {};
-  const allCategories = new Set();
-  detailRows.forEach(row => {
-    const tourKey = `${row.tour_date} ${row.tour_name}`;
-    if (!tourCatMap[tourKey]) tourCatMap[tourKey] = {};
-    const cat = row.category || '未分类';
-    allCategories.add(cat);
-    tourCatMap[tourKey][cat] = (tourCatMap[tourKey][cat] || 0) + (row.cost || row.quantity || 0);
+  let html = '<option value="">当前所选月份</option>';
+  months.forEach(m => {
+    const label = m === globalMonth ? `${m}（当前）` : m;
+    html += `<option value="${_rptEscapeHtml(m)}">${_rptEscapeHtml(label)}</option>`;
   });
-
-  const tours = Object.keys(tourCatMap).sort();
-  const cats = [...allCategories].sort();
-  const catColors = [
-    'rgba(99, 102, 241, 0.7)', 'rgba(239, 68, 68, 0.7)',
-    'rgba(16, 185, 129, 0.7)', 'rgba(245, 158, 11, 0.7)',
-    'rgba(168, 85, 247, 0.7)', 'rgba(59, 130, 246, 0.7)'
-  ];
-
-  const datasets = cats.map((cat, i) => ({
-    label: cat,
-    data: tours.map(t => tourCatMap[t][cat] || 0),
-    backgroundColor: catColors[i % catColors.length],
-    borderRadius: 3
-  }));
-
-  _categoryCompareChart = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: tours.map(l => l.length > 12 ? l.slice(0, 12) + '..' : l),
-      datasets: datasets
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { position: 'bottom' } },
-      scales: {
-        x: { stacked: true },
-        y: { stacked: true, beginAtZero: true, title: { display: true, text: '数量/成本' } }
-      }
-    }
-  });
+  select.innerHTML = html;
+  select.value = '';
 }
 
-// ============== 明细表格 ==============
+/**
+ * 按月份渲染右侧详情
+ */
+function _rptRenderTourDetailForMonth(tourName, month) {
+  const rows = _rptBuildTourDetailRows(tourName, month);
+  _rptRenderTourDetail(rows);
+}
 
-function _rptRenderDetailTable(detailRows) {
-  const tbody = document.getElementById('report-tbody');
-  if (!tbody) return;
+function _rptRenderTourList(detailRows) {
+  const ul = document.getElementById('report-tour-list');
+  const detailBody = document.getElementById('report-tour-detail-tbody');
+  const nameEl = document.getElementById('report-detail-tour-name');
+  if (!ul) return;
 
-  if (detailRows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="10" class="empty-state">该月份暂无出库数据</td></tr>';
+  // 主数据团期名称 ∪ 本月使用过的团期名称
+  const masterMap = new Map();
+  ((_appCache && _appCache.tourNames) || []).forEach(t => {
+    const name = (t.name || '').trim();
+    if (name) masterMap.set(name, t);
+  });
+  const usageNames = (detailRows || []).map(r => (r.tour_name || '').trim()).filter(Boolean);
+  const allNames = [...new Set([...masterMap.keys(), ...usageNames])].sort((a, b) => a.localeCompare(b, 'zh'));
+
+  if (allNames.length === 0) {
+    ul.innerHTML = '<li class="tour-empty">暂无团期，点击右上角「+ 新增团期」添加</li>';
+    if (detailBody) detailBody.innerHTML = '<tr><td colspan="8" class="empty-state">请选择左侧团期查看详情</td></tr>';
+    if (nameEl) nameEl.textContent = '';
+    _rptSelectedTourName = null;
     return;
   }
 
-  // 加载领用标准用于比对
-  const standards = (_appCache && _appCache.consumptionStandards) ? _appCache.consumptionStandards : [];
+  const isAdmin = (typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'admin');
 
-  // 按团期+场景+物品聚合
-  const aggMap = {};
-  detailRows.forEach(row => {
-    const key = `${row.tour_date}|${row.tour_name}|${row.scenario}|${row.item_name}`;
-    if (!aggMap[key]) {
-      aggMap[key] = {
-        tour_date: row.tour_date,
-        tour_name: row.tour_name,
-        scenario: row.scenario,
-        item_name: row.item_name,
-        category: row.category,
-        totalQty: 0,
-        totalCost: 0,
-        unit: row.unit,
-        unit_price: row.unit_price || 0
-      };
+  // 已被领用单 / 出库记录关联的团期名称集合（全量历史，不限于当前月份）
+  const associatedNames = new Set();
+  const _reqAll = (_appCache && _appCache.requisitions) ? _appCache.requisitions : [];
+  const _soAll = (_appCache && _appCache.stockOutRecords) ? _appCache.stockOutRecords : [];
+  _reqAll.forEach(r => { const n = (r.tour_name || '').trim(); if (n) associatedNames.add(n); });
+  _soAll.forEach(r => { const n = (r.tour_name || '').trim(); if (n) associatedNames.add(n); });
+
+  ul.innerHTML = allNames.map(name => {
+    const rows = (detailRows || []).filter(r => (r.tour_name || '').trim() === name);
+    const qty = rows.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
+    const cost = rows.reduce((s, r) => s + (Number(r.cost) || 0), 0);
+    const count = rows.length;
+    const hasUsage = rows.length > 0;
+    const scenarios = [...new Set(rows.map(r => r.scenario).filter(Boolean))].join('/');
+    const statClass = hasUsage ? 'tour-stats' : 'tour-stats tour-stats--empty';
+    const master = masterMap.get(name);
+    const protectedName = associatedNames.has(name);
+    const deleteBtn = (isAdmin && master)
+      ? (protectedName
+          ? `<button class="tour-delete-btn tour-delete-locked" data-protected="1" data-name="${_rptEscapeHtml(name)}" title="该团期已被领用单/出库记录关联，无法删除" type="button">🔒</button>`
+          : `<button class="tour-delete-btn" data-id="${master.id}" data-name="${_rptEscapeHtml(name)}" title="删除团期名称" type="button">×</button>`)
+      : '';
+    return `
+      <li class="tour-list-item${hasUsage ? '' : ' tour-list-item--empty'}" data-name="${_rptEscapeHtml(name)}">
+        <div class="tour-list-item-main">
+          <div class="tour-name">${_rptEscapeHtml(name)}${deleteBtn}</div>
+          <div class="tour-meta"><span>${hasUsage ? _rptEscapeHtml(scenarios) : '本月暂无使用'}</span></div>
+          <div class="${statClass}"><span>数量 ${qty}</span><span>¥${Number(cost || 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}</span><span>${count} 项</span></div>
+        </div>
+      </li>`;
+  }).join('');
+
+  // 绑定点击：按名称选择（仅点击主体，不点删除按钮）
+  ul.querySelectorAll('.tour-list-item').forEach(li => {
+    li.addEventListener('click', function (e) {
+      if (e.target && e.target.classList && e.target.classList.contains('tour-delete-btn')) return;
+      selectTourByName(li.dataset.name);
+    });
+  });
+
+  // 绑定删除按钮
+  ul.querySelectorAll('.tour-delete-btn').forEach(btn => {
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (this.dataset.protected === '1') {
+        if (typeof showToast === 'function') showToast('该团期已被领用单/出库记录关联，无法删除', 'error');
+        return;
+      }
+      _rptDeleteTourName(Number(this.dataset.id), this.dataset.name, this);
+    });
+  });
+
+  // 默认选中（优先有使用记录的，否则第一个）
+  const firstWithUsage = allNames.find(n => (detailRows || []).some(r => (r.tour_name || '').trim() === n));
+  selectTourByName(firstWithUsage || allNames[0]);
+}
+
+/**
+ * 删除团期名称主数据（仅 admin，且需二次确认）
+ */
+async function _rptDeleteTourName(id, name, btnEl) {
+  if (!id) return;
+  // 二次校验：已被领用单 / 出库记录关联的团期不允许删除（防并发绕过前端按钮）
+  const _reqAll = (_appCache && _appCache.requisitions) ? _appCache.requisitions : [];
+  const _soAll = (_appCache && _appCache.stockOutRecords) ? _appCache.stockOutRecords : [];
+  const inUse = _reqAll.some(r => (r.tour_name || '').trim() === name) ||
+                _soAll.some(r => (r.tour_name || '').trim() === name);
+  if (inUse) {
+    if (typeof showToast === 'function') showToast('该团期已被领用单/出库记录关联，无法删除', 'error');
+    return;
+  }
+  showConfirm(`确定删除团期名称「${name}」？\n删除后新建领用单时不再可选，但历史使用记录不受影响。`, async function() {
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.innerHTML = '<span class="btn-spinner-inline"></span>';
     }
-    aggMap[key].totalQty += row.quantity;
+    try {
+      await SupaDB.deleteTourName(id);
+      await refreshData('tourNames');
+      if (typeof showToast === 'function') showToast('团期名称「' + name + '」已删除', 'success');
+      if (typeof loadReports === 'function') loadReports();
+    } catch (e) {
+      if (typeof showToast === 'function') showToast('删除失败：' + (e.message || e), 'error');
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.textContent = '×';
+      }
+    }
+  }, { danger: true, icon: '🗑' });
+}
+
+function selectTourByName(name) {
+  if (!name) return;
+  _rptSelectedTourName = name;
+  const items = document.querySelectorAll('.tour-list-item');
+  items.forEach(el => el.classList.toggle('active', el.dataset.name === name));
+  const nameEl = document.getElementById('report-detail-tour-name');
+  if (nameEl) nameEl.textContent = name;
+
+  // 渲染月份筛选下拉
+  _rptRenderDetailMonthFilter(name);
+
+  // 默认显示当前全局月份的数据
+  const globalMonthInput = document.getElementById('report-month');
+  const globalMonth = globalMonthInput ? globalMonthInput.value : '';
+  const rows = _rptBuildTourDetailRows(name, globalMonth);
+  _rptRenderTourDetail(rows);
+}
+
+function _rptRenderTourDetail(rows) {
+  const tbody = document.getElementById('report-tour-detail-tbody');
+  if (!tbody) return;
+  if (!rows || rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state">该团期本月暂无使用记录</td></tr>';
+    return;
+  }
+  const standards = (_appCache && _appCache.consumptionStandards) ? _appCache.consumptionStandards : [];
+  const aggMap = {};
+  rows.forEach(row => {
+    const key = row.tour_date + '|' + row.scenario + '|' + row.item_name;
+    if (!aggMap[key]) {
+      aggMap[key] = { tour_date: row.tour_date, scenario: row.scenario, item_name: row.item_name, category: row.category, totalQty: 0, totalCost: 0, unit: row.unit, unit_price: row.unit_price || 0 };
+    }
+    aggMap[key].totalQty += (row.quantity || 0);
     aggMap[key].totalCost += (row.cost || 0);
   });
-
-  const rows = Object.values(aggMap).sort((a, b) => {
-    if (a.tour_date !== b.tour_date) return a.tour_date.localeCompare(b.tour_date);
-    if (a.tour_name !== b.tour_name) return a.tour_name.localeCompare(b.tour_name);
-    return a.scenario.localeCompare(b.scenario);
-  });
-
-  tbody.innerHTML = rows.map(row => {
-    // 查找领用标准
+  const ar = Object.values(aggMap).sort((a, b) => a.scenario.localeCompare(b.scenario) || a.item_name.localeCompare(b.item_name));
+  tbody.innerHTML = ar.map(row => {
     const std = standards.find(s => s.item_name === row.item_name && (s.scenario === row.scenario || s.scenario === '通用'));
-    const stdText = std ? `${std.max_per_tour} / 团期` : '-';
-    const isOverLimit = std && row.totalQty > std.max_per_tour;
-    const statusBadge = isOverLimit
-      ? `<span style="background:#fde8e8;color:#e53935;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">超额领用</span>`
-      : (std ? `<span style="background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:10px;font-size:11px;">正常</span>` : '-');
-    const rowStyle = isOverLimit ? ' style="background:#fff8f0;"' : '';
+    const isOver = std && row.totalQty > std.max_per_tour;
+    const stdText = std ? (std.max_per_tour + ' / 团期') : '-';
+    const statusBadge = isOver
+      ? '<span style="background:#fde8e8;color:#e53935;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">超额领用</span>'
+      : (std ? '<span style="background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:10px;font-size:11px;">正常</span>' : '-');
     const costText = row.totalCost > 0 ? ('¥' + row.totalCost.toFixed(2)) : '-';
-
     return `
-      <tr${rowStyle}>
-        <td>${row.tour_date}</td>
-        <td style="font-weight:600;">${_rptEscapeHtml(row.tour_name)}</td>
+      <tr style="${isOver ? 'background:#fff8f0;' : ''}">
+        <td>${_rptEscapeHtml(row.tour_date)}</td>
         <td><span style="background:#e3f2fd;color:#1565c0;padding:2px 8px;border-radius:10px;font-size:11px;">${_rptEscapeHtml(row.scenario)}</span></td>
         <td style="font-weight:600;">${_rptEscapeHtml(row.item_name)}</td>
         <td>${_rptEscapeHtml(row.category)}</td>
-        <td style="font-weight:700;${isOverLimit ? 'color:var(--danger);' : ''}">${row.totalQty} ${_rptEscapeHtml(row.unit)}</td>
+        <td style="font-weight:700;${isOver ? 'color:var(--danger);' : ''}">${row.totalQty} ${_rptEscapeHtml(row.unit)}</td>
         <td>${costText}</td>
         <td>${stdText}</td>
         <td>${statusBadge}</td>
-      </tr>
-    `;
+      </tr>`;
   }).join('');
-}
-
-// ============== 超额汇总表 ==============
-
-function _rptRenderOverLimitTable(overLimitRows) {
-  const container = document.getElementById('report-overlimit-summary');
-  const tbody = document.getElementById('report-overlimit-tbody');
-  if (!container || !tbody) return;
-
-  if (overLimitRows.length === 0) {
-    container.style.display = 'none';
-    return;
-  }
-
-  container.style.display = 'block';
-  tbody.innerHTML = overLimitRows.map(row => `
-    <tr style="background:#fff8f0;">
-      <td style="font-weight:600;">${_rptEscapeHtml(row.tour_name)}</td>
-      <td><span style="background:#fce4ec;color:#c62828;padding:2px 8px;border-radius:10px;font-size:11px;">${_rptEscapeHtml(row.scenario)}</span></td>
-      <td style="font-weight:600;">${_rptEscapeHtml(row.item_name)}</td>
-      <td style="font-weight:700;color:var(--danger);">${row.actual}</td>
-      <td>${row.standard}</td>
-      <td style="font-weight:700;color:var(--danger);">+${row.excess}</td>
-      <td style="font-weight:600;">¥${(row.unit_price || 0).toFixed(2)}</td>
-      <td style="font-weight:700;color:var(--danger);">¥${(row.loss || 0).toFixed(2)}</td>
-    </tr>
-  `).join('');
 }
 
 // ============== 导出 Excel ==============
