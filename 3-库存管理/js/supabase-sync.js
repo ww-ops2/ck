@@ -26,6 +26,7 @@ window._appCache = {
   modelHistory: {},
   consumptionStandards: [],
   inventoryAdjustments: [],
+  tourNames: [],
   users: [],
   settings: []
 };
@@ -63,6 +64,7 @@ async function syncFromSupabase(options) {
       adjustments: sb.from('inventory_adjustments').select('*').order('created_at', { ascending: false }).limit(500),
       users: sb.from('users').select('*').order('id'),
       consumption: sb.from('consumption_standards').select('*').order('id'),
+      tourNames: sb.from('tour_names').select('*').order('name'),
       settings: sb.from('settings').select('*')
     };
   
@@ -91,6 +93,7 @@ async function syncFromSupabase(options) {
     var adjustmentsResult = results.adjustments;
     var usersResult = results.users;
     var consumptionResult = results.consumption;
+    var tourNamesResult = results.tourNames;
     var settingsResult = results.settings;
 
     // ---- 品类 ----
@@ -203,6 +206,11 @@ async function syncFromSupabase(options) {
     // ---- 领用标准 ----
     if (consumptionResult && consumptionResult.data) {
       _appCache.consumptionStandards = consumptionResult.data;
+    }
+
+    // ---- 团期名称主数据 ----
+    if (tourNamesResult && tourNamesResult.data) {
+      _appCache.tourNames = tourNamesResult.data;
     }
 
     // ---- 系统设置 ----
@@ -328,6 +336,11 @@ async function refreshData(dataType) {
       case 'consumptionStandards': {
         const { data } = await sb.from('consumption_standards').select('*').order('id');
         if (data) _appCache.consumptionStandards = data;
+        break;
+      }
+      case 'tourNames': {
+        const { data } = await sb.from('tour_names').select('*').order('name');
+        if (data) _appCache.tourNames = data;
         break;
       }
       case 'users': {
