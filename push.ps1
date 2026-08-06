@@ -38,7 +38,8 @@ $headers = @{
 if ($args.Count -gt 0) {
     $projectDir = $args[0]
 } else {
-    $projectDir = $env:PROJECT_DIR
+    # 默认使用脚本所在目录（push.ps1 即位于项目根目录）
+    $projectDir = $PSScriptRoot
 }
 
 if ([string]::IsNullOrWhiteSpace($projectDir) -or -not (Test-Path $projectDir)) {
@@ -63,11 +64,11 @@ $filesToPush = @(
     "database/schema.sql",
     "database/migrations/20260616_add_adjustments_permissions.sql",
     "database/migrations/20260622_change_stock_to_numeric.sql",
+    "database/migrations/20260806_tour_names.sql",
+    "database/migrations/20260806_v5.43_fullfix.sql",
     "js/admin-bindings.js",
     "js/app.js",
-    "js/auth.js",
     "js/auth-fix.js",
-    "js/auth-fixed.js",
     "js/business-flow.js",
     "js/inventory-hybrid.js",
     "js/login-characters.js",
@@ -76,13 +77,13 @@ $filesToPush = @(
     "js/navigation.js",
     "js/purchase.js",
     "js/requisition.js",
-    "js/role-admin.js",
     "js/stock-in.js",
     "js/supabase-db.js",
     "js/supabase-sync.js",
     "js/toast.js",
     "js/tour-reports.js",
     "js/user-admin.js",
+    "version.json",
     "package.json",
     "push.ps1",
     "CHANGELOG.md",
@@ -118,44 +119,55 @@ foreach ($relPath in $filesToPush) {
     $b64 = [Convert]::ToBase64String($contentBytes)
     $localSize = $contentBytes.Length
     $totalSize += $localSize
-    
-    # 查询远程文件 SHA（用于更新）
-    $cloudSha = $null
-    try {
-        $resp = Invoke-RestMethod -Uri "$apiBase/contents/$relPath" -Headers $headers -Method Get -ErrorAction Stop
-        $cloudSha = $resp.sha
-    } catch {}
-    
-    $msg = "v5.42 " + $(if ($cloudSha) { "update" } else { "add" }) + " $relPath"
-    $body = @{
-        message = $msg
-        content = $b64
-    }
-    if ($cloudSha) { $body.sha = $cloudSha }
-    
-    $bodyJson = $body | ConvertTo-Json -Depth 3
-    
-    try {
-        $response = Invoke-RestMethod `
-            -Uri "$apiBase/contents/$relPath" `
-            -Headers $headers `
-            -Method Put `
-            -Body $bodyJson `
-            -ContentType "application/json" `
-            -ErrorAction Stop
+
+    # 每个文件同时推送两份：
+    #   1) 3-库存管理/$relPath —— 与本地工作目录对应的源镜像
+    #   2) $relPath            —— 仓库根目录（GitHub Pages 实际发布目录）
+    # 历史教训：根目录曾有一份无人更新的旧副本，导致线上永远显示旧版。
+    $targets = @(
+        "3-库存管理/$relPath",
+        "$relPath"
+    )
+
+    foreach ($target in $targets) {
+        # 查询远程文件 SHA（用于更新）
+        $cloudSha = $null
+        try {
+            $resp = Invoke-RestMethod -Uri "$apiBase/contents/$target" -Headers $headers -Method Get -ErrorAction Stop
+            $cloudSha = $resp.sha
+        } catch {}
+
+        $msg = "v5.46 " + $(if ($cloudSha) { "update" } else { "add" }) + " $target"
+        $body = @{
+            message = $msg
+            content = $b64
+        }
+        if ($cloudSha) { $body.sha = $cloudSha }
+
+        $bodyJson = $body | ConvertTo-Json -Depth 3
+
+        try {
+            $response = Invoke-RestMethod `
+                -Uri "$apiBase/contents/$target" `
+                -Headers $headers `
+                -Method Put `
+                -Body $bodyJson `
+                -ContentType "application/json" `
+                -ErrorAction Stop
+            
+            $action = if ($cloudSha) { "UPDATE" } else { "CREATE" }
+            $sizeKB = [math]::Round($localSize / 1024, 1)
+            Write-Host "  OK   $target ($sizeKB KB) [$action]" -ForegroundColor Green
+            $successCount++
+        } catch {
+            $statusCode = $_.Exception.Response.StatusCode.value__
+            Write-Host "  FAIL $target - HTTP $statusCode" -ForegroundColor Red
+            $failCount++
+        }
         
-        $action = if ($cloudSha) { "UPDATE" } else { "CREATE" }
-        $sizeKB = [math]::Round($localSize / 1024, 1)
-        Write-Host "  OK   $relPath ($sizeKB KB) [$action]" -ForegroundColor Green
-        $successCount++
-    } catch {
-        $statusCode = $_.Exception.Response.StatusCode.value__
-        Write-Host "  FAIL $relPath - HTTP $statusCode" -ForegroundColor Red
-        $failCount++
+        # 间隔 250ms 避免 API 限流
+        Start-Sleep -Milliseconds 250
     }
-    
-    # 间隔 500ms 避免 API 限流
-    Start-Sleep -Milliseconds 500
 }
 
 Write-Host ""
