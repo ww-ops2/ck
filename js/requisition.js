@@ -17,6 +17,20 @@ let _tourNames = [];
 let _currentStockOutReqId = null;
 
 /**
+ * 按当前登录角色显隐「新建领用单」按钮。
+ * 必须在登录后（currentUser 就绪）调用，否则 DOMContentLoaded 阶段
+ * currentUser 为空会把按钮永久隐藏，导致「找不到创建入口」。
+ */
+function updateRequisitionCreateBtnVisibility() {
+  const btn = document.getElementById('create-requisition-btn');
+  if (!btn) return;
+  // 仅持有 create_requisition 动作权限可见；「仅查看」用户（只有 view_requisition）隐藏
+  const canCreate = (typeof hasPermission === 'function') ? hasPermission('create_requisition') : true;
+  btn.style.display = canCreate ? '' : 'none';
+}
+window.updateRequisitionCreateBtnVisibility = updateRequisitionCreateBtnVisibility;
+
+/**
  * 场景名称标准化（兼容旧数据：餐车→列车餐车，客房→列车客房）
  */
 function _normalizeScenario(s) {
@@ -30,17 +44,12 @@ function _normalizeScenario(s) {
  * 初始化出库模块
  */
 function initRequisitionModule() {
-  // 新建领用单按钮 - 仅员工和管理员可见
+  // 新建领用单按钮 - 仅员工和管理员可见（绑定一次，显隐交给登录后调用的方法）
   const createBtn = document.getElementById('create-requisition-btn');
   if (createBtn) {
-    const role = currentUser ? currentUser.role : '';
-    if (role === 'staff' || role === 'admin') {
-      createBtn.style.display = '';
-    } else {
-      createBtn.style.display = 'none';
-    }
     createBtn.addEventListener('click', openRequisitionModal);
   }
+  updateRequisitionCreateBtnVisibility();
 
   // 提交领用单按钮
   const submitBtn = document.getElementById('submit-requisition-btn');
@@ -128,16 +137,11 @@ function _initTourNameDropdown(inputId, listId) {
 }
 
 /**
- * 从已有领用单中收集团期名称
+ * 从团期名称主数据（tour_names 表）读取可选项
  */
 function _loadTourNames() {
-  const reqList = _appCache.requisitions || [];
-
-  const nameSet = new Set();
-  reqList.forEach(r => {
-    if (r.tour_name) nameSet.add(r.tour_name);
-  });
-  _tourNames = [...nameSet].sort();
+  const list = (_appCache && _appCache.tourNames) ? (_appCache.tourNames || []) : [];
+  _tourNames = list.map(t => (t.name || '').trim()).filter(Boolean).sort();
 }
 
 /**
@@ -169,8 +173,19 @@ function _renderTourNameList(keyword, inputId, listId) {
 
   // 绑定选项点击事件
   list.querySelectorAll('.tour-name-option').forEach(opt => {
-    opt.addEventListener('click', function() {
-      input.value = this.dataset.value;
+    opt.addEventListener('click', async function() {
+      const val = this.dataset.value;
+      // 点「+ 新增」时，先落库到团期名称主数据，保持与报表页一致
+      if (this.classList.contains('add-new')) {
+        try {
+          await SupaDB.createTourName(val);
+          await refreshData('tourNames');
+          if (typeof showToast === 'function') showToast('已新增团期名称「' + val + '」', 'success');
+        } catch (e) {
+          if (typeof showToast === 'function') showToast('新增失败：' + (e.message || e), 'error');
+        }
+      }
+      input.value = val;
       list.style.display = 'none';
     });
   });
@@ -636,7 +651,7 @@ function _renderEditSelectedItems() {
 /**
  * 提交领用申请
  */
-function submitRequisition() {
+async function submitRequisition() {
   const form = document.getElementById('requisition-form');
   if (!form) return;
 
@@ -704,14 +719,27 @@ function submitRequisition() {
       const warningMsg = '以下物品超过领用标准上限：\n\n' +
         overLimitWarnings.join('\n') +
         '\n\n是否仍要继续提交？';
-      // 注：showConfirm 为异步回调，此处需同步阻塞，暂用原生 confirm
-      if (!confirm(warningMsg)) return;
+      showConfirm(warningMsg, function() {
+        _submitRequisitionCore(items, totalQty, tourDate, tourName, scenario, applicant, applyDate, remark);
+      }, { danger: true, icon: '⚠️', confirmText: '仍要提交' });
+      return;
     }
   }
 
-  const requisition = {
-    id: Date.now(),
-    code: 'RQ' + Date.now().toString().slice(-8),
+  const subBtn = document.getElementById('submit-requisition-btn');
+  showButtonLoading(subBtn, '提交中...');
+  try {
+    await _submitRequisitionCore(items, totalQty, tourDate, tourName, scenario, applicant, applyDate, remark);
+  } finally {
+    hideButtonLoading(subBtn);
+  }
+}
+
+/**
+ * 领用申请真正落库（与超额确认解耦）
+ */
+async function _submitRequisitionCore(items, totalQty, tourDate, tourName, scenario, applicant, applyDate, remark) {
+  const requisitionData = {
     tour_date: tourDate,
     tour_name: tourName,
     scenario: scenario,
@@ -719,14 +747,27 @@ function submitRequisition() {
     apply_date: applyDate,
     items: items,
     total_quantity: totalQty,
-    status: 'pending_outbound',
-    remark: remark,
-    created_at: new Date().toISOString()
+    remark: remark
   };
 
-  let reqList = _appCache.requisitions ? _appCache.requisitions.slice() : [];
-  reqList.push(requisition);
-  _appCache.requisitions = reqList;
+  // 落库到云端（修复：之前仅写入浏览器内存，刷新即丢失、他人不可见）
+  let saved = null;
+  try {
+    if (typeof SupaDB !== 'undefined' && SupaDB.createRequisition) {
+      saved = await SupaDB.createRequisition(requisitionData);
+    } else {
+      throw new Error('数据服务未就绪');
+    }
+  } catch (e) {
+    console.error('领用申请保存失败:', e.message);
+    showToast('领用申请保存失败：' + e.message + '（请检查网络后重试）', 'error');
+    return;
+  }
+
+  // 以数据库为准刷新内存缓存，保证多人协作数据一致
+  if (typeof refreshData === 'function') {
+    try { await refreshData('requisitions'); } catch (e) { console.warn('刷新领用单缓存失败:', e.message); }
+  }
 
   closeModal();
   loadRequisitions();
@@ -734,8 +775,9 @@ function submitRequisition() {
   updateKPICards();
   if (typeof refreshAllBusinessKPI === 'function') refreshAllBusinessKPI();
 
-  showToast(`领用申请 ${requisition.code} 已提交，已推送至仓库管理员待出库`, 'success');
-  console.log('领用单创建成功:', requisition);
+  const code = (saved && saved.code) ? saved.code : '';
+  showToast(`领用申请 ${code} 已提交，已保存至云端并推送至仓库管理员待出库`, 'success');
+  console.log('领用单创建成功:', saved);
 }
 
 /**
@@ -760,25 +802,30 @@ function loadRequisitions() {
   tbody.innerHTML = reqList.map(req => {
     const statusText = getReqStatusText(req.status);
     const statusClass = getReqStatusClass(req.status);
-    const canConfirm = req.status === 'pending_outbound' && hasPermission('confirm_stockout');
-    // 申请人且待出库状态可撤回/修改/删除
-    const isOwner = req.status === 'pending_outbound' && (
-      req.applicant === currentUserName || role === 'admin'
-    );
+    // v5.43 领用审核流：待审核(pending_approval) → 已审核(approved) → 待出库/确认出库 → 已出库
+    // 线上约束未放宽时 approved 会降级为 pending_outbound，流程依然闭环
+    const canApprove = req.status === 'pending_approval' && hasPermission('approve_requisition');
+    const canConfirm = (req.status === 'approved' || req.status === 'pending_outbound') && hasPermission('confirm_stockout');
+    // 申请人（或管理员）在待审核/待出库阶段可修改、撤回、删除
+    const isOwnerPending = (req.status === 'pending_approval' || req.status === 'pending_outbound') &&
+      (req.applicant === currentUserName || role === 'admin');
+    const isAdmin = role === 'admin';
 
     let actionBtns = `<button class="btn btn-sm" onclick="viewRequisitionDetail(${req.id})">查看</button>`;
+    if (canApprove) {
+      actionBtns += ` <button class="btn btn-sm" onclick="approveRequisitionUI(${req.id}, this)" style="background:var(--success);border-color:var(--success);color:#fff;">审核通过</button>`;
+      actionBtns += ` <button class="btn btn-sm" onclick="rejectRequisitionUI(${req.id}, this)" style="background:var(--danger);border-color:var(--danger);color:#fff;">驳回</button>`;
+    }
     if (canConfirm) {
       actionBtns += ` <button class="btn btn-sm" onclick="confirmStockOut(${req.id})" style="background:var(--success);border-color:var(--success);color:#fff;">确认出库</button>`;
     }
-    if (isOwner && !canConfirm) {
+    if (isOwnerPending) {
       actionBtns += ` <button class="btn btn-sm" onclick="editRequisition(${req.id})" style="background:var(--accent);border-color:var(--accent);color:#fff;">修改</button>`;
       actionBtns += ` <button class="btn btn-sm" onclick="withdrawRequisition(${req.id})" style="background:var(--warning);border-color:var(--warning);color:#fff;">撤回</button>`;
       actionBtns += ` <button class="btn btn-sm" onclick="deleteRequisition(${req.id})" style="background:var(--danger);border-color:var(--danger);color:#fff;">删除</button>`;
     }
-    // 管理员既能确认出库也能撤回/修改/删除
-    if (isOwner && canConfirm) {
-      actionBtns += ` <button class="btn btn-sm" onclick="editRequisition(${req.id})" style="background:var(--accent);border-color:var(--accent);color:#fff;">修改</button>`;
-      actionBtns += ` <button class="btn btn-sm" onclick="withdrawRequisition(${req.id})" style="background:var(--warning);border-color:var(--warning);color:#fff;">撤回</button>`;
+    // 管理员可对已审核/已驳回/已出库单据做删除清理
+    if (isAdmin && !isOwnerPending && (req.status === 'approved' || req.status === 'rejected' || req.status === 'outbound_completed')) {
       actionBtns += ` <button class="btn btn-sm" onclick="deleteRequisition(${req.id})" style="background:var(--danger);border-color:var(--danger);color:#fff;">删除</button>`;
     }
 
@@ -916,6 +963,11 @@ function viewRequisitionDetail(reqId) {
       </div>` : ''}
     </div>
     ${itemsHtml}
+    ${(req.status === 'pending_approval' && hasPermission('approve_requisition')) ? `
+    <div class="detail-action-bar" style="margin-top:18px;display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn btn-sm" onclick="approveRequisitionUI(${req.id}, this)" style="background:var(--success);border-color:var(--success);color:#fff;">审核通过</button>
+      <button class="btn btn-sm" onclick="rejectRequisitionUI(${req.id}, this)" style="background:var(--danger);border-color:var(--danger);color:#fff;">驳回</button>
+    </div>` : ''}
   `;
 
   // 确保标题正确
@@ -935,6 +987,24 @@ function confirmStockOut(reqId) {
 
   if (!hasPermission('confirm_stockout')) {
     showToast('只有仓库管理员可以确认出库', 'warning');
+    return;
+  }
+
+  // v5.43 出库门禁：未审核 / 已终结的单据不得进入出库流程
+  if (req.status === 'pending_approval') {
+    showToast('该领用单尚未审核通过，请先在「领用管理」中审核', 'warning');
+    return;
+  }
+  if (req.status === 'rejected') {
+    showToast('该领用单已被驳回，无法出库', 'warning');
+    return;
+  }
+  if (req.status === 'withdrawn' || req.status === 'cancelled') {
+    showToast('该领用单已撤回，无法出库', 'warning');
+    return;
+  }
+  if (req.status === 'outbound_completed') {
+    showToast('该领用单已完成出库', 'warning');
     return;
   }
 
@@ -1083,7 +1153,7 @@ function _previewStockOutDiff() {
 /**
  * 最终确认出库
  */
-function _finalConfirmStockOut() {
+async function _finalConfirmStockOut() {
   if (!_currentStockOutReqId) return;
 
   let reqList = _appCache.requisitions ? _appCache.requisitions.slice() : [];
@@ -1113,18 +1183,10 @@ function _finalConfirmStockOut() {
 
   const stockOutDate = new Date().toISOString().split('T')[0];
 
-  // 扣减库存（按实际出库数量）
-  let inventory = _appCache.inventory ? _appCache.inventory.slice() : [];
-
   const actualItems = [];
   let actualTotalQty = 0;
-
   req.items.forEach(reqItem => {
     const actualQty = actualQuantities[String(reqItem.item_id)] || reqItem.quantity;
-    const invItem = inventory.find(it => String(it.id) === String(reqItem.item_id));
-    if (invItem) {
-      invItem.stock = Math.max(0, invItem.stock - actualQty);
-    }
     if (actualQty > 0) {
       actualItems.push({
         ...reqItem,
@@ -1135,33 +1197,63 @@ function _finalConfirmStockOut() {
     }
   });
 
-  _appCache.inventory = inventory;
-
-  // 创建出库记录
+  // 结果展示用的视图对象（云端写入成功后用真实单号覆盖 code）
   const stockOutRecord = {
-    id: Date.now(),
     code: 'SO' + Date.now().toString().slice(-8),
-    requisition_id: req.id,
     requisition_code: req.code,
     tour_date: req.tour_date || '',
     tour_name: req.tour_name || '',
     scenario: req.scenario,
     stockout_date: stockOutDate,
-    items: actualItems,
     total_quantity: actualTotalQty,
     status: 'completed',
     confirmed_by: currentUser ? currentUser.name : '',
     confirmed_at: new Date().toISOString(),
-    created_at: new Date().toISOString()
+    items: actualItems
   };
 
-  let soList = _appCache.stockOutRecords ? _appCache.stockOutRecords.slice() : [];
-  soList.push(stockOutRecord);
-  _appCache.stockOutRecords = soList;
+  const stockOutData = {
+    items: actualItems,
+    stockout_date: stockOutDate,
+    total_quantity: actualTotalQty
+  };
 
-  // 更新领用单状态
-  req.status = 'outbound_completed';
-  _appCache.requisitions = reqList;
+  const finalBtn = document.getElementById('stockout-final-confirm-btn');
+  showButtonLoading(finalBtn, '出库中...');
+  try {
+    // v5.43 优先云端持久化：写入出库记录 + 扣减库存 + 更新领用单状态
+    await SupaDB.confirmStockOut(req.id, stockOutData);
+    await safeRefresh('requisitions');
+    await safeRefresh('stockOutRecords');
+    await safeRefresh('inventory');
+    const refreshed = (_appCache.stockOutRecords || []).find(s =>
+      s.requisition_id === req.id && s.stockout_date === stockOutDate);
+    if (refreshed && refreshed.code) stockOutRecord.code = refreshed.code;
+    showToast('出库成功，已同步至云端', 'success');
+  } catch (e) {
+    if (window.__SCHEMA_OUTDATED) {
+      // 降级：本地扣减库存 + 本地出库记录（未执行迁移时可用）
+      let inventory = _appCache.inventory ? _appCache.inventory.slice() : [];
+      req.items.forEach(reqItem => {
+        const actualQty = actualQuantities[String(reqItem.item_id)] || reqItem.quantity;
+        const invItem = inventory.find(it => String(it.id) === String(reqItem.item_id));
+        if (invItem) invItem.stock = Math.max(0, invItem.stock - actualQty);
+      });
+      _appCache.inventory = inventory;
+      let soList = _appCache.stockOutRecords ? _appCache.stockOutRecords.slice() : [];
+      soList.push({ ...stockOutRecord, id: Date.now() });
+      _appCache.stockOutRecords = soList;
+      req.status = 'outbound_completed';
+      _appCache.requisitions = reqList;
+      showToast('出库成功（本地模式，请执行数据库迁移以同步云端）', 'warning');
+    } else {
+      showToast('出库失败：' + (e && e.message ? e.message : e), 'error');
+      return;
+    }
+  } finally {
+    hideButtonLoading(finalBtn);
+  }
+
   closeModal();
 
   // 刷新列表和KPI
@@ -1253,8 +1345,9 @@ function editRequisition(reqId) {
     return;
   }
 
-  if (req.status !== 'pending_outbound') {
-    showToast('只能修改待出库状态的领用单', 'warning');
+  // v5.43 修改门禁：仅待审核 / 待出库阶段可修改；已审核/已出库/已驳回不可再改
+  if (req.status !== 'pending_approval' && req.status !== 'pending_outbound') {
+    showToast('该领用单当前状态不可修改（已审核/已出库/已驳回）', 'warning');
     return;
   }
 
@@ -1315,7 +1408,7 @@ function editRequisition(reqId) {
 /**
  * 保存编辑的领用单
  */
-function saveRequisitionEdit() {
+async function saveRequisitionEdit() {
   const form = document.getElementById('edit-requisition-form');
   if (!form) return;
 
@@ -1378,32 +1471,52 @@ function saveRequisitionEdit() {
     return;
   }
 
-  reqList[reqIndex] = {
-    ...reqList[reqIndex],
+  const reqData = {
     tour_date: tourDate,
     tour_name: tourName,
     scenario: scenario,
     applicant: applicant,
     apply_date: applyDate,
-    items: items,
     total_quantity: totalQty,
-    remark: remark
+    remark: remark,
+    items: items
   };
 
-  _appCache.requisitions = reqList;
+  const svBtn = document.getElementById('save-requisition-btn');
+  showButtonLoading(svBtn, '保存中...');
+  try {
+    if (typeof SupaDB !== 'undefined' && SupaDB.updateRequisition) {
+      await SupaDB.updateRequisition(reqId, reqData);
+      await safeRefresh('requisitions');
+      showToast(`领用单 ${reqList[reqIndex].code} 已更新并同步`, 'success');
+    } else {
+      reqList[reqIndex] = { ...reqList[reqIndex], ...reqData };
+      _appCache.requisitions = reqList;
+      showToast(`领用单 ${reqList[reqIndex].code} 已更新`, 'success');
+    }
+  } catch (e) {
+    if (window.__SCHEMA_OUTDATED) {
+      reqList[reqIndex] = { ...reqList[reqIndex], ...reqData };
+      _appCache.requisitions = reqList;
+      showToast(`领用单 ${reqList[reqIndex].code} 已本地更新，请执行数据库迁移以同步云端`, 'warning');
+    } else {
+      showToast('保存失败：' + (e && e.message ? e.message : e), 'error');
+      return;
+    }
+  } finally {
+    hideButtonLoading(svBtn);
+  }
 
   closeModal();
   loadRequisitions();
   loadStockOutRecords();
   updateKPICards();
-
-  showToast(`领用单 ${reqList[reqIndex].code} 已更新`, 'success');
 }
 
 /**
  * 撤回领用单（改为已取消状态，可重新编辑）
  */
-function withdrawRequisition(reqId) {
+async function withdrawRequisition(reqId) {
   let reqList = _appCache.requisitions ? _appCache.requisitions.slice() : [];
   const req = reqList.find(r => r.id === reqId);
   if (!req) return;
@@ -1416,28 +1529,37 @@ function withdrawRequisition(reqId) {
     return;
   }
 
-  if (req.status !== 'pending_outbound') {
-    showToast('只能撤回待出库状态的领用单', 'warning');
+  // v5.43 撤回门禁：仅待审核 / 待出库阶段可撤回；已审核、已出库、已驳回不可撤回
+  if (req.status !== 'pending_approval' && req.status !== 'pending_outbound') {
+    showToast('该领用单当前状态不可撤回（已审核/已出库/已驳回）', 'warning');
     return;
   }
 
-  showConfirm(`确定要撤回领用单 ${req.code} 吗？撤回后状态将变为"已撤回"，您可以重新编辑后再次提交。`, function() {
-    req.status = 'cancelled';
-    _appCache.requisitions = reqList;
-
+  showConfirm(`确定要撤回领用单 ${req.code} 吗？撤回后状态将变为"已撤回"。`, async function() {
+    const r = await _persistRequisition(
+      () => SupaDB.withdrawRequisition(reqId),
+      () => { req.status = 'withdrawn'; _appCache.requisitions = reqList; }
+    );
+    if (r === 'degraded') {
+      showToast(`领用单 ${req.code} 已本地撤回，请执行数据库迁移以同步云端`, 'warning');
+    } else if (r) {
+      showToast('撤回失败：' + (r && r.message ? r.message : r), 'error');
+      return;
+    } else {
+      showToast(`领用单 ${req.code} 已撤回`, 'success');
+    }
     loadRequisitions();
     loadStockOutRecords();
     updateKPICards();
-
-    showToast(`领用单 ${req.code} 已撤回`, 'success');
+    loadDashboard();
   });
 }
 
 /**
  * 删除领用单
  */
-function deleteRequisition(reqId) {
-  let reqList = _appCache.requisitions ? _appCache.requisitions : [];
+async function deleteRequisition(reqId) {
+  let reqList = _appCache.requisitions ? _appCache.requisitions.slice() : [];
   const req = reqList.find(r => r.id === reqId);
   if (!req) return;
 
@@ -1449,20 +1571,29 @@ function deleteRequisition(reqId) {
     return;
   }
 
-  if (req.status !== 'pending_outbound') {
-    showToast('只能删除待出库状态的领用单', 'warning');
+  // v5.43 删除门禁：已出库的领用单保留出库审计，不可删除
+  if (req.status === 'outbound_completed') {
+    showToast('已出库的领用单不可删除（需保留出库审计）', 'warning');
     return;
   }
 
-  showConfirm(`确定要永久删除领用单 ${req.code} 吗？此操作不可恢复！`, function() {
-    reqList = reqList.filter(r => r.id !== reqId);
-    _appCache.requisitions = reqList;
-
+  showConfirm(`确定要永久删除领用单 ${req.code} 吗？此操作不可恢复！`, async function() {
+    const r = await _persistRequisition(
+      () => SupaDB.deleteRequisition(reqId),
+      () => { _appCache.requisitions = reqList.filter(x => x.id !== reqId); }
+    );
+    if (r === 'degraded') {
+      showToast(`领用单 ${req.code} 已本地删除，请执行数据库迁移以同步云端`, 'warning');
+    } else if (r) {
+      showToast('删除失败：' + (r && r.message ? r.message : r), 'error');
+      return;
+    } else {
+      showToast(`领用单 ${req.code} 已删除`, 'success');
+    }
     loadRequisitions();
     loadStockOutRecords();
     updateKPICards();
-
-    showToast(`领用单 ${req.code} 已删除`, 'success');
+    loadDashboard();
   });
 }
 
@@ -1476,7 +1607,8 @@ function loadStockOutRecords() {
   // 1. 读取待出库的领用单
   let reqList = _appCache.requisitions ? _appCache.requisitions : [];
 
-  const pendingReqs = reqList.filter(r => r.status === 'pending_outbound');
+  // v5.43 已审核(approved) 与 待出库(pending_outbound) 均进入待出库清单，等待仓库确认出库
+  const pendingReqs = reqList.filter(r => r.status === 'approved' || r.status === 'pending_outbound');
 
   // 2. 读取已完成出库记录
   let completedRecords = _appCache.stockOutRecords ? _appCache.stockOutRecords : [];
@@ -1681,9 +1813,13 @@ function viewStockOutDetail(recordCode) {
  */
 function getReqStatusText(status) {
   const map = {
+    'pending_approval': '待审核',
     'pending_outbound': '待出库',
+    'approved': '已审核',
     'outbound_completed': '已出库',
-    'cancelled': '已撤回'
+    'rejected': '已驳回',
+    'cancelled': '已撤回',
+    'withdrawn': '已撤回'
   };
   return map[status] || status;
 }
@@ -1693,11 +1829,89 @@ function getReqStatusText(status) {
  */
 function getReqStatusClass(status) {
   const map = {
+    'pending_approval': 'info',
     'pending_outbound': 'warning',
+    'approved': 'primary',
     'outbound_completed': 'success',
-    'cancelled': 'danger'
+    'rejected': 'danger',
+    'cancelled': 'muted',
+    'withdrawn': 'muted'
   };
   return map[status] || '';
+}
+
+/**
+ * v5.43 统一的刷新封装：写入 SupaDB 后按需回拉最新数据，失败也不阻断 UI
+ */
+async function safeRefresh(type) {
+  if (typeof refreshData === 'function') {
+    try { await refreshData(type); } catch (e) { console.warn('[refresh] ' + type + ' 失败', e); }
+  }
+}
+
+/**
+ * 统一的领用单持久化封装：
+ *   - 优先调用 SupaDB 写入并回拉最新数据；
+ *   - 若云端约束尚未放宽（__SCHEMA_OUTDATED），降级为本地缓存更新，不回拉以免旧值覆盖；
+ *   - 其它异常原样返回，由调用方提示。
+ * 返回：null=成功 / 'degraded'=降级本地成功 / Error=失败
+ */
+async function _persistRequisition(op, localFallback) {
+  try {
+    await op();
+    await safeRefresh('requisitions');
+    return null;
+  } catch (e) {
+    if (window.__SCHEMA_OUTDATED) {
+      if (typeof localFallback === 'function') localFallback();
+      return 'degraded';
+    }
+    return e;
+  }
+}
+
+/**
+ * 审核通过（UI 入口）：调用 SupaDB 持久化，然后回拉刷新
+ */
+async function approveRequisitionUI(reqId, btn) {
+  if (!hasPermission('approve_requisition')) {
+    showToast('只有仓库管理员可以审核领用单', 'warning');
+    return;
+  }
+  showButtonLoading(btn, '审核中...');
+  try {
+    await SupaDB.approveRequisition(reqId, '');
+    await safeRefresh('requisitions');
+    loadRequisitions(); loadStockOutRecords(); updateKPICards(); loadDashboard();
+    showToast('领用单已审核通过', 'success');
+  } catch (e) {
+    showToast('审核失败：' + (e && e.message ? e.message : e), 'error');
+  } finally {
+    hideButtonLoading(btn);
+  }
+}
+
+/**
+ * 审核驳回（UI 入口）：填写驳回理由后调用 SupaDB 持久化
+ */
+async function rejectRequisitionUI(reqId, btn) {
+  if (!hasPermission('approve_requisition')) {
+    showToast('只有仓库管理员可以审核领用单', 'warning');
+    return;
+  }
+  const reason = (typeof prompt === 'function') ? prompt('请输入驳回理由：') : null;
+  if (reason === null) return; // 用户取消
+  showButtonLoading(btn, '驳回中...');
+  try {
+    await SupaDB.rejectRequisition(reqId, reason || '');
+    await safeRefresh('requisitions');
+    loadRequisitions(); loadStockOutRecords(); updateKPICards(); loadDashboard();
+    showToast('领用单已驳回', 'success');
+  } catch (e) {
+    showToast('驳回失败：' + (e && e.message ? e.message : e), 'error');
+  } finally {
+    hideButtonLoading(btn);
+  }
 }
 
 // 导出
