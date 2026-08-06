@@ -58,6 +58,7 @@ Write-Host ""
 # 如需新增文件，在此数组中添加即可
 $filesToPush = @(
     ".gitignore",
+    ".nojekyll",
     "index.html",
     "css/style.css",
     "css/redesign.css",
