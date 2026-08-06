@@ -7,20 +7,36 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>库存管理系统</title>
+  <!-- 版本自检：发现新版本自动带戳刷新，绕过浏览器/CDN 缓存（根治「同事打开是旧版」问题） -->
   <script>
-  // 强制拉取云端最新版本：检查URL是否带时间戳，没有则自动跳转加戳
-  (function() {
-    var url = window.location.href;
-    var sep = url.indexOf('?') >= 0 ? '&' : '?';
-    if (url.indexOf('_t=') < 0 && url.indexOf('file://') < 0) {
-      var newUrl = url + sep + '_t=' + Date.now();
-      window.history.replaceState(null, '', newUrl);
-    }
+  (function () {
+    try {
+      var STORED = localStorage.getItem('app_version');
+      var req = new XMLHttpRequest();
+      req.open('GET', 'version.json?t=' + Date.now(), true);
+      req.onreadystatechange = function () {
+        if (req.readyState === 4 && req.status === 200) {
+          try {
+            var CUR = JSON.parse(req.responseText).version;
+            if (CUR && STORED && STORED !== CUR && location.search.indexOf('_v=') < 0) {
+              localStorage.setItem('app_version', CUR);
+              location.href = location.pathname + '?_v=' + encodeURIComponent(CUR);
+              return;
+            }
+            if (CUR) localStorage.setItem('app_version', CUR);
+          } catch (e) { /* ignore */ }
+        }
+      };
+      req.send();
+    } catch (e) { /* ignore */ }
   })();
   </script>
-  <link rel="stylesheet" href="css/style.css?v=5.42">
-  <link rel="stylesheet" href="css/redesign.css?v=5.42">
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=5.46">
+  <link rel="stylesheet" href="css/redesign.css?v=5.46">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- v5.43：补引 Newsreader（--font-display 需要，之前只声明未加载） -->
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -926,70 +942,49 @@
               </div>
             </div>
 
-            <!-- 图表区 -->
-            <div class="grid-2" style="margin-bottom:20px;">
-              <div class="chart-wrap">
-                <h4 style="margin:0 0 8px 0;font-size:13px;color:var(--text-secondary);">各团期出库量趋势</h4>
-                <canvas id="tour-period-chart"></canvas>
+            <!-- 团期使用报表：左右分栏（左=团期列表，右=选中团期详情） -->
+            <div class="report-split">
+              <div class="report-tour-list">
+                <div class="tour-list-header">
+                  <div class="detail-section-title" style="margin:0;">团期列表</div>
+                  <button class="btn btn-sm" id="add-tour-btn" type="button">+ 新增团期</button>
+                </div>
+                <!-- 新增团期内联表单 -->
+                <div id="add-tour-form" class="add-tour-form" style="display:none;">
+                  <input type="text" id="new-tour-name" placeholder="输入团期名称，如：G1234 北京-上海" maxlength="60" autocomplete="off">
+                  <button class="btn btn-sm btn-primary" id="add-tour-confirm" type="button">保存</button>
+                  <button class="btn btn-sm" id="add-tour-cancel" type="button">取消</button>
+                </div>
+                <ul id="report-tour-list" class="tour-list"></ul>
               </div>
-              <div class="chart-wrap">
-                <h4 style="margin:0 0 8px 0;font-size:13px;color:var(--text-secondary);">场景消耗占比</h4>
-                <canvas id="scenario-chart"></canvas>
-              </div>
-            </div>
-
-            <!-- 品类对比图 -->
-            <div style="margin-bottom:20px;">
-              <div class="chart-wrap">
-                <h4 style="margin:0 0 8px 0;font-size:13px;color:var(--text-secondary);">各团期品类消耗对比</h4>
-                <canvas id="category-compare-chart"></canvas>
-              </div>
-            </div>
-
-            <!-- 团期明细表 -->
-            <div class="detail-section-title" style="margin-top:12px;">团期出库明细</div>
-            <div class="table-scroll" style="margin-top: 8px;">
-              <table class="data-table" id="report-table">
-                <thead>
-                  <tr>
-                    <th>团期日期</th>
-                    <th>团期名称</th>
-                    <th>使用场景</th>
-                    <th>物品名称</th>
-                    <th>类别</th>
-                    <th>出库数量</th>
-                    <th>成本</th>
-                    <th>领用标准</th>
-                    <th>状态</th>
-                  </tr>
-                </thead>
-                <tbody id="report-tbody">
-                  <tr>
-                    <td colspan="9" class="empty-state">请选择月份查看数据</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <!-- 超额汇总 -->
-            <div id="report-overlimit-summary" style="margin-top:20px;display:none;">
-              <div class="detail-section-title" style="color:var(--danger);">超额领用汇总</div>
-              <div class="table-scroll" style="margin-top:8px;">
-                <table class="data-table" id="report-overlimit-table">
-                  <thead>
-                    <tr>
-                      <th>团期</th>
-                      <th>场景</th>
-                      <th>物品名称</th>
-                      <th>实际领用</th>
-                      <th>标准上限</th>
-                      <th>超出数量</th>
-                      <th>单价</th>
-                      <th>损失金额</th>
-                    </tr>
-                  </thead>
-                  <tbody id="report-overlimit-tbody"></tbody>
-                </table>
+              <div class="report-tour-detail">
+                <div class="detail-section-title" style="margin-bottom:8px;">团期使用详情 <span id="report-detail-tour-name" style="color:var(--accent);font-weight:600;"></span></div>
+                <div class="detail-filter-row">
+                  <label for="detail-month-filter">按月筛选：</label>
+                  <select id="detail-month-filter">
+                    <option value="">-- 选择月份 --</option>
+                  </select>
+                  <span class="detail-filter-tip">切换月份可查看该团期不同月份的使用明细</span>
+                </div>
+                <div class="table-scroll">
+                  <table class="data-table" id="report-detail-table">
+                    <thead>
+                      <tr>
+                        <th>团期日期</th>
+                        <th>使用场景</th>
+                        <th>物品名称</th>
+                        <th>类别</th>
+                        <th>出库数量</th>
+                        <th>成本</th>
+                        <th>领用标准</th>
+                        <th>状态</th>
+                      </tr>
+                    </thead>
+                    <tbody id="report-tour-detail-tbody">
+                      <tr><td colspan="8" class="empty-state">请选择左侧团期查看详情</td></tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>
@@ -1918,23 +1913,38 @@
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="js/supabase-db.js?v=5.42"></script>
-  <script src="js/supabase-sync.js?v=5.42"></script>
-  <script src="js/migrate-data.js?v=5.42"></script>
-  <script src="js/toast.js?v=5.42"></script>
-  <script src="js/login-characters.js?v=5.42"></script>
-  <script src="js/auth-fix.js?v=5.42"></script>
-  <script src="js/navigation.js?v=5.42"></script>
-  <script src="js/purchase.js?v=5.42"></script>
-  <script src="js/stock-in.js?v=5.42"></script>
-  <script src="js/requisition.js?v=5.42"></script>
-  <script src="js/monthly-summary.js?v=5.42"></script>
-  <script src="js/tour-reports.js?v=5.42"></script>
-  <script src="js/business-flow.js?v=5.42"></script>
-  <script src="js/app.js?v=5.42"></script>
-  <script src="js/inventory-hybrid.js?v=5.42"></script>
-  <script src="js/admin-bindings.js?v=5.42"></script>
+  <script src="js/supabase-db.js?v=5.46"></script>
+  <script src="js/supabase-sync.js?v=5.46"></script>
+  <script src="js/migrate-data.js?v=5.46"></script>
+  <script src="js/toast.js?v=5.46"></script>
+  <script src="js/login-characters.js?v=5.46"></script>
+  <script src="js/auth-fix.js?v=5.46"></script>
+  <script src="js/navigation.js?v=5.46"></script>
+  <script src="js/purchase.js?v=5.46"></script>
+  <script src="js/stock-in.js?v=5.46"></script>
+  <script src="js/requisition.js?v=5.46"></script>
+  <script src="js/monthly-summary.js?v=5.46"></script>
+  <script src="js/tour-reports.js?v=5.46"></script>
+  <script src="js/business-flow.js?v=5.46"></script>
+  <script src="js/app.js?v=5.46"></script>
+  <script src="js/inventory-hybrid.js?v=5.46"></script>
+  <script src="js/admin-bindings.js?v=5.46"></script>
 
-  <script src="js/user-admin.js?v=5.42"></script>
+  <script src="js/user-admin.js?v=5.46"></script>
+
+  <!-- v5.43 架构待升级提示：当检测到云端约束/新表未应用（__SCHEMA_OUTDATED）时显示 -->
+  <div id="schema-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#fff4e5;color:#8a5a08;border-bottom:1px solid #f0c987;padding:10px 16px;font-size:13px;line-height:1.5;box-shadow:0 2px 8px rgba(0,0,0,.08);">
+    <strong>⚠ 数据库架构待升级</strong>：检测到领用审核流所需的表/约束尚未应用（<code>pending_approval / approved / rejected / withdrawn</code> 状态、<code>consumption_standards</code>、<code>settings</code> 等）。审核流将自动降级为旧流程。请在 Supabase 控制台 <b>SQL Editor</b> 中执行 <code>database/migrations/20260806_v5.43_fullfix.sql</code> 后刷新页面，即可启用完整功能。
+  </div>
+  <script>
+  (function(){
+    var tries=0, el=document.getElementById('schema-banner');
+    var t=setInterval(function(){
+      tries++;
+      if(window.__SCHEMA_OUTDATED){ if(el) el.style.display='block'; clearInterval(t); }
+      else if(tries>25){ clearInterval(t); }
+    },800);
+  })();
+  </script>
 </body>
 </html>
