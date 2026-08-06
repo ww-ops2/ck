@@ -124,12 +124,38 @@ function showConfirm(message, onConfirm, onCancel) {
   var cancelBtn = document.getElementById('confirm-cancel-btn');
 
   okBtn.addEventListener('click', function() {
-    overlay.classList.remove('show');
-    setTimeout(function() { overlay.remove(); }, 200);
-    if (typeof onConfirm === 'function') onConfirm();
+    if (okBtn.dataset.busy) return;
+    okBtn.dataset.busy = '1';
+    // 异步确认时展示等待动画，避免重复点击
+    showButtonLoading(okBtn, '处理中...');
+    var ret;
+    try {
+      ret = (typeof onConfirm === 'function') ? onConfirm() : null;
+    } catch (err) {
+      delete okBtn.dataset.busy;
+      hideButtonLoading(okBtn);
+      overlay.classList.remove('show');
+      setTimeout(function() { overlay.remove(); }, 200);
+      return;
+    }
+    if (ret && typeof ret.then === 'function') {
+      ret.then(function() {
+        overlay.classList.remove('show');
+        setTimeout(function() { overlay.remove(); }, 200);
+      }).catch(function() {
+        delete okBtn.dataset.busy;
+        hideButtonLoading(okBtn);
+        overlay.classList.remove('show');
+        setTimeout(function() { overlay.remove(); }, 200);
+      });
+    } else {
+      overlay.classList.remove('show');
+      setTimeout(function() { overlay.remove(); }, 200);
+    }
   });
 
   cancelBtn.addEventListener('click', function() {
+    if (okBtn.dataset.busy) return;
     overlay.classList.remove('show');
     setTimeout(function() { overlay.remove(); }, 200);
     if (typeof onCancel === 'function') onCancel();
