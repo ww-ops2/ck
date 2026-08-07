@@ -136,7 +136,7 @@ foreach ($relPath in $filesToPush) {
             $cloudSha = $resp.sha
         } catch {}
 
-        $msg = "v5.46 " + $(if ($cloudSha) { "update" } else { "add" }) + " $target"
+        $msg = "v5.47 " + $(if ($cloudSha) { "update" } else { "add" }) + " $target"
         $body = @{
             message = $msg
             content = $b64
