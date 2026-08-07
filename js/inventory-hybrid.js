@@ -270,18 +270,12 @@ function buildInvPendingMap() {
   _invHybrid.pendingMap = pendingMap;
 }
 
-// 更新分类筛选下拉（合并主数据 categories，保证与品类管理勾稽一致）
+// 更新分类筛选下拉
 function updateInvCategorySelect() {
   var selectId = 'inv-filter-category';
+  var catNames = _invHybrid.categoryNames;
   var select = document.getElementById(selectId);
   if (!select) return;
-  var catNames = (_invHybrid.categoryNames || []).slice();
-  if (typeof getCategoriesForDropdown === 'function') {
-    getCategoriesForDropdown().forEach(function(c) {
-      if (catNames.indexOf(c.name) === -1) catNames.push(c.name);
-    });
-  }
-  catNames.sort(function(a, b) { return a.localeCompare(b, 'zh'); });
   var currentVal = select.value;
   select.innerHTML = '<option value="">全部分类</option>' +
     catNames.map(function(c) { return '<option value="' + c + '"' + (c === currentVal ? ' selected' : '') + '>' + c + '</option>'; }).join('');
@@ -438,7 +432,7 @@ function toggleInvCard(index) {
 /**
  * 点击商品行展开/收起入库记录
  */
-async function toggleInvItemHistory(row) {
+function toggleInvItemHistory(row) {
   // 安全守卫：不在补充信息模式下才允许展开
   if (_invHybrid.supplementMode) return;
 
@@ -522,63 +516,27 @@ async function toggleInvItemHistory(row) {
     });
   });
 
+  // 报损（来自缓存，保证多用户同频）
+  var lossRecords = (typeof _appCache !== 'undefined' && _appCache.lossRecords) ? _appCache.lossRecords : [];
+  lossRecords.forEach(function(lr) {
+    var match = false;
+    if (itemCode && lr.item_code === itemCode) match = true;
+    if (!match && itemName && lr.name === itemName) match = true;
+    if (match) {
+      timeline.push({
+        date: lr.created_at ? lr.created_at.slice(0, 10) : '-',
+        type: 'loss', code: lr.code || '-',
+        qty: Number(lr.qty) || 0, unit: lr.unit || '-',
+        by: lr.applicant_name || '-',
+        note: '团期 ' + (lr.tour_name || '') + (lr.reason ? ' 原因:' + lr.reason : '')
+      });
+    }
+  });
+
   // 渲染历史记录
   var contentEl = historyRow.querySelector('.inv-history-content');
   var loadingEl = historyRow.querySelector('.inv-history-loading');
 
-  // 先用缓存即时渲染（下拉展开不卡顿）
-  _renderInvHistoryContent(contentEl, loadingEl, timeline);
-
-  // 若可按物品 id 实时拉取，则补充最新/完整的出入库记录
-  // （保证多用户同频：B 展开时能看到 A 刚做的出入库；且不受首屏 limit 影响，历史完整）
-  if (itemId && typeof isSupabaseReady === 'function' && isSupabaseReady()) {
-    var sb = (typeof getSupabase === 'function') ? getSupabase() : null;
-    if (sb) {
-      try {
-        const [siRes, soRes] = await Promise.all([
-          sb.from('stock_in_items').select('*, stock_in_records(*)').eq('inventory_item_id', itemId),
-          sb.from('stock_out_items').select('*, stock_out_records(*)').eq('inventory_item_id', itemId)
-        ]);
-        var liveTimeline = [];
-        (siRes && siRes.data ? siRes.data : []).forEach(function(si) {
-          var rec = (si.stock_in_records && si.stock_in_records[0]) || {};
-          liveTimeline.push({
-            date: rec.stockin_date || (rec.created_at ? rec.created_at.slice(0, 10) : '-'),
-            type: 'in', code: rec.code || '-',
-            qty: Number(si.actual_quantity) || 0, unit: si.unit || '-',
-            price: Number(si.price) || 0, amount: (Number(si.actual_quantity) || 0) * (Number(si.price) || 0),
-            by: rec.confirmed_by || '-',
-            note: '批次 ' + (rec.batch_code || '')
-          });
-        });
-        (soRes && soRes.data ? soRes.data : []).forEach(function(so) {
-          var rec = (so.stock_out_records && so.stock_out_records[0]) || {};
-          liveTimeline.push({
-            date: rec.stockout_date || (rec.created_at ? rec.created_at.slice(0, 10) : '-'),
-            type: 'out', code: rec.code || '-',
-            qty: Number(so.actual_quantity) || Number(so.quantity) || 0, unit: so.unit || '-',
-            by: rec.confirmed_by || rec.created_by || '-',
-            note: '领用单 ' + (rec.requisition_code || '-')
-          });
-        });
-        // 合并去重（以 类型|单据号|日期|数量 为键）
-        var seen = {};
-        timeline.forEach(function(r) { seen[r.type + '|' + r.code + '|' + r.date + '|' + r.qty] = true; });
-        liveTimeline.forEach(function(r) {
-          var k = r.type + '|' + r.code + '|' + r.date + '|' + r.qty;
-          if (!seen[k]) { seen[k] = true; timeline.push(r); }
-        });
-        _renderInvHistoryContent(contentEl, loadingEl, timeline);
-      } catch (e) {
-        console.warn('[History] 实时拉取失败，使用缓存:', e.message);
-      }
-    }
-  }
-}
-
-// 渲染出入库明细时间线（供缓存即时渲染与实时补全后复用）
-function _renderInvHistoryContent(contentEl, loadingEl, timeline) {
-  if (!contentEl) return;
   if (timeline.length === 0) {
     if (loadingEl) loadingEl.textContent = '';
     contentEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:16px 0;">暂无出入库记录</div>';
@@ -590,7 +548,8 @@ function _renderInvHistoryContent(contentEl, loadingEl, timeline) {
 
   var totalIn = timeline.filter(function(r){return r.type==='in';}).reduce(function(s,r){return s+r.qty;},0);
   var totalOut = timeline.filter(function(r){return r.type==='out';}).reduce(function(s,r){return s+r.qty;},0);
-  if (loadingEl) loadingEl.textContent = '共 ' + timeline.length + ' 条 · 入库 ' + totalIn + ' · 出库 ' + totalOut;
+  var totalLoss = timeline.filter(function(r){return r.type==='loss';}).reduce(function(s,r){return s+r.qty;},0);
+  if (loadingEl) loadingEl.textContent = '共 ' + timeline.length + ' 条 · 入库 ' + totalIn + ' · 出库 ' + totalOut + (totalLoss ? ' · 报损 ' + totalLoss : '');
 
   var tableHtml = '<table class="hi-table" style="width:100%;border-collapse:collapse;font-size:0.72rem;">';
   tableHtml += '<thead><tr style="background:#efebe6;">';
@@ -605,8 +564,10 @@ function _renderInvHistoryContent(contentEl, loadingEl, timeline) {
   timeline.forEach(function(r) {
     var typeLabel = r.type === 'in'
       ? '<span style="color:var(--success);font-weight:600">入库</span>'
-      : '<span style="color:var(--danger);font-weight:600">出库</span>';
-    var qtyColor = r.type === 'in' ? 'var(--success)' : 'var(--danger)';
+      : (r.type === 'loss'
+        ? '<span style="color:#856404;font-weight:600">报损</span>'
+        : '<span style="color:var(--danger);font-weight:600">出库</span>');
+    var qtyColor = r.type === 'in' ? 'var(--success)' : (r.type === 'loss' ? '#856404' : 'var(--danger)');
     tableHtml += '<tr style="border-bottom:1px solid #ede8e2;">';
     tableHtml += '<td style="padding:5px 8px;">' + r.date + '</td>';
     tableHtml += '<td style="padding:5px 8px;">' + typeLabel + '</td>';
@@ -696,15 +657,7 @@ function updateInvButtonStates() {
 
   var addItemBtn = document.getElementById('add-item-btn');
   if (addItemBtn) {
-    if (_invHybrid.supplementMode) {
-      addItemBtn.style.display = 'none';
-    } else {
-      // 仅查看（无编辑/管理/调整权限）时隐藏新增入口
-      const canAdd = (typeof hasPermission === 'function')
-        ? (hasPermission('edit_inventory') || hasPermission('manage_inventory') || hasPermission('adjust_stock'))
-        : true;
-      addItemBtn.style.display = canAdd ? '' : 'none';
-    }
+    addItemBtn.style.display = _invHybrid.supplementMode ? 'none' : '';
   }
 }
 
@@ -821,11 +774,9 @@ function renderInvSupplementTable() {
 
   if (!tableWrap) return;
 
-  // 分类下拉选项（统一走 getCategoriesForDropdown，与品类管理保持一致）
+  // 分类下拉选项
   var catOptions = '';
-  if (typeof getCategoriesForDropdown === 'function') {
-    catOptions = getCategoriesForDropdown().map(function(c) { return '<option value="' + c.name + '">' + c.name + '</option>'; }).join('');
-  } else if (typeof categories !== 'undefined' && categories.length > 0) {
+  if (typeof categories !== 'undefined' && categories.length > 0) {
     catOptions = categories.map(function(c) { return '<option value="' + c.name + '">' + c.name + '</option>'; }).join('');
   } else {
     catOptions = '<option value="未分类">未分类</option><option value="循环使用类">循环使用类</option><option value="消耗类">消耗类</option>';
@@ -1037,10 +988,7 @@ async function _saveInvSupplement() {
   var allSuccess = errors.length === 0;
   if (allSuccess && successCount > 0) {
     try {
-      if (typeof syncModuleTables === 'function') {
-        await syncModuleTables('inventory');
-        console.log('[InventoryHybrid] 云端刷新完成');
-      } else if (typeof refreshData === 'function') {
+      if (typeof refreshData === 'function') {
         await refreshData('inventory');
         console.log('[InventoryHybrid] 云端刷新完成');
       }
@@ -1073,8 +1021,8 @@ async function _saveInvSupplement() {
     if (suppBar) suppBar.style.display = 'none';
   }
 
-  // 重新渲染：成功时直接渲染已刷新的缓存（更快），失败时回退云端拉取权威数据
-  loadInventoryHybridData(allSuccess);
+  // 重新渲染（全量数据重新加载 + 按新分类重新分组排版）
+  loadInventoryHybridData();
 }
 
 function _cancelInvSupplement() {
