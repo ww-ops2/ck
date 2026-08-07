@@ -25,6 +25,60 @@ function initNavigation() {
   if (refreshBtn) {
     refreshBtn.addEventListener('click', handleRefresh);
   }
+
+  // 启动自动同频（定时增量同步 + 标签页聚焦即时同步）
+  startAutoSync();
+}
+
+// ============================================================
+// 自动同频：解决多用户场景下「A 改了 B 还看旧数据」
+// 做法：每 30s（页面可见且有用户登录时）只增量同步当前模块所需表；
+//       标签页重新聚焦时立即同步一次。每次只动 1~4 张表，远轻于全量同步。
+// ============================================================
+let _autoSyncTimer = null;
+const AUTO_SYNC_INTERVAL = 30000; // 30 秒
+
+// 整表重渲染时保留库存列表滚动位置，避免轮询重绘导致跳到顶部
+function _autoRenderModule(module) {
+  let scEl = null, scTop = 0;
+  if (module === 'inventory') {
+    scEl = document.getElementById('inv-board-new');
+    if (scEl) scTop = scEl.scrollTop;
+  }
+  if (typeof loadModuleData === 'function') loadModuleData(module);
+  if (scEl) { try { scEl.scrollTop = scTop; } catch (e) {} }
+}
+
+function _runAutoSyncOnce() {
+  if (document.visibilityState !== 'visible') return;
+  if (typeof isSupabaseReady === 'function' && !isSupabaseReady()) return;
+  if (typeof currentUser === 'undefined' || !currentUser) return;
+  // 用户正在编辑/弹窗时跳过整表重渲染，避免打断
+  const modalOpen = document.querySelector('.modal-overlay');
+  if (modalOpen && modalOpen.offsetParent !== null) return;
+  if (typeof _invHybrid !== 'undefined' && _invHybrid && _invHybrid.supplementMode) return;
+  try {
+    if (typeof syncModuleTables === 'function') syncModuleTables(currentModule);
+    _autoRenderModule(currentModule);
+  } catch (e) {
+    console.warn('[AutoSync] 同步异常:', e.message);
+  }
+}
+
+function startAutoSync() {
+  if (_autoSyncTimer) return; // 防止重复启动
+  console.log('[AutoSync] 启动，间隔 ' + (AUTO_SYNC_INTERVAL / 1000) + 's');
+
+  _autoSyncTimer = setInterval(function () {
+    _runAutoSyncOnce();
+  }, AUTO_SYNC_INTERVAL);
+
+  // 标签页重新获得焦点时立即同步一次（B 切回页面即可看到 A 的修改）
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') {
+      _runAutoSyncOnce();
+    }
+  });
 }
 
 /**
