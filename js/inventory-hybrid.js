@@ -438,7 +438,7 @@ function toggleInvCard(index) {
 /**
  * 点击商品行展开/收起入库记录
  */
-function toggleInvItemHistory(row) {
+async function toggleInvItemHistory(row) {
   // 安全守卫：不在补充信息模式下才允许展开
   if (_invHybrid.supplementMode) return;
 
@@ -526,6 +526,59 @@ function toggleInvItemHistory(row) {
   var contentEl = historyRow.querySelector('.inv-history-content');
   var loadingEl = historyRow.querySelector('.inv-history-loading');
 
+  // 先用缓存即时渲染（下拉展开不卡顿）
+  _renderInvHistoryContent(contentEl, loadingEl, timeline);
+
+  // 若可按物品 id 实时拉取，则补充最新/完整的出入库记录
+  // （保证多用户同频：B 展开时能看到 A 刚做的出入库；且不受首屏 limit 影响，历史完整）
+  if (itemId && typeof isSupabaseReady === 'function' && isSupabaseReady()) {
+    var sb = (typeof getSupabase === 'function') ? getSupabase() : null;
+    if (sb) {
+      try {
+        const [siRes, soRes] = await Promise.all([
+          sb.from('stock_in_items').select('*, stock_in_records(*)').eq('inventory_item_id', itemId),
+          sb.from('stock_out_items').select('*, stock_out_records(*)').eq('inventory_item_id', itemId)
+        ]);
+        var liveTimeline = [];
+        (siRes && siRes.data ? siRes.data : []).forEach(function(si) {
+          var rec = (si.stock_in_records && si.stock_in_records[0]) || {};
+          liveTimeline.push({
+            date: rec.stockin_date || (rec.created_at ? rec.created_at.slice(0, 10) : '-'),
+            type: 'in', code: rec.code || '-',
+            qty: Number(si.actual_quantity) || 0, unit: si.unit || '-',
+            price: Number(si.price) || 0, amount: (Number(si.actual_quantity) || 0) * (Number(si.price) || 0),
+            by: rec.confirmed_by || '-',
+            note: '批次 ' + (rec.batch_code || '')
+          });
+        });
+        (soRes && soRes.data ? soRes.data : []).forEach(function(so) {
+          var rec = (so.stock_out_records && so.stock_out_records[0]) || {};
+          liveTimeline.push({
+            date: rec.stockout_date || (rec.created_at ? rec.created_at.slice(0, 10) : '-'),
+            type: 'out', code: rec.code || '-',
+            qty: Number(so.actual_quantity) || Number(so.quantity) || 0, unit: so.unit || '-',
+            by: rec.confirmed_by || rec.created_by || '-',
+            note: '领用单 ' + (rec.requisition_code || '-')
+          });
+        });
+        // 合并去重（以 类型|单据号|日期|数量 为键）
+        var seen = {};
+        timeline.forEach(function(r) { seen[r.type + '|' + r.code + '|' + r.date + '|' + r.qty] = true; });
+        liveTimeline.forEach(function(r) {
+          var k = r.type + '|' + r.code + '|' + r.date + '|' + r.qty;
+          if (!seen[k]) { seen[k] = true; timeline.push(r); }
+        });
+        _renderInvHistoryContent(contentEl, loadingEl, timeline);
+      } catch (e) {
+        console.warn('[History] 实时拉取失败，使用缓存:', e.message);
+      }
+    }
+  }
+}
+
+// 渲染出入库明细时间线（供缓存即时渲染与实时补全后复用）
+function _renderInvHistoryContent(contentEl, loadingEl, timeline) {
+  if (!contentEl) return;
   if (timeline.length === 0) {
     if (loadingEl) loadingEl.textContent = '';
     contentEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:16px 0;">暂无出入库记录</div>';
@@ -984,7 +1037,10 @@ async function _saveInvSupplement() {
   var allSuccess = errors.length === 0;
   if (allSuccess && successCount > 0) {
     try {
-      if (typeof refreshData === 'function') {
+      if (typeof syncModuleTables === 'function') {
+        await syncModuleTables('inventory');
+        console.log('[InventoryHybrid] 云端刷新完成');
+      } else if (typeof refreshData === 'function') {
         await refreshData('inventory');
         console.log('[InventoryHybrid] 云端刷新完成');
       }
@@ -1017,8 +1073,8 @@ async function _saveInvSupplement() {
     if (suppBar) suppBar.style.display = 'none';
   }
 
-  // 重新渲染（全量数据重新加载 + 按新分类重新分组排版）
-  loadInventoryHybridData();
+  // 重新渲染：成功时直接渲染已刷新的缓存（更快），失败时回退云端拉取权威数据
+  loadInventoryHybridData(allSuccess);
 }
 
 function _cancelInvSupplement() {
