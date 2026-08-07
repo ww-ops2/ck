@@ -94,125 +94,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // 延迟声明，实际实现在文件下方
   }
   initAdminBindings();
-
-  // 绑定操作记录（审计日志）筛选按钮
-  const filterLogBtn = document.getElementById('filter-log-btn');
-  if (filterLogBtn && !filterLogBtn._auditBound) {
-    filterLogBtn._auditBound = true;
-    filterLogBtn.addEventListener('click', () => { if (typeof loadAuditLogs === 'function') loadAuditLogs(); });
-  }
 });
-
-/* ================================================================
- *  操作记录（审计日志）查看器
- * ================================================================ */
-const _AUDIT_ACTION_LABELS = {
-  CREATE: '新建', UPDATE: '修改', DELETE: '删除',
-  STOCK_IN: '入库', STOCK_OUT: '出库', WITHDRAW: '撤回',
-  APPROVE: '审核通过', REJECT: '审核驳回',
-  BULK_UPDATE: '批量修改', REJECT_USER: '拒绝注册', ADJUST: '库存调整'
-};
-const _AUDIT_ENTITY_LABELS = {
-  users: '账号', categories: '品类', inventory_items: '库存物品',
-  purchase_orders: '采购单', requisitions: '领用单',
-  consumption_standards: '领用标准', inventory_adjustments: '库存调整'
-};
-function _auditActionClass(action) {
-  if (['CREATE', 'STOCK_IN', 'STOCK_OUT', 'APPROVE'].includes(action)) return 'success';
-  if (['DELETE', 'REJECT'].includes(action)) return 'danger';
-  if (['UPDATE', 'WITHDRAW', 'BULK_UPDATE'].includes(action)) return 'warning';
-  return 'info';
-}
-function _auditHtmlEsc(s) {
-  if (s == null) return '';
-  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-async function loadAuditLogs() {
-  const tbody = document.getElementById('log-tbody');
-  if (!tbody) return;
-  const startEl = document.getElementById('log-date-start');
-  const endEl = document.getElementById('log-date-end');
-  const f = {};
-  if (startEl && startEl.value) f.start_date = startEl.value + 'T00:00:00';
-  if (endEl && endEl.value) f.end_date = endEl.value + 'T23:59:59';
-
-  tbody.innerHTML = '<tr><td colspan="5" class="empty-state">加载中...</td></tr>';
-  try {
-    if (typeof SupaDB === 'undefined' || !SupaDB.getAuditLogs) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">审计模块未就绪</td></tr>';
-      return;
-    }
-    const logs = await SupaDB.getAuditLogs(f);
-    if (!logs || logs.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">暂无日志记录</td></tr>';
-      return;
-    }
-    tbody.innerHTML = logs.map(log => {
-      const action = _AUDIT_ACTION_LABELS[log.action] || log.action || '-';
-      const entity = _AUDIT_ENTITY_LABELS[log.entity_type] || log.entity_type || '-';
-      const time = log.created_at ? new Date(log.created_at).toLocaleString('zh-CN') : '-';
-      const who = (log.user_name || '系统') + (log.user_role ? '（' + log.user_role + '）' : '');
-      let detail = '';
-      if (log.entity_code) detail += '单号 ' + log.entity_code + ' · ';
-      if (log.details) {
-        try {
-          const d = typeof log.details === 'string' ? JSON.parse(log.details) : log.details;
-          detail += Object.entries(d).map(([k, v]) => k + '=' + (typeof v === 'object' ? JSON.stringify(v) : v)).join('，');
-        } catch (e) { detail += String(log.details); }
-      }
-      if (detail.length > 140) detail = detail.slice(0, 140) + '…';
-      const ip = log.ip_address || '-';
-      const cls = _auditActionClass(log.action);
-      return '<tr>' +
-        '<td>' + _auditHtmlEsc(time) + '</td>' +
-        '<td>' + _auditHtmlEsc(who) + '</td>' +
-        '<td style="text-align:left;"><span class="status-badge ' + cls + '">' + _auditHtmlEsc(action) + '</span> <span class="status-badge info">' + _auditHtmlEsc(entity) + '</span></td>' +
-        '<td style="text-align:left;">' + _auditHtmlEsc(detail) + '</td>' +
-        '<td>' + _auditHtmlEsc(ip) + '</td>' +
-        '</tr>';
-    }).join('');
-  } catch (e) {
-    console.error('[Audit] 加载失败', e);
-    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">加载失败：' + _auditHtmlEsc(e.message || e) + '</td></tr>';
-  }
-}
-
-/**
- * KPI 卡片 → 所需权限映射（未列出的默认对所有人可见）
- */
-function _getDashboardKPIPermMap() {
-  return {
-    'total-items': 'view_inventory',
-    'month-in': 'view_inventory',
-    'month-out': 'view_inventory',
-    'pending-purchase': 'view_purchase',
-    'pending-stockin': 'confirm_stockin',
-    'low-stock': 'view_inventory',
-    'pending-outbound': 'confirm_stockout'
-  };
-}
 
 /**
  * 加载仪表盘数据
  */
 function loadDashboard() {
   console.log('加载仪表盘数据...');
-
-  // 按角色/权限显隐 KPI 卡片
-  const permMap = _getDashboardKPIPermMap();
-  document.querySelectorAll('.kpi-card-new[data-kpi-type]').forEach(function(card) {
-    const type = card.dataset.kpiType;
-    const perm = permMap[type];
-    card.style.display = (!perm || (typeof hasPermission === 'function' && hasPermission(perm))) ? '' : 'none';
-  });
-
+  
   // 更新KPI卡片
   updateKPICards();
-
+  
   // 加载图表
   loadTrendChart();
   loadCategoryChart();
-
+  
   // 加载最近动态
   loadRecentActivities();
 
@@ -221,106 +117,54 @@ function loadDashboard() {
 }
 
 /**
- * 更新KPI卡片 - 从缓存读取真实数据，并按权限计算
+ * 更新KPI卡片 - 从localStorage读取真实数据
  */
 function updateKPICards() {
-  const permMap = _getDashboardKPIPermMap();
-  const can = function(p) { return typeof hasPermission === 'function' ? hasPermission(p) : true; };
-
   // 总库存物品数
-  if (can(permMap['total-items'])) {
-    let inventory = _appCache.inventory ? _appCache.inventory : [];
-    const totalItems = inventory.length > 0 ? inventory.length : mockData.items.length;
-    const el = document.getElementById('kpi-total-items');
-    if (el) el.textContent = totalItems;
-  }
+  let inventory = _appCache.inventory ? _appCache.inventory : [];
+  const totalItems = inventory.length > 0 ? inventory.length : mockData.items.length;
+  document.getElementById('kpi-total-items').textContent = totalItems;
 
   // 本月入库数
-  if (can(permMap['month-in'])) {
-    let stockInRecords = _appCache.stockInRecords ? _appCache.stockInRecords : [];
-    const now = new Date();
-    const thisMonth = now.getMonth();
-    const thisYear = now.getFullYear();
-    const monthInQty = stockInRecords
-      .filter(r => {
-        const d = new Date(r.stockin_date || r.created_at);
-        return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
-      })
-      .reduce((sum, r) => sum + (r.total_quantity || 0), 0);
-    const el = document.getElementById('kpi-month-in');
-    if (el) el.textContent = monthInQty;
-  }
+  let stockInRecords = _appCache.stockInRecords ? _appCache.stockInRecords : [];
+  const now = new Date();
+  const thisMonth = now.getMonth();
+  const thisYear = now.getFullYear();
+  const monthInQty = stockInRecords
+    .filter(r => {
+      const d = new Date(r.stockin_date || r.created_at);
+      return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
+    })
+    .reduce((sum, r) => sum + (r.total_quantity || 0), 0);
+  document.getElementById('kpi-month-in').textContent = monthInQty;
 
   // 本月出库数
-  if (can(permMap['month-out'])) {
-    let stockOutRecords = _appCache.stockOutRecords ? _appCache.stockOutRecords : [];
-    const now = new Date();
-    const thisMonth = now.getMonth();
-    const thisYear = now.getFullYear();
-    const monthOutQty = stockOutRecords
-      .filter(r => {
-        const d = new Date(r.stockout_date || r.created_at);
-        return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
-      })
-      .reduce((sum, r) => sum + (r.total_quantity || 0), 0);
-    const el = document.getElementById('kpi-month-out');
-    if (el) el.textContent = monthOutQty;
-  }
+  let stockOutRecords = _appCache.stockOutRecords ? _appCache.stockOutRecords : [];
+  const monthOutQty = stockOutRecords
+    .filter(r => {
+      const d = new Date(r.stockout_date || r.created_at);
+      return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
+    })
+    .reduce((sum, r) => sum + (r.total_quantity || 0), 0);
+  document.getElementById('kpi-month-out').textContent = monthOutQty;
 
   // 待处理采购单数
-  if (can(permMap['pending-purchase'])) {
-    let purchaseOrders = _appCache.purchaseOrders ? _appCache.purchaseOrders : [];
-    const pendingPurchase = purchaseOrders.filter(o => o.status === 'pending_stockin' || o.status === 'partially_stockin').length;
-    const el = document.getElementById('kpi-pending-purchase');
-    if (el) el.textContent = pendingPurchase;
+  let purchaseOrders = _appCache.purchaseOrders ? _appCache.purchaseOrders : [];
+  const pendingPurchase = purchaseOrders.filter(o => o.status === 'pending_stockin').length;
+  document.getElementById('kpi-pending-purchase').textContent = pendingPurchase;
 
-    // 待确认入库数（同待处理采购单，入库前都是待确认）
-    const el2 = document.getElementById('kpi-pending-stockin');
-    if (el2 && can(permMap['pending-stockin'])) el2.textContent = pendingPurchase;
-  }
+  // 待确认入库数（同待处理采购单，入库前都是待确认）
+  document.getElementById('kpi-pending-stockin').textContent = pendingPurchase;
 
   // 低库存预警
-  if (can(permMap['low-stock'])) {
-    let inventory = _appCache.inventory ? _appCache.inventory : [];
-    const items = inventory.length > 0 ? inventory : mockData.items;
-    const el = document.getElementById('kpi-low-stock');
-    if (el) el.textContent = items.filter(item => item.stock < (item.safety_stock || 10)).length;
-  }
+  const items = inventory.length > 0 ? inventory : mockData.items;
+  document.getElementById('kpi-low-stock').textContent = items.filter(item => item.stock < (item.safety_stock || 10)).length;
 
-  // 待确认出库（已审核 + 待出库）
-  if (can(permMap['pending-outbound'])) {
-    let reqList = _appCache.requisitions ? _appCache.requisitions : [];
-    const pendingOutbound = reqList.filter(r => r.status === 'pending_outbound' || r.status === 'approved').length;
-    const el = document.getElementById('kpi-pending-outbound');
-    if (el) el.textContent = pendingOutbound;
-  }
-
-  // 同步 sidebar 待办角标
-  updateSidebarBadges();
-}
-
-/**
- * 更新侧边栏待办角标
- */
-function updateSidebarBadges() {
-  const can = function(p) { return typeof hasPermission === 'function' ? hasPermission(p) : true; };
-
-  // 采购/入库待处理
-  const po = _appCache.purchaseOrders || [];
-  const pendingPO = po.filter(o => o.status === 'pending_stockin' || o.status === 'partially_stockin').length;
-  const pb = document.getElementById('purchase-badge');
-  const sb = document.getElementById('stockin-badge');
-  if (pb) { pb.textContent = pendingPO; pb.style.display = (can('view_purchase') && pendingPO > 0) ? 'flex' : 'none'; }
-  if (sb) { sb.textContent = pendingPO; sb.style.display = (can('confirm_stockin') && pendingPO > 0) ? 'flex' : 'none'; }
-
-  // 领用/出库待处理
-  const rq = _appCache.requisitions || [];
-  const pendingReq = rq.filter(r => r.status === 'pending_approval').length;
-  const pendingOut = rq.filter(r => r.status === 'pending_outbound' || r.status === 'approved').length;
-  const rb = document.getElementById('requisition-badge');
-  const ob = document.getElementById('stockout-badge');
-  if (rb) { rb.textContent = pendingReq; rb.style.display = (can('approve_requisition') && pendingReq > 0) ? 'flex' : 'none'; }
-  if (ob) { ob.textContent = pendingOut; ob.style.display = (can('confirm_stockout') && pendingOut > 0) ? 'flex' : 'none'; }
+  // 待确认出库
+  let reqList = _appCache.requisitions ? _appCache.requisitions : [];
+  const pendingOutbound = reqList.filter(r => r.status === 'pending_outbound').length;
+  const pendingOutboundEl = document.getElementById('kpi-pending-outbound');
+  if (pendingOutboundEl) pendingOutboundEl.textContent = pendingOutbound;
 }
 
 /**
@@ -336,41 +180,17 @@ function countLowStock() {
 function loadTrendChart() {
   const ctx = document.getElementById('trend-chart');
   if (!ctx) return;
-
+  
   // 销毁旧图表
   if (trendChart) {
     trendChart.destroy();
   }
-
-  // 基于真实出入库记录聚合最近 N 天数据
-  const days = 30;
-  const labels = generateDateLabels(days);
-  const idxByDate = {};
-  labels.forEach((lab, i) => { idxByDate[lab] = i; });
-  const inData = new Array(days).fill(0);
-  const outData = new Array(days).fill(0);
-
-  function _recQty(rec) {
-    if (Number(rec.total_quantity) > 0) return Number(rec.total_quantity);
-    if (Array.isArray(rec.items)) return rec.items.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
-    return 0;
-  }
-
-  (_appCache.stockInRecords || []).forEach(r => {
-    if (!r) return;
-    const d = new Date(r.stockin_date || r.created_at);
-    if (isNaN(d.getTime())) return;
-    const key = (d.getMonth() + 1) + '/' + d.getDate();
-    if (key in idxByDate) inData[idxByDate[key]] += _recQty(r);
-  });
-  (_appCache.stockOutRecords || []).forEach(r => {
-    if (!r) return;
-    const d = new Date(r.stockout_date || r.created_at);
-    if (isNaN(d.getTime())) return;
-    const key = (d.getMonth() + 1) + '/' + d.getDate();
-    if (key in idxByDate) outData[idxByDate[key]] += _recQty(r);
-  });
-
+  
+  // 生成模拟数据
+  const labels = generateDateLabels(30);
+  const inData = generateRandomData(30, 10, 100);
+  const outData = generateRandomData(30, 5, 80);
+  
   trendChart = new Chart(ctx, {
     type: 'line',
     data: {
@@ -409,8 +229,7 @@ function loadTrendChart() {
         },
         y: {
           grid: { color: 'rgba(168,158,169,0.3)' },
-          ticks: { color: '#a89ea9' },
-          beginAtZero: true
+          ticks: { color: '#a89ea9' }
         }
       }
     }
@@ -423,36 +242,32 @@ function loadTrendChart() {
 function loadCategoryChart() {
   const ctx = document.getElementById('category-chart');
   if (!ctx) return;
-
+  
   // 销毁旧图表
   if (categoryChart) {
     categoryChart.destroy();
   }
-
-  // 统计各分类物品数量（基于真实库存，按 category_name 聚合）
+  
+  // 统计各分类物品数量
   const categories = {};
-  const inv = (_appCache.inventory && _appCache.inventory.length > 0) ? _appCache.inventory : [];
-  inv.forEach(item => {
-    const cat = item.category_name || item.category || '未分类';
-    categories[cat] = (categories[cat] || 0) + 1;
+  mockData.items.forEach(item => {
+    categories[item.category] = (categories[item.category] || 0) + 1;
   });
-
-  // 真实库存为空时回退到示例数据（仅用于演示，避免空白图）
-  if (Object.keys(categories).length === 0) {
-    mockData.items.forEach(item => {
-      categories[item.category] = (categories[item.category] || 0) + 1;
-    });
-  }
-
-  const palette = ['#ec003f', '#ff2056', '#c70036', '#ffa1ad', '#7c3aed', '#0284c7', '#16a34a', '#f59e0b'];
-
+  
   categoryChart = new Chart(ctx, {
     type: 'doughnut',
     data: {
       labels: Object.keys(categories),
       datasets: [{
         data: Object.values(categories),
-        backgroundColor: Object.keys(categories).map((_, i) => palette[i % palette.length]),
+        backgroundColor: [
+          '#ec003f',
+          '#ff2056',
+          '#c70036',
+          '#ffa1ad',
+          '#7c3aed',
+          '#0284c7'
+        ],
         borderWidth: 0
       }]
     },
@@ -463,15 +278,6 @@ function loadCategoryChart() {
         legend: {
           position: 'right',
           labels: { color: '#5c5060' }
-        },
-        tooltip: {
-          callbacks: {
-            label: function(ctx) {
-              const total = ctx.dataset.data.reduce((a, b) => a + b, 0) || 1;
-              const val = ctx.parsed;
-              return ctx.label + ': ' + val + ' 件 (' + (val / total * 100).toFixed(1) + '%)';
-            }
-          }
         }
       }
     }
@@ -484,63 +290,9 @@ function loadCategoryChart() {
 function loadRecentActivities() {
   const container = document.getElementById('recent-activities');
   if (!container) return;
-
-  // 收集各模块的最近操作，按时间倒序取前 N 条
-  const acts = [];
-  const push = function (time, type, text) {
-    const t = new Date(time);
-    if (isNaN(t.getTime())) return;
-    acts.push({ t: t, type: type, text: text });
-  };
-  const recQty = function (rec) {
-    if (Number(rec.total_quantity) > 0) return Number(rec.total_quantity);
-    if (Array.isArray(rec.items)) return rec.items.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
-    return 0;
-  };
-
-  (_appCache.stockInRecords || []).forEach(r => {
-    push(r.stockin_date || r.created_at, 'in', '入库 ' + recQty(r) + ' 件' + (r.code ? '（' + r.code + '）' : ''));
-  });
-  (_appCache.stockOutRecords || []).forEach(r => {
-    push(r.stockout_date || r.created_at, 'out', '出库 ' + recQty(r) + ' 件' + (r.code ? '（' + r.code + '）' : ''));
-  });
-  (_appCache.requisitions || []).forEach(r => {
-    const stMap = { pending_approval: '待审批', approved: '已通过', pending_outbound: '待出库', outbound_completed: '已出库', rejected: '已驳回', withdrawn: '已撤回' };
-    push(r.created_at, 'req', '领用单提交' + (r.requester ? '（' + r.requester + '）' : '') + ' · ' + (stMap[r.status] || r.status || ''));
-  });
-  (_appCache.purchaseOrders || []).forEach(r => {
-    push(r.created_at, 'po', '新建采购单' + (r.code ? ' ' + r.code : ''));
-  });
-
-  acts.sort((a, b) => b.t - a.t);
-  const top = acts.slice(0, 12);
-
-  if (top.length === 0) {
-    container.innerHTML = '<div style="padding:18px;text-align:center;color:#999;font-size:13px;">暂无动态</div>';
-    return;
-  }
-
-  const tagStyle = {
-    in:  'background:rgba(22,163,74,.12);color:#16a34a;',
-    out: 'background:rgba(231,0,11,.10);color:#e7000b;',
-    req: 'background:rgba(124,58,237,.12);color:#7c3aed;',
-    po:  'background:rgba(2,132,199,.12);color:#0284c7;'
-  };
-  const tagText = { in: '入库', out: '出库', req: '领用', po: '采购' };
-
-  container.innerHTML = top.map(a => {
-    const diff = Math.floor((Date.now() - a.t.getTime()) / 1000);
-    let rel;
-    if (diff < 60) rel = '刚刚';
-    else if (diff < 3600) rel = Math.floor(diff / 60) + ' 分钟前';
-    else if (diff < 86400) rel = Math.floor(diff / 3600) + ' 小时前';
-    else rel = Math.floor(diff / 86400) + ' 天前';
-    return '<div style="display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid #f2eef1;">'
-      + '<span style="font-size:12px;padding:2px 8px;border-radius:10px;' + (tagStyle[a.type] || '') + '">' + (tagText[a.type] || '') + '</span>'
-      + '<span style="flex:1;color:#4a3f4a;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + a.text + '</span>'
-      + '<span style="font-size:12px;color:#aaa;white-space:nowrap;">' + rel + '</span>'
-      + '</div>';
-  }).join('');
+  
+  // 这里应该从数据库加载真实数据
+  // 目前显示静态内容
 }
 
 /**
@@ -925,7 +677,12 @@ function toggleInvSupplementMode() {
 }
 
 function _renderSupplementTable(container, items) {
-  var catOptions = getCategoriesForDropdown().map(function(c) { return '<option value="' + c.name + '">' + c.name + '</option>'; }).join('');
+  var catOptions = '';
+  if (typeof categories !== 'undefined' && categories.length > 0) {
+    catOptions = categories.map(function(c) { return '<option value="' + c.name + '">' + c.name + '</option>'; }).join('');
+  } else {
+    catOptions = '<option value="未分类">未分类</option><option value="循环使用类">循环使用类</option><option value="消耗类">消耗类</option>';
+  }
 
   var html = '<div style="margin-bottom:12px;padding:10px 16px;background:var(--accent-glow);border-radius:8px;font-size:13px;color:var(--text-secondary);">✏️ 补充信息模式 — 可编辑分类、品牌、型号、单位、单价，库存数量不可修改</div>';
   html += '<div class="table-scroll"><table class="data-table" id="supplement-table"><thead><tr>';
@@ -1113,10 +870,7 @@ async function _saveInvSupplement() {
   var allSuccess = errors.length === 0;
   if (allSuccess && successCount > 0) {
     try {
-      if (typeof syncModuleTables === 'function') {
-        await syncModuleTables('inventory');
-        console.log('云端刷新完成');
-      } else if (typeof refreshData === 'function') {
+      if (typeof refreshData === 'function') {
         await refreshData('inventory');
         console.log('云端刷新完成');
       }
@@ -1140,8 +894,8 @@ async function _saveInvSupplement() {
   console.log(msg, errors.length > 0 ? errors : '');
 
   _invSupplementMode = false;
-  // 全部成功 → 从已刷新的缓存渲染（更快）；部分失败 → 从云端重新拉取权威数据
-  loadInventory(allSuccess);
+  // 全部成功 → 从云端渲染；部分失败 → 从本地缓存渲染（保留修改）
+  loadInventory(!allSuccess);
 }
 
 function _cancelInvSupplement() {
@@ -1390,33 +1144,9 @@ function generateRandomData(count, min, max) {
 /**
  * 填充品类下拉选项（从全局 categories 数组同步）
  */
-/**
- * 取权威品类列表 —— 库存概览各下拉与「品类管理」共用同一数据源，保证勾稽一致。
- * 优先用 _appCache.categories（由 supabase-sync 持续从 DB 刷新，是权威源），
- * 再合并全局 categories（含本地新增尚未落库的项），按名称去重排序后返回 [{name}]。
- */
-function getCategoriesForDropdown() {
-  var seen = {};
-  var out = [];
-  function add(src) {
-    if (!src) return;
-    src.forEach(function(c) {
-      if (!c) return;
-      var name = String(c.name != null ? c.name : c).trim();
-      if (!name || seen[name]) return;
-      seen[name] = true;
-      out.push({ name: name });
-    });
-  }
-  if (typeof _appCache !== 'undefined' && _appCache.categories) add(_appCache.categories);
-  if (typeof categories !== 'undefined' && Array.isArray(categories)) add(categories);
-  out.sort(function(a, b) { return a.name.localeCompare(b.name, 'zh'); });
-  return out;
-}
-
 function _populateCategorySelect(selectEl) {
   if (!selectEl) return;
-  const cats = getCategoriesForDropdown();
+  const cats = (typeof categories !== 'undefined' && Array.isArray(categories)) ? categories : [];
   const currentVal = selectEl.value;
   selectEl.innerHTML = '<option value="">请选择</option>' +
     cats.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
@@ -1578,7 +1308,6 @@ function editItem(itemId) {
   saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
 
   newSaveBtn.addEventListener('click', async function onSave() {
-    showButtonLoading(newSaveBtn, '保存中...');
     try {
       const newStock = Number(form.elements['stock'].value || 0);
       const newSafety = Number(form.elements['safety_stock'].value || 0);
@@ -1629,7 +1358,7 @@ function editItem(itemId) {
         console.warn('[EditItem] Supabase 保存失败（本地已缓存）:', dbErr.message);
       }
 
-      // 记录调整并持久化到云端（修复：之前只写内存，刷新后丢失、他人不可见）
+      // 记录调整
       const adj = {
         id: item.id,
         inventory_item_id: item.id,
@@ -1640,39 +1369,18 @@ function editItem(itemId) {
         created_by: (getCurrentUser() ? getCurrentUser().username : 'system'),
         created_at: new Date().toISOString()
       };
-
-      let adjSaved = false;
-      try {
-        if (typeof SupaDB !== 'undefined' && SupaDB.createInventoryAdjustment) {
-          await SupaDB.createInventoryAdjustment({
-            inventory_item_id: adj.inventory_item_id,
-            item_code: adj.item_code,
-            delta: adj.delta,
-            new_stock: adj.new_stock,
-            reason: adj.reason,
-            created_by: adj.created_by
-          });
-          adjSaved = true;
-        }
-      } catch (adjErr) {
-        console.warn('[EditItem] 调整记录保存失败（库存数值已保存）:', adjErr.message);
-      }
-
       const arr = _appCache.inventoryAdjustments ? _appCache.inventoryAdjustments.slice() : [];
       arr.push(adj);
       _appCache.inventoryAdjustments = arr;
 
       loadInventory();
       closeModal();
-      var saveMsg = (dbSaved && adjSaved) ? '保存成功（已记录调整）'
-        : (dbSaved ? '库存已保存，但调整记录写入云端失败' : '已保存到本地缓存（数据库连接失败，刷新后可能丢失）');
-      if (typeof showToast === 'function') showToast(saveMsg, (dbSaved && adjSaved) ? 'success' : 'warning');
+      var saveMsg = dbSaved ? '保存成功（已记录调整）' : '已保存到本地缓存（数据库连接失败，刷新后可能丢失）';
+      if (typeof showToast === 'function') showToast(saveMsg, dbSaved ? 'success' : 'warning');
     } catch (e) {
       console.error(e);
       if (typeof showToast === 'function') showToast('保存失败：' + e.message, 'error');
       else alert('保存失败：' + e.message);
-    } finally {
-      hideButtonLoading(newSaveBtn);
     }
   });
 }
