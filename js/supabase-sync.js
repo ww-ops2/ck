@@ -26,9 +26,10 @@ window._appCache = {
   modelHistory: {},
   consumptionStandards: [],
   inventoryAdjustments: [],
-  tourNames: [],
   users: [],
-  settings: []
+  settings: [],
+  lossRecords: [],
+  nonPurchaseStockIns: []
 };
 
 let _isInitialLoading = false;
@@ -57,15 +58,16 @@ async function syncFromSupabase(options) {
     var tableQueries = {
       categories: sb.from('categories').select('*').order('id'),
       inventory: sb.from('inventory_items').select('*').order('id'),
-      purchaseOrders: sb.from('purchase_orders').select('*, purchase_order_items(*)').order('created_at', { ascending: false }).limit(500),
-      stockIn: sb.from('stock_in_records').select('*, stock_in_items(*)').order('created_at', { ascending: false }).limit(800),
-      requisitions: sb.from('requisitions').select('*, requisition_items(*)').order('created_at', { ascending: false }).limit(800),
-      stockOut: sb.from('stock_out_records').select('*, stock_out_items(*)').order('created_at', { ascending: false }).limit(800),
+      purchaseOrders: sb.from('purchase_orders').select('*, purchase_order_items(*)').order('created_at', { ascending: false }),
+      stockIn: sb.from('stock_in_records').select('*, stock_in_items(*)').order('created_at', { ascending: false }),
+      requisitions: sb.from('requisitions').select('*, requisition_items(*)').order('created_at', { ascending: false }),
+      stockOut: sb.from('stock_out_records').select('*, stock_out_items(*)').order('created_at', { ascending: false }),
       adjustments: sb.from('inventory_adjustments').select('*').order('created_at', { ascending: false }).limit(500),
       users: sb.from('users').select('*').order('id'),
       consumption: sb.from('consumption_standards').select('*').order('id'),
-      tourNames: sb.from('tour_names').select('*').order('name'),
-      settings: sb.from('settings').select('*')
+      settings: sb.from('settings').select('*'),
+      nonPurchaseStockIns: sb.from('non_purchase_stock_in').select('*').order('created_at', { ascending: false }),
+      lossRecords: sb.from('loss_records').select('*').order('created_at', { ascending: false }).limit(500)
     };
   
     // 用 allSettled 替代 all，失败的表不影响其他表
@@ -93,8 +95,9 @@ async function syncFromSupabase(options) {
     var adjustmentsResult = results.adjustments;
     var usersResult = results.users;
     var consumptionResult = results.consumption;
-    var tourNamesResult = results.tourNames;
     var settingsResult = results.settings;
+    var nonPurchaseStockInsResult = results.nonPurchaseStockIns;
+    var lossRecordsResult = results.lossRecords;
 
     // ---- 品类 ----
     if (categoriesResult.data) {
@@ -208,14 +211,19 @@ async function syncFromSupabase(options) {
       _appCache.consumptionStandards = consumptionResult.data;
     }
 
-    // ---- 团期名称主数据 ----
-    if (tourNamesResult && tourNamesResult.data) {
-      _appCache.tourNames = tourNamesResult.data;
-    }
-
     // ---- 系统设置 ----
     if (settingsResult && settingsResult.data) {
       _appCache.settings = settingsResult.data;
+    }
+
+    // ---- 非采购入库 ----
+    if (nonPurchaseStockInsResult && nonPurchaseStockInsResult.data) {
+      _appCache.nonPurchaseStockIns = nonPurchaseStockInsResult.data;
+    }
+
+    // ---- 异常报损 ----
+    if (lossRecordsResult && lossRecordsResult.data) {
+      _appCache.lossRecords = lossRecordsResult.data;
     }
 
     var elapsed = Date.now() - startTime;
@@ -228,7 +236,9 @@ async function syncFromSupabase(options) {
       requisitions: _appCache.requisitions.length,
       stockOutRecords: _appCache.stockOutRecords.length,
       users: _appCache.users.length,
-      consumptionStandards: _appCache.consumptionStandards.length
+      consumptionStandards: _appCache.consumptionStandards.length,
+      nonPurchaseStockIns: _appCache.nonPurchaseStockIns.length,
+      lossRecords: _appCache.lossRecords.length
     });
 
     // 同步完成后刷新通知徽章
@@ -238,113 +248,6 @@ async function syncFromSupabase(options) {
     console.error('[Sync] 同步失败:', err.message);
   } finally {
     _isInitialLoading = false;
-  }
-}
-
-// ============================================================
-// 按模块增量同步（轻量同频）
-// 只拉当前模块需要的 1~4 张表，用于：① 定时轮询 ② 标签页聚焦 ③ 保存后局部刷新
-// 相比 syncFromSupabase 的 11 表全量，这里只动相关表 + 加 limit，更快，
-// 且保证多用户同频（A 改完，B 在轮询间隔内自动看到最新）。
-// ============================================================
-const MODULE_TABLE_PLAN = {
-  'dashboard':        ['inventory', 'stockIn', 'stockOut', 'requisitions'],
-  'inventory':        ['inventory', 'stockIn', 'stockOut', 'categories'],
-  'categories':       ['categories', 'inventory'],
-  'purchase':         ['purchaseOrders'],
-  'stock-in':         ['stockIn'],
-  'requisition':      ['requisitions'],
-  'stock-out':        ['stockOut'],
-  'monthly-summary':  ['stockIn', 'stockOut', 'requisitions', 'inventory', 'purchaseOrders'],
-  'reports':          ['stockOut', 'requisitions', 'tourNames', 'inventory'],
-  'analytics':        ['stockIn', 'stockOut'],
-  'history':          ['adjustments'],
-  'admin-users':      ['users'],
-  'admin-roles':      ['users']
-};
-
-async function syncModuleTables(module) {
-  if (!isSupabaseReady()) return;
-  const sb = getSupabase();
-  if (!sb) return;
-  const keys = MODULE_TABLE_PLAN[module] || ['inventory'];
-  const qb = {
-    categories:     () => sb.from('categories').select('*').order('id'),
-    inventory:      () => sb.from('inventory_items').select('*').order('id'),
-    purchaseOrders: () => sb.from('purchase_orders').select('*, purchase_order_items(*)').order('created_at', { ascending: false }).limit(500),
-    stockIn:        () => sb.from('stock_in_records').select('*, stock_in_items(*)').order('created_at', { ascending: false }).limit(800),
-    requisitions:   () => sb.from('requisitions').select('*, requisition_items(*)').order('created_at', { ascending: false }).limit(800),
-    stockOut:       () => sb.from('stock_out_records').select('*, stock_out_items(*)').order('created_at', { ascending: false }).limit(800),
-    adjustments:    () => sb.from('inventory_adjustments').select('*').order('created_at', { ascending: false }).limit(500),
-    users:          () => sb.from('users').select('*').order('id'),
-    tourNames:      () => sb.from('tour_names').select('*').order('name')
-  };
-  const picked = keys.filter(k => qb[k]).map(k => qb[k]());
-  if (picked.length === 0) return;
-  console.log('[Sync] 模块增量同步: ' + module + ' (' + keys.join(',') + ')');
-  try {
-    const settled = await Promise.allSettled(picked);
-    const results = {};
-    keys.forEach((k, i) => {
-      const r = settled[i];
-      results[k] = (r && r.status === 'fulfilled') ? r.value : { data: null, error: (r && r.reason) };
-    });
-    // 写入缓存（与全量同步一致的数据结构）
-    if (results.categories && results.categories.data) {
-      _appCache.categories = results.categories.data;
-      _appCache.inventoryCategories = results.categories.data.map(c => ({ code: c.code, name: c.name, created_at: c.created_at }));
-    }
-    if (results.inventory && results.inventory.data) _appCache.inventory = results.inventory.data;
-    if (results.purchaseOrders && results.purchaseOrders.data) {
-      _appCache.purchaseOrders = results.purchaseOrders.data.map(po => ({
-        ...po,
-        suppliers: typeof po.suppliers === 'string' ? JSON.parse(po.suppliers || '[]') : (po.suppliers || []),
-        items: (po.purchase_order_items || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(item => ({
-          id: item.id, supplier: item.supplier, category: item.category_name, code: item.item_code, name: item.name,
-          brand: item.brand, model: item.model, quantity: Number(item.quantity), unit: item.unit,
-          price: Number(item.price), amount: Number(item.amount)
-        }))
-      }));
-    }
-    if (results.stockIn && results.stockIn.data) {
-      _appCache.stockInRecords = results.stockIn.data.map(rec => ({
-        ...rec,
-        items: (rec.stock_in_items || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(item => ({
-          id: item.id, supplier: item.supplier, category: item.category_name, code: item.item_code, name: item.name,
-          brand: item.brand, model: item.model, quantity: Number(item.quantity), actual_quantity: Number(item.actual_quantity),
-          unit: item.unit, price: Number(item.price), amount: Number(item.amount), inventory_item_id: item.inventory_item_id
-        }))
-      }));
-    }
-    if (results.requisitions && results.requisitions.data) {
-      _appCache.requisitions = results.requisitions.data.map(req => ({
-        ...req,
-        items: (req.requisition_items || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(item => ({
-          id: item.id, item_id: item.inventory_item_id, name: item.name, code: item.code, category: item.category,
-          unit: item.unit, quantity: Number(item.quantity), brand: item.brand, model: item.model
-        }))
-      }));
-    }
-    if (results.stockOut && results.stockOut.data) {
-      _appCache.stockOutRecords = results.stockOut.data.map(rec => ({
-        ...rec,
-        items: (rec.stock_out_items || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(item => ({
-          id: item.id, item_id: item.inventory_item_id, name: item.name, code: item.code, category: item.category,
-          unit: item.unit, quantity: Number(item.quantity), requested_quantity: Number(item.requested_quantity),
-          brand: item.brand, model: item.model
-        }))
-      }));
-    }
-    if (results.adjustments && results.adjustments.data) _appCache.inventoryAdjustments = results.adjustments.data;
-    if (results.users && results.users.data) {
-      _appCache.users = results.users.data.map(u => ({
-        ...u,
-        status: (u.status === undefined || u.status === null) ? (u.is_active ? 'active' : 'pending') : u.status
-      }));
-    }
-    if (results.tourNames && results.tourNames.data) _appCache.tourNames = results.tourNames.data;
-  } catch (e) {
-    console.warn('[Sync] 模块增量同步失败 ' + module + ': ' + e.message);
   }
 }
 
@@ -445,11 +348,6 @@ async function refreshData(dataType) {
         if (data) _appCache.consumptionStandards = data;
         break;
       }
-      case 'tourNames': {
-        const { data } = await sb.from('tour_names').select('*').order('name');
-        if (data) _appCache.tourNames = data;
-        break;
-      }
       case 'users': {
         const { data } = await sb.from('users').select('*').order('id');
         if (data) {
@@ -459,6 +357,16 @@ async function refreshData(dataType) {
               ? (u.is_active ? 'active' : 'pending') : u.status
           }));
         }
+        break;
+      }
+      case 'nonPurchaseStockIns': {
+        const data = await SupaDB.getNonPurchaseStockIns({});
+        if (data) _appCache.nonPurchaseStockIns = data;
+        break;
+      }
+      case 'lossRecords': {
+        const data = await SupaDB.getLossRecords({});
+        if (data) _appCache.lossRecords = data;
         break;
       }
     }
@@ -473,4 +381,39 @@ async function refreshData(dataType) {
 // ============================================================
 function waitForSupabaseSync() {
   return Promise.resolve();
+}
+
+// ============================================================
+// MODULE_TABLE_PLAN — 模块增量同步计划：模块 → 需要刷新的缓存键
+// ============================================================
+var MODULE_TABLE_PLAN = {
+  'stock-in': ['nonPurchaseStockIns', 'lossRecords', 'stockInRecords'],
+  'reports': ['lossRecords', 'stockOutRecords', 'requisitions']
+};
+
+// 增量同步指定模块的数据（写入后即时刷新，避免依赖整页轮询）
+async function syncModuleTables(module) {
+  if (!isSupabaseReady()) return;
+  const plan = MODULE_TABLE_PLAN[module];
+  if (!plan || !plan.length) return;
+  const sb = getSupabase();
+  if (!sb) return;
+  for (const key of plan) {
+    try {
+      if (key === 'nonPurchaseStockIns') {
+        const data = await SupaDB.getNonPurchaseStockIns({});
+        if (data) _appCache.nonPurchaseStockIns = data;
+      } else if (key === 'lossRecords') {
+        const data = await SupaDB.getLossRecords({});
+        if (data) _appCache.lossRecords = data;
+      } else {
+        await refreshData(key);
+      }
+    } catch (e) {
+      console.warn('[Sync] 模块增量同步失败 [' + key + ']:', e.message);
+    }
+  }
+  // 重新渲染依赖视图
+  try { if (typeof renderNonPurchaseApproval === 'function') renderNonPurchaseApproval(); } catch (e) {}
+  try { if (typeof checkNotifications === 'function') checkNotifications(); } catch (e) {}
 }
