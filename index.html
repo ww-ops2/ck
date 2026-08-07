@@ -8,18 +8,26 @@
   <meta http-equiv="Expires" content="0">
   <title>库存管理系统</title>
   <script>
-  // 强制拉取云端最新版本：检查URL是否带时间戳，没有则自动跳转加戳
+  // 版本自检：发版时须将 APP_VERSION 与 version.json、资源 ?v= 同步 +1。
+  // 比对 localStorage 中已存版本，不一致（说明云端已发新版本）则强制硬刷新，
+  // 从根本解决 GitHub Pages/CDN 缓存导致的“一直看到旧版本”问题。
   (function() {
-    var url = window.location.href;
-    var sep = url.indexOf('?') >= 0 ? '&' : '?';
-    if (url.indexOf('_t=') < 0 && url.indexOf('file://') < 0) {
-      var newUrl = url + sep + '_t=' + Date.now();
-      window.history.replaceState(null, '', newUrl);
-    }
+    var APP_VERSION = '5.49';
+    try {
+      var last = localStorage.getItem('app_version');
+      if (last && last !== APP_VERSION && window.location.href.indexOf('_relver=') < 0 && window.location.href.indexOf('file://') < 0) {
+        var url = window.location.href.split('#')[0];
+        var sep = url.indexOf('?') >= 0 ? '&' : '?';
+        localStorage.setItem('app_version', APP_VERSION);
+        window.location.replace(url + sep + '_relver=' + Date.now());
+        return;
+      }
+      localStorage.setItem('app_version', APP_VERSION);
+    } catch (e) {}
   })();
   </script>
-  <link rel="stylesheet" href="css/style.css?v=5.48">
-  <link rel="stylesheet" href="css/redesign.css?v=5.48">
+  <link rel="stylesheet" href="css/style.css?v=5.49">
+  <link rel="stylesheet" href="css/redesign.css?v=5.49">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
@@ -902,61 +910,19 @@
 
         <!-- ===== 团期使用报表模块 ===== -->
         <div id="module-reports" class="module-pane">
-          <!-- KPI 概览卡片 -->
-          <div class="kpi-grid" id="report-kpi-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px;">
-            <div class="kpi-card">
-              <div class="kpi-label">团期总数</div>
-              <div class="kpi-value" id="rpt-kpi-tour-count">0</div>
-            </div>
-            <div class="kpi-card">
-              <div class="kpi-label">出库总量（件）</div>
-              <div class="kpi-value" id="rpt-kpi-total-out">0</div>
-            </div>
-            <div class="kpi-card">
-              <div class="kpi-label">使用总成本</div>
-              <div class="kpi-value" id="rpt-kpi-total-cost">¥0</div>
-            </div>
-          </div>
-          <div class="kpi-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px;">
-            <div class="kpi-card">
-              <div class="kpi-label">超额领用次数</div>
-              <div class="kpi-value" id="rpt-kpi-overlimit-count" style="color:var(--danger);">0</div>
-            </div>
-            <div class="kpi-card">
-              <div class="kpi-label">超额损失金额</div>
-              <div class="kpi-value" id="rpt-kpi-overlimit-loss" style="color:var(--danger);">¥0</div>
-            </div>
-            <div class="kpi-card">
-              <div class="kpi-label">涉及场景</div>
-              <div class="kpi-value" id="rpt-kpi-scenario-count">0</div>
-            </div>
-          </div>
-
-          <!-- 报损财务分析 -->
-          <div class="panel" id="report-loss-panel" style="margin-top:16px;">
-            <div class="panel-header">
-              <div class="panel-title">报损财务分析</div>
-              <div class="panel-actions"><span style="font-size:12px;color:var(--text-muted);">损失金额 = 当前加权均价 × 报损数量</span></div>
-            </div>
-            <div class="kpi-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:16px;">
-              <div class="kpi-card"><div class="kpi-label">报损总数量</div><div class="kpi-value" id="rpt-kpi-loss-qty">0</div></div>
-              <div class="kpi-card"><div class="kpi-label">报损损失金额</div><div class="kpi-value" id="rpt-kpi-loss-amount" style="color:var(--danger);">¥0</div></div>
-              <div class="kpi-card"><div class="kpi-label">涉及团期数</div><div class="kpi-value" id="rpt-kpi-loss-tours">0</div></div>
-            </div>
-            <div class="table-scroll">
-              <table class="data-table">
-                <thead><tr><th>关联团期</th><th>报损数量</th><th>损失金额</th><th>说明</th></tr></thead>
-                <tbody id="report-loss-tbody">
-                  <tr><td colspan="4" class="empty-state">本月暂无报损记录</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="panel">
-            <div class="panel-header">
-              <div class="panel-title">团期使用报表</div>
-              <div class="panel-actions">
+          <!-- 顶部统计条 -->
+          <div class="panel rpt-statbar-panel">
+            <div class="rpt-statbar">
+              <div class="rpt-stat"><span class="rpt-stat-label">团期总数</span><span class="rpt-stat-value" id="rpt-kpi-tour-count">0</span></div>
+              <div class="rpt-stat"><span class="rpt-stat-label">出库总量</span><span class="rpt-stat-value" id="rpt-kpi-total-out">0</span></div>
+              <div class="rpt-stat"><span class="rpt-stat-label">使用成本</span><span class="rpt-stat-value" id="rpt-kpi-total-cost">¥0</span></div>
+              <div class="rpt-stat"><span class="rpt-stat-label">报损数量</span><span class="rpt-stat-value rpt-stat-danger" id="rpt-kpi-loss-qty">0</span></div>
+              <div class="rpt-stat"><span class="rpt-stat-label">报损金额</span><span class="rpt-stat-value rpt-stat-danger" id="rpt-kpi-loss-amount">¥0</span></div>
+              <div class="rpt-stat"><span class="rpt-stat-label">超额次数</span><span class="rpt-stat-value rpt-stat-danger" id="rpt-kpi-overlimit-count">0</span></div>
+              <div class="rpt-stat"><span class="rpt-stat-label">超额损失</span><span class="rpt-stat-value rpt-stat-danger" id="rpt-kpi-overlimit-loss">¥0</span></div>
+              <div class="rpt-stat"><span class="rpt-stat-label">涉及场景</span><span class="rpt-stat-value" id="rpt-kpi-scenario-count">0</span></div>
+              <span id="rpt-kpi-loss-tours" style="display:none;">0</span>
+              <div class="rpt-statbar-filters">
                 <input type="month" id="report-month" value="">
                 <select id="report-scenario-filter">
                   <option value="">全部场景</option>
@@ -964,75 +930,62 @@
                   <option value="列车客房">列车客房</option>
                   <option value="其他">其他</option>
                 </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- 团期列表（上） -->
+          <div class="panel" style="margin-bottom:16px;">
+            <div class="panel-header">
+              <div class="panel-title">团期列表</div>
+              <div class="panel-actions">
+                <button class="btn btn-sm btn-accent" id="add-tour-btn">+ 新增团期</button>
+              </div>
+            </div>
+            <div id="add-tour-form" class="tour-add-form" style="display:none;">
+              <input type="text" id="new-tour-name" placeholder="输入团期名称，如：2026-08-15 华东五市">
+              <button class="btn btn-sm btn-accent" id="add-tour-confirm">保存</button>
+              <button class="btn btn-sm" id="add-tour-cancel">取消</button>
+            </div>
+            <ul id="report-tour-list" class="tour-list-grid">
+              <li class="tour-empty">加载中…</li>
+            </ul>
+          </div>
+
+          <!-- 使用与报损明细（下） -->
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title">
+                使用与报损明细
+                <span id="report-detail-tour-name" class="rpt-detail-tour"></span>
+              </div>
+              <div class="panel-actions">
+                <select id="detail-month-filter">
+                  <option value="">当前所选月份</option>
+                </select>
                 <button class="btn" id="export-report-btn">📥 导出报表</button>
               </div>
             </div>
-
-            <!-- 图表区 -->
-            <div class="grid-2" style="margin-bottom:20px;">
-              <div class="chart-wrap">
-                <h4 style="margin:0 0 8px 0;font-size:13px;color:var(--text-secondary);">各团期出库量趋势</h4>
-                <canvas id="tour-period-chart"></canvas>
-              </div>
-              <div class="chart-wrap">
-                <h4 style="margin:0 0 8px 0;font-size:13px;color:var(--text-secondary);">场景消耗占比</h4>
-                <canvas id="scenario-chart"></canvas>
-              </div>
-            </div>
-
-            <!-- 品类对比图 -->
-            <div style="margin-bottom:20px;">
-              <div class="chart-wrap">
-                <h4 style="margin:0 0 8px 0;font-size:13px;color:var(--text-secondary);">各团期品类消耗对比</h4>
-                <canvas id="category-compare-chart"></canvas>
-              </div>
-            </div>
-
-            <!-- 团期明细表 -->
-            <div class="detail-section-title" style="margin-top:12px;">团期出库明细</div>
-            <div class="table-scroll" style="margin-top: 8px;">
-              <table class="data-table" id="report-table">
+            <div class="table-scroll">
+              <table class="data-table" id="report-detail-table">
                 <thead>
                   <tr>
+                    <th style="width:72px;">类型</th>
                     <th>团期日期</th>
-                    <th>团期名称</th>
-                    <th>使用场景</th>
+                    <th>场景 / 报损原因</th>
                     <th>物品名称</th>
                     <th>类别</th>
-                    <th>出库数量</th>
-                    <th>成本</th>
+                    <th>数量</th>
+                    <th>金额</th>
                     <th>领用标准</th>
                     <th>状态</th>
                   </tr>
                 </thead>
-                <tbody id="report-tbody">
-                  <tr>
-                    <td colspan="9" class="empty-state">请选择月份查看数据</td>
-                  </tr>
+                <tbody id="report-tour-detail-tbody">
+                  <tr><td colspan="9" class="empty-state">请选择上方团期查看明细</td></tr>
                 </tbody>
+                <tfoot id="report-detail-tfoot"></tfoot>
               </table>
-            </div>
-
-            <!-- 超额汇总 -->
-            <div id="report-overlimit-summary" style="margin-top:20px;display:none;">
-              <div class="detail-section-title" style="color:var(--danger);">超额领用汇总</div>
-              <div class="table-scroll" style="margin-top:8px;">
-                <table class="data-table" id="report-overlimit-table">
-                  <thead>
-                    <tr>
-                      <th>团期</th>
-                      <th>场景</th>
-                      <th>物品名称</th>
-                      <th>实际领用</th>
-                      <th>标准上限</th>
-                      <th>超出数量</th>
-                      <th>单价</th>
-                      <th>损失金额</th>
-                    </tr>
-                  </thead>
-                  <tbody id="report-overlimit-tbody"></tbody>
-                </table>
-              </div>
             </div>
           </div>
         </div>
@@ -1960,24 +1913,24 @@
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="js/supabase-db.js?v=5.48"></script>
-  <script src="js/supabase-sync.js?v=5.48"></script>
-  <script src="js/migrate-data.js?v=5.48"></script>
-  <script src="js/toast.js?v=5.48"></script>
-  <script src="js/login-characters.js?v=5.48"></script>
-  <script src="js/auth-fix.js?v=5.48"></script>
-  <script src="js/navigation.js?v=5.48"></script>
-  <script src="js/purchase.js?v=5.48"></script>
-  <script src="js/stock-in.js?v=5.48"></script>
-  <script src="js/requisition.js?v=5.48"></script>
-  <script src="js/monthly-summary.js?v=5.48"></script>
-  <script src="js/tour-reports.js?v=5.48"></script>
-  <script src="js/business-flow.js?v=5.48"></script>
-  <script src="js/app.js?v=5.48"></script>
-  <script src="js/inventory-hybrid.js?v=5.48"></script>
-  <script src="js/admin-bindings.js?v=5.48"></script>
+  <script src="js/supabase-db.js?v=5.49"></script>
+  <script src="js/supabase-sync.js?v=5.49"></script>
+  <script src="js/migrate-data.js?v=5.49"></script>
+  <script src="js/toast.js?v=5.49"></script>
+  <script src="js/login-characters.js?v=5.49"></script>
+  <script src="js/auth-fix.js?v=5.49"></script>
+  <script src="js/navigation.js?v=5.49"></script>
+  <script src="js/purchase.js?v=5.49"></script>
+  <script src="js/stock-in.js?v=5.49"></script>
+  <script src="js/requisition.js?v=5.49"></script>
+  <script src="js/monthly-summary.js?v=5.49"></script>
+  <script src="js/tour-reports.js?v=5.49"></script>
+  <script src="js/business-flow.js?v=5.49"></script>
+  <script src="js/app.js?v=5.49"></script>
+  <script src="js/inventory-hybrid.js?v=5.49"></script>
+  <script src="js/admin-bindings.js?v=5.49"></script>
 
-  <script src="js/user-admin.js?v=5.48"></script>
+  <script src="js/user-admin.js?v=5.49"></script>
 
   <!-- ===== 模态框：非采购入库（退库回收） ===== -->
   <div id="modal-nonpurchase" class="modal">
