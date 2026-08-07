@@ -449,3 +449,80 @@
   to { opacity: 1; transform: translateY(0); }
 }
 .anim-enter { animation: fadeSlideUp 0.45s ease both; }
+
+/* ===== 团期报表：上下布局（统计条 / 团期卡片列表 / 使用与报损明细） ===== */
+.rpt-statbar-panel { padding: 14px 18px; margin-bottom: 16px; }
+.rpt-statbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 26px; }
+.rpt-stat { display: flex; flex-direction: column; gap: 2px; min-width: 74px; }
+.rpt-stat-label { font-size: 0.7rem; color: var(--text-muted); letter-spacing: .02em; }
+.rpt-stat-value { font-size: 1.05rem; font-weight: 700; color: var(--text-primary); line-height: 1.2; }
+.rpt-stat-value.rpt-stat-danger { color: var(--danger); }
+.rpt-statbar-filters { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+/* 新增团期内联表单 */
+.tour-add-form {
+  display: flex; gap: 8px; align-items: center;
+  padding: 10px 0 14px 0; border-bottom: 1px dashed var(--border-light); margin-bottom: 12px;
+}
+.tour-add-form input {
+  flex: 1; max-width: 360px; padding: 7px 10px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg-input); color: var(--text-primary); font-size: 0.82rem;
+}
+.tour-add-form input:focus { outline: none; border-color: var(--accent); background: var(--bg-input-focus); }
+
+/* 团期卡片列表（横向自适应网格） */
+.tour-list-grid {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px;
+  max-height: 268px; overflow-y: auto;
+}
+.tour-list-grid .tour-empty {
+  grid-column: 1 / -1; text-align: center; padding: 26px 0;
+  color: var(--text-muted); font-size: 0.82rem;
+}
+.tour-list-item {
+  position: relative; cursor: pointer;
+  border: 1px solid var(--border-light); border-radius: 8px;
+  background: var(--bg-card); padding: 10px 12px;
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+.tour-list-item:hover { border-color: var(--border-hover); background: var(--bg-card-hover); transform: translateY(-1px); }
+.tour-list-item.active {
+  border-color: var(--accent); background: var(--accent-glow);
+  box-shadow: 0 0 0 1px var(--accent-glow-strong);
+}
+.tour-list-item--empty { opacity: .72; }
+.tour-list-item .tour-name {
+  font-size: 0.85rem; font-weight: 600; color: var(--text-primary);
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  margin-bottom: 4px; word-break: break-all;
+}
+.tour-list-item .tour-meta { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 6px; }
+.tour-list-item .tour-stats {
+  display: flex; gap: 10px; flex-wrap: wrap;
+  font-size: 0.72rem; color: var(--text-secondary); font-weight: 600;
+}
+.tour-list-item .tour-stats--empty { color: var(--text-muted); font-weight: 400; }
+.tour-delete-btn {
+  flex-shrink: 0; border: none; background: transparent; cursor: pointer;
+  color: var(--text-muted); font-size: 0.95rem; line-height: 1;
+  padding: 2px 4px; border-radius: 4px;
+}
+.tour-delete-btn:hover { color: var(--danger); background: var(--danger-bg); }
+.tour-delete-btn.tour-delete-locked { cursor: not-allowed; font-size: 0.75rem; }
+
+/* 明细表：选中团期名 + 类型徽标 + 报损行 */
+.rpt-detail-tour { margin-left: 8px; font-size: 0.78rem; font-weight: 600; color: var(--accent); }
+.rpt-type-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 10px;
+  font-size: 11px; font-weight: 600; white-space: nowrap;
+}
+.rpt-type-use { background: #e3f2fd; color: #1565c0; }
+.rpt-type-loss { background: #fde8e8; color: var(--danger); }
+tr.rpt-row-loss { background: rgba(192, 57, 43, 0.045); }
+tr.rpt-row-loss:hover { background: rgba(192, 57, 43, 0.08); }
+#report-detail-tfoot td {
+  font-weight: 700; background: var(--bg-secondary);
+  border-top: 2px solid var(--border); padding: 10px 12px;
+}
