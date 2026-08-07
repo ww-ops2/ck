@@ -1313,6 +1313,20 @@ function _npPopulateTourSelect(selectEl) {
   });
 }
 
+// 团期主数据兜底：缓存为空时即时拉取一次，保证下拉与团期列表一致
+async function _npEnsureTourNames(selectEl) {
+  const empty = !(typeof _appCache !== 'undefined' && _appCache.tourNames && _appCache.tourNames.length);
+  if (!empty) return;
+  try {
+    if (typeof refreshData === 'function') {
+      await refreshData('tourNames');
+      _npPopulateTourSelect(selectEl);
+    }
+  } catch (e) {
+    console.warn('[StockIn] 团期主数据加载失败:', e && e.message);
+  }
+}
+
 function openNonPurchaseModal() {
   const itemSel = document.getElementById('np-item-code');
   const tourSel = document.getElementById('np-tour');
@@ -1323,6 +1337,7 @@ function openNonPurchaseModal() {
   document.getElementById('np-unit').value = '';
   document.getElementById('np-reason').value = '';
   openModal('modal-nonpurchase');
+  _npEnsureTourNames(tourSel);
 }
 
 function openLossModal() {
@@ -1335,6 +1350,7 @@ function openLossModal() {
   document.getElementById('loss-unit').value = '';
   document.getElementById('loss-reason').value = '';
   openModal('modal-loss');
+  _npEnsureTourNames(tourSel);
 }
 
 function submitNonPurchaseStockIn(btn) {
