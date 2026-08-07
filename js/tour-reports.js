@@ -254,6 +254,7 @@ function loadReports() {
         totalOutQty += qty;
         totalCost += cost;
         detailRows.push({
+          kind: 'use',
           tour_date: so.tour_date || '',
           tour_name: so.tour_name || '未知团期',
           scenario: scenario,
@@ -284,6 +285,7 @@ function loadReports() {
         totalOutQty += qty;
         totalCost += cost;
         detailRows.push({
+          kind: 'use',
           tour_date: req.tour_date || '',
           tour_name: req.tour_name || '未知团期',
           scenario: scenario,
@@ -338,15 +340,18 @@ function loadReports() {
   // 缓存数据
   _rptFilteredData = { detailRows, overLimitRows, tourSet, scenarioSet, totalOutQty, totalCost, totalOverLimitLoss };
 
-  // 更新 KPI
+  // 更新 KPI（出库量与使用成本仅统计领用/出库，不含报损）
   _rptUpdateKPI(tourSet.size, totalOutQty, totalCost, overLimitRows.length, totalOverLimitLoss, scenarioSet.size);
 
-  // 报损财务分析
+  // 报损统计（顶部统计条 + 导出「报损汇总」sheet）
   _rptLossData = _rptComputeLoss(startDate, endDate);
   _rptRenderLossBlock(_rptLossData);
 
-  // 渲染团期列表（左栏：主数据 ∪ 使用数据）+ 默认选中第一个
-  _rptRenderTourList(detailRows);
+  // 本月报损明细行（物品级）：用于团期卡片统计与明细表混排
+  const lossRows = _rptBuildLossRows('', monthInput.value);
+
+  // 渲染团期列表（主数据 ∪ 使用数据 ∪ 报损数据）+ 默认选中第一个
+  _rptRenderTourList(detailRows, lossRows);
 }
 
 // ============== 报损财务分析 ==============
@@ -370,25 +375,49 @@ function _rptComputeLoss(startDate, endDate) {
   return { rows: Object.keys(map).map(function(k) { return map[k]; }), totalQty: totalQty, totalAmount: totalAmount };
 }
 
+/**
+ * 构建物品级报损明细行（与使用明细同构，便于在同一张表混排）
+ * @param {string} tourName 团期名称，空字符串表示全部团期
+ * @param {string} month    YYYY-MM，空字符串表示不过滤月份
+ */
+function _rptBuildLossRows(tourName, month) {
+  const lossRecords = (_appCache && _appCache.lossRecords) ? _appCache.lossRecords : [];
+  const rows = [];
+  lossRecords.forEach(function (lr) {
+    const display = (lr.tour_name || '').trim() || '未关联团期';
+    if (tourName && display !== tourName) return;
+    const d = new Date(lr.created_at);
+    const dateStr = isNaN(d.getTime())
+      ? ''
+      : d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    if (month && dateStr.slice(0, 7) !== month) return;
+    rows.push({
+      kind: 'loss',
+      tour_date: dateStr,
+      tour_name: display,
+      scenario: lr.reason || '报损',
+      item_name: lr.name || '',
+      item_code: lr.item_code || lr.code || '',
+      category: lr.category || '-',
+      unit: lr.unit || '',
+      quantity: Number(lr.qty) || 0,
+      unit_price: Number(lr.unit_price) || 0,
+      cost: Number(lr.loss_amount) || 0,
+      applicant_name: lr.applicant_name || '',
+      source: '异常报损',
+      source_code: lr.code || ''
+    });
+  });
+  return rows;
+}
+
 function _rptRenderLossBlock(data) {
   const qtyEl = document.getElementById('rpt-kpi-loss-qty');
   const amtEl = document.getElementById('rpt-kpi-loss-amount');
   const tourEl = document.getElementById('rpt-kpi-loss-tours');
-  const tbody = document.getElementById('report-loss-tbody');
   if (qtyEl) qtyEl.textContent = data.totalQty;
   if (amtEl) amtEl.textContent = '¥' + data.totalAmount.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
   if (tourEl) tourEl.textContent = data.rows.length;
-  if (!tbody) return;
-  if (data.rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">本月暂无报损记录</td></tr>';
-    return;
-  }
-  tbody.innerHTML = data.rows.map(function(r) {
-    return '<tr><td>' + r.tour_name + '</td>' +
-      '<td>' + r.qty + '</td>' +
-      '<td>¥' + r.amount.toFixed(2) + '</td>' +
-      '<td>报损损失</td></tr>';
-  }).join('');
 }
 
 // ============== KPI 更新 ==============
@@ -437,6 +466,7 @@ function _rptBuildTourDetailRows(tourName, month) {
         const qty = it.quantity || 0;
         const unitPrice = _rptResolvePrice(it.name, priceMap);
         rows.push({
+          kind: 'use',
           tour_date: so.tour_date || '',
           tour_name: tourName,
           scenario: scenario,
@@ -464,6 +494,7 @@ function _rptBuildTourDetailRows(tourName, month) {
         const qty = it.quantity || 0;
         const unitPrice = _rptResolvePrice(it.name, priceMap);
         rows.push({
+          kind: 'use',
           tour_date: req.tour_date || '',
           tour_name: tourName,
           scenario: scenario,
@@ -480,6 +511,9 @@ function _rptBuildTourDetailRows(tourName, month) {
       });
     }
   });
+
+  // 并入该团期的报损明细（与使用明细在同一张表混排）
+  _rptBuildLossRows(tourName, month).forEach(function (r) { rows.push(r); });
 
   return rows;
 }
@@ -517,24 +551,26 @@ function _rptRenderTourDetailForMonth(tourName, month) {
   _rptRenderTourDetail(rows);
 }
 
-function _rptRenderTourList(detailRows) {
+function _rptRenderTourList(detailRows, lossRows) {
+  lossRows = lossRows || [];
   const ul = document.getElementById('report-tour-list');
   const detailBody = document.getElementById('report-tour-detail-tbody');
   const nameEl = document.getElementById('report-detail-tour-name');
   if (!ul) return;
 
-  // 主数据团期名称 ∪ 本月使用过的团期名称
+  // 主数据团期名称 ∪ 本月使用过的团期 ∪ 本月有报损的团期
   const masterMap = new Map();
   ((_appCache && _appCache.tourNames) || []).forEach(t => {
     const name = (t.name || '').trim();
     if (name) masterMap.set(name, t);
   });
   const usageNames = (detailRows || []).map(r => (r.tour_name || '').trim()).filter(Boolean);
-  const allNames = [...new Set([...masterMap.keys(), ...usageNames])].sort((a, b) => a.localeCompare(b, 'zh'));
+  const lossNames = lossRows.map(r => (r.tour_name || '').trim()).filter(Boolean);
+  const allNames = [...new Set([...masterMap.keys(), ...usageNames, ...lossNames])].sort((a, b) => a.localeCompare(b, 'zh'));
 
   if (allNames.length === 0) {
     ul.innerHTML = '<li class="tour-empty">暂无团期，点击右上角「+ 新增团期」添加</li>';
-    if (detailBody) detailBody.innerHTML = '<tr><td colspan="8" class="empty-state">请选择左侧团期查看详情</td></tr>';
+    if (detailBody) detailBody.innerHTML = '<tr><td colspan="9" class="empty-state">请选择上方团期查看明细</td></tr>';
     if (nameEl) nameEl.textContent = '';
     _rptSelectedTourName = null;
     return;
@@ -542,34 +578,49 @@ function _rptRenderTourList(detailRows) {
 
   const isAdmin = (typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'admin');
 
-  // 已被领用单 / 出库记录关联的团期名称集合（全量历史，不限于当前月份）
+  // 已被领用单 / 出库记录 / 报损记录关联的团期名称集合（全量历史，不限于当前月份）
   const associatedNames = new Set();
   const _reqAll = (_appCache && _appCache.requisitions) ? _appCache.requisitions : [];
   const _soAll = (_appCache && _appCache.stockOutRecords) ? _appCache.stockOutRecords : [];
+  const _lossAll = (_appCache && _appCache.lossRecords) ? _appCache.lossRecords : [];
   _reqAll.forEach(r => { const n = (r.tour_name || '').trim(); if (n) associatedNames.add(n); });
   _soAll.forEach(r => { const n = (r.tour_name || '').trim(); if (n) associatedNames.add(n); });
+  _lossAll.forEach(r => { const n = (r.tour_name || '').trim(); if (n) associatedNames.add(n); });
+
+  const fmtMoney = (v) => Number(v || 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 });
 
   ul.innerHTML = allNames.map(name => {
     const rows = (detailRows || []).filter(r => (r.tour_name || '').trim() === name);
+    const lrs = lossRows.filter(r => (r.tour_name || '').trim() === name);
     const qty = rows.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
-    const cost = rows.reduce((s, r) => s + (Number(r.cost) || 0), 0);
-    const count = rows.length;
-    const hasUsage = rows.length > 0;
+    const useCost = rows.reduce((s, r) => s + (Number(r.cost) || 0), 0);
+    const lossQty = lrs.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
+    const lossAmount = lrs.reduce((s, r) => s + (Number(r.cost) || 0), 0);
+    const totalCost = useCost + lossAmount;
+    const count = rows.length + lrs.length;
+    const hasUsage = count > 0;
     const scenarios = [...new Set(rows.map(r => r.scenario).filter(Boolean))].join('/');
     const statClass = hasUsage ? 'tour-stats' : 'tour-stats tour-stats--empty';
     const master = masterMap.get(name);
     const protectedName = associatedNames.has(name);
     const deleteBtn = (isAdmin && master)
       ? (protectedName
-          ? `<button class="tour-delete-btn tour-delete-locked" data-protected="1" data-name="${_rptEscapeHtml(name)}" title="该团期已被领用单/出库记录关联，无法删除" type="button">🔒</button>`
+          ? `<button class="tour-delete-btn tour-delete-locked" data-protected="1" data-name="${_rptEscapeHtml(name)}" title="该团期已被领用单/出库/报损记录关联，无法删除" type="button">🔒</button>`
           : `<button class="tour-delete-btn" data-id="${master.id}" data-name="${_rptEscapeHtml(name)}" title="删除团期名称" type="button">×</button>`)
+      : '';
+    let metaText;
+    if (!hasUsage) metaText = '本月暂无使用';
+    else if (scenarios) metaText = scenarios;
+    else metaText = '仅报损记录';
+    const lossTag = lossQty > 0
+      ? `<span style="color:var(--danger);">报损 ${lossQty} · ¥${fmtMoney(lossAmount)}</span>`
       : '';
     return `
       <li class="tour-list-item${hasUsage ? '' : ' tour-list-item--empty'}" data-name="${_rptEscapeHtml(name)}">
         <div class="tour-list-item-main">
           <div class="tour-name">${_rptEscapeHtml(name)}${deleteBtn}</div>
-          <div class="tour-meta"><span>${hasUsage ? _rptEscapeHtml(scenarios) : '本月暂无使用'}</span></div>
-          <div class="${statClass}"><span>数量 ${qty}</span><span>¥${Number(cost || 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}</span><span>${count} 项</span></div>
+          <div class="tour-meta"><span>${_rptEscapeHtml(metaText)}</span></div>
+          <div class="${statClass}"><span>数量 ${qty}</span><span>¥${fmtMoney(totalCost)}</span><span>${count} 项</span>${lossTag}</div>
         </div>
       </li>`;
   }).join('');
@@ -653,14 +704,21 @@ function selectTourByName(name) {
 
 function _rptRenderTourDetail(rows) {
   const tbody = document.getElementById('report-tour-detail-tbody');
+  const tfoot = document.getElementById('report-detail-tfoot');
   if (!tbody) return;
   if (!rows || rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty-state">该团期本月暂无使用记录</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="empty-state">该团期本月暂无使用与报损记录</td></tr>';
+    if (tfoot) tfoot.innerHTML = '';
     return;
   }
+
   const standards = (_appCache && _appCache.consumptionStandards) ? _appCache.consumptionStandards : [];
+  const useSrc = rows.filter(r => r.kind !== 'loss');
+  const lossSrc = rows.filter(r => r.kind === 'loss');
+
+  // ---- 使用行：按 日期|场景|物品 聚合 ----
   const aggMap = {};
-  rows.forEach(row => {
+  useSrc.forEach(row => {
     const key = row.tour_date + '|' + row.scenario + '|' + row.item_name;
     if (!aggMap[key]) {
       aggMap[key] = { tour_date: row.tour_date, scenario: row.scenario, item_name: row.item_name, category: row.category, totalQty: 0, totalCost: 0, unit: row.unit, unit_price: row.unit_price || 0 };
@@ -669,7 +727,8 @@ function _rptRenderTourDetail(rows) {
     aggMap[key].totalCost += (row.cost || 0);
   });
   const ar = Object.values(aggMap).sort((a, b) => a.scenario.localeCompare(b.scenario) || a.item_name.localeCompare(b.item_name));
-  tbody.innerHTML = ar.map(row => {
+
+  let html = ar.map(row => {
     const std = standards.find(s => s.item_name === row.item_name && (s.scenario === row.scenario || s.scenario === '通用'));
     const isOver = std && row.totalQty > std.max_per_tour;
     const stdText = std ? (std.max_per_tour + ' / 团期') : '-';
@@ -679,6 +738,7 @@ function _rptRenderTourDetail(rows) {
     const costText = row.totalCost > 0 ? ('¥' + row.totalCost.toFixed(2)) : '-';
     return `
       <tr style="${isOver ? 'background:#fff8f0;' : ''}">
+        <td><span class="rpt-type-badge rpt-type-use">使用</span></td>
         <td>${_rptEscapeHtml(row.tour_date)}</td>
         <td><span style="background:#e3f2fd;color:#1565c0;padding:2px 8px;border-radius:10px;font-size:11px;">${_rptEscapeHtml(row.scenario)}</span></td>
         <td style="font-weight:600;">${_rptEscapeHtml(row.item_name)}</td>
@@ -689,6 +749,42 @@ function _rptRenderTourDetail(rows) {
         <td>${statusBadge}</td>
       </tr>`;
   }).join('');
+
+  // ---- 报损行：逐条列出（每条有独立原因） ----
+  const lossSorted = lossSrc.slice().sort((a, b) =>
+    String(a.tour_date || '').localeCompare(String(b.tour_date || '')) ||
+    String(a.item_name || '').localeCompare(String(b.item_name || ''))
+  );
+  html += lossSorted.map(row => `
+      <tr class="rpt-row-loss">
+        <td><span class="rpt-type-badge rpt-type-loss">报损</span></td>
+        <td>${_rptEscapeHtml(row.tour_date)}</td>
+        <td style="color:var(--danger);">${_rptEscapeHtml(row.scenario)}</td>
+        <td style="font-weight:600;">${_rptEscapeHtml(row.item_name)}</td>
+        <td>${_rptEscapeHtml(row.category)}</td>
+        <td style="font-weight:700;color:var(--danger);">-${row.quantity} ${_rptEscapeHtml(row.unit)}</td>
+        <td style="color:var(--danger);">¥${Number(row.cost || 0).toFixed(2)}</td>
+        <td>-</td>
+        <td>${row.applicant_name ? _rptEscapeHtml(row.applicant_name) : '-'}</td>
+      </tr>`).join('');
+
+  tbody.innerHTML = html;
+
+  // ---- 合计行：使用成本 / 报损金额 / 总计 ----
+  if (tfoot) {
+    const useQty = ar.reduce((s, r) => s + (Number(r.totalQty) || 0), 0);
+    const useCost = ar.reduce((s, r) => s + (Number(r.totalCost) || 0), 0);
+    const lossQty = lossSorted.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
+    const lossCost = lossSorted.reduce((s, r) => s + (Number(r.cost) || 0), 0);
+    const money = (v) => '¥' + Number(v || 0).toFixed(2);
+    tfoot.innerHTML = `
+      <tr>
+        <td colspan="5" style="text-align:right;">合计</td>
+        <td>使用 ${useQty}${lossQty ? ` · 报损 ${lossQty}` : ''}</td>
+        <td>${money(useCost)}${lossCost ? ` · <span style="color:var(--danger);">${money(lossCost)}</span>` : ''}</td>
+        <td colspan="2">总计 ${money(useCost + lossCost)}</td>
+      </tr>`;
+  }
 }
 
 // ============== 导出 Excel ==============
