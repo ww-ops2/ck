@@ -173,6 +173,33 @@ async function loadHybridStockInData() {
     renderStockInInbox();
     populatePOFilter();
 
+    // 非采购入库 / 异常报损 绑定
+    const npBtn = document.getElementById('btn-nonpurchase-stockin');
+    if (npBtn) npBtn.addEventListener('click', openNonPurchaseModal);
+    const lossBtn = document.getElementById('btn-loss-record');
+    if (lossBtn) lossBtn.addEventListener('click', openLossModal);
+    const npCancel = document.getElementById('np-cancel');
+    if (npCancel) npCancel.addEventListener('click', closeModal);
+    const lossCancel = document.getElementById('loss-cancel');
+    if (lossCancel) lossCancel.addEventListener('click', closeModal);
+    const npSubmit = document.getElementById('np-submit');
+    if (npSubmit) npSubmit.addEventListener('click', function() { submitNonPurchaseStockIn(this); });
+    const lossSubmit = document.getElementById('loss-submit');
+    if (lossSubmit) lossSubmit.addEventListener('click', function() { submitLossRecord(this); });
+    const npItem = document.getElementById('np-item-code');
+    if (npItem) npItem.addEventListener('change', function() {
+      const o = npItem.options[npItem.selectedIndex];
+      document.getElementById('np-unit').value = o ? (o.dataset.unit || '') : '';
+      document.getElementById('np-price').value = o ? ('¥' + (o.dataset.price || '0')) : '';
+    });
+    const lossItem = document.getElementById('loss-item-code');
+    if (lossItem) lossItem.addEventListener('change', function() {
+      const o = lossItem.options[lossItem.selectedIndex];
+      document.getElementById('loss-unit').value = o ? (o.dataset.unit || '') : '';
+      document.getElementById('loss-price').value = o ? ('¥' + (o.dataset.price || '0')) : '';
+    });
+    renderNonPurchaseApproval();
+
     console.log('[StockIn] 数据加载完成, POs:', _siData.purchaseOrders.length, '入库记录:', _siData.stockInRecords.length);
   } catch (e) {
     console.error('[StockIn] 加载失败:', e);
@@ -1249,6 +1276,199 @@ function viewStockInDetail(recordCode) {
 
   body.innerHTML = html;
   openModal('modal-stockin-detail');
+}
+
+// ============================================================
+// 非采购入库 / 异常报损
+// ============================================================
+function _npPopulateItemSelect(selectEl) {
+  if (!selectEl) return;
+  const inv = (typeof _appCache !== 'undefined' && _appCache.inventory) ? _appCache.inventory : [];
+  selectEl.innerHTML = '<option value="">请选择物品</option>';
+  inv.forEach(function(it) {
+    const code = it.code || '';
+    const name = it.name || '';
+    if (!code && !name) return;
+    const opt = document.createElement('option');
+    opt.value = code;
+    opt.textContent = (code ? code + ' - ' : '') + name + (it.unit ? '（' + it.unit + '）' : '');
+    opt.dataset.unit = it.unit || '';
+    opt.dataset.price = (Number(it.unit_price) || 0).toFixed(2);
+    opt.dataset.name = name;
+    opt.dataset.category = it.category_name || it.category || '';
+    selectEl.appendChild(opt);
+  });
+}
+
+function _npPopulateTourSelect(selectEl) {
+  if (!selectEl) return;
+  const tours = (typeof _appCache !== 'undefined' && _appCache.tourNames) ? _appCache.tourNames : [];
+  selectEl.innerHTML = '<option value="">不关联</option>';
+  tours.forEach(function(t) {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = t.name || '';
+    opt.dataset.name = t.name || '';
+    selectEl.appendChild(opt);
+  });
+}
+
+function openNonPurchaseModal() {
+  const itemSel = document.getElementById('np-item-code');
+  const tourSel = document.getElementById('np-tour');
+  _npPopulateItemSelect(itemSel);
+  _npPopulateTourSelect(tourSel);
+  document.getElementById('np-qty').value = '';
+  document.getElementById('np-price').value = '';
+  document.getElementById('np-unit').value = '';
+  document.getElementById('np-reason').value = '';
+  openModal('modal-nonpurchase');
+}
+
+function openLossModal() {
+  const itemSel = document.getElementById('loss-item-code');
+  const tourSel = document.getElementById('loss-tour');
+  _npPopulateItemSelect(itemSel);
+  _npPopulateTourSelect(tourSel);
+  document.getElementById('loss-qty').value = '';
+  document.getElementById('loss-price').value = '';
+  document.getElementById('loss-unit').value = '';
+  document.getElementById('loss-reason').value = '';
+  openModal('modal-loss');
+}
+
+function submitNonPurchaseStockIn(btn) {
+  const itemSel = document.getElementById('np-item-code');
+  const tourSel = document.getElementById('np-tour');
+  const qty = Number(document.getElementById('np-qty').value) || 0;
+  if (!itemSel.value) { showToast('请选择物品', 'warning'); return; }
+  if (qty <= 0) { showToast('请填写有效数量', 'warning'); return; }
+  const opt = itemSel.options[itemSel.selectedIndex];
+  const tourOpt = tourSel.options[tourSel.selectedIndex];
+  const payload = {
+    code: itemSel.value,
+    name: opt.dataset.name || '',
+    category: opt.dataset.category || '',
+    unit: opt.dataset.unit || '',
+    qty: qty,
+    price: Number(opt.dataset.price) || 0,
+    tour_id: tourSel.value ? Number(tourSel.value) : null,
+    tour_name: tourOpt ? (tourOpt.dataset.name || '') : '',
+    reason: document.getElementById('np-reason').value || ''
+  };
+  showButtonLoading(btn, '提交中...');
+  SupaDB.createNonPurchaseStockIn(payload).then(function() {
+    showToast('非采购入库已提交，等待仓库管理员审核', 'success');
+    closeModal();
+    renderNonPurchaseApproval();
+    if (typeof syncModuleTables === 'function') syncModuleTables('stock-in');
+  }).catch(function(e) {
+    showToast('提交失败：' + (e && e.message ? e.message : e), 'error');
+  }).finally(function() {
+    hideButtonLoading(btn);
+  });
+}
+
+function submitLossRecord(btn) {
+  const itemSel = document.getElementById('loss-item-code');
+  const tourSel = document.getElementById('loss-tour');
+  const qty = Number(document.getElementById('loss-qty').value) || 0;
+  const reason = document.getElementById('loss-reason').value.trim();
+  if (!itemSel.value) { showToast('请选择物品', 'warning'); return; }
+  if (qty <= 0) { showToast('请填写有效报损数量', 'warning'); return; }
+  if (!reason) { showToast('请填写损失原因', 'warning'); return; }
+  const opt = itemSel.options[itemSel.selectedIndex];
+  const tourOpt = tourSel.options[tourSel.selectedIndex];
+  const payload = {
+    code: itemSel.value,
+    name: opt.dataset.name || '',
+    category: opt.dataset.category || '',
+    unit: opt.dataset.unit || '',
+    qty: qty,
+    tour_id: tourSel.value ? Number(tourSel.value) : null,
+    tour_name: tourOpt ? (tourOpt.dataset.name || '') : '',
+    reason: reason
+  };
+  showButtonLoading(btn, '报损中...');
+  SupaDB.createLossRecord(payload).then(function() {
+    showToast('报损已登记', 'success');
+    closeModal();
+    if (typeof refreshData === 'function') refreshData('inventory');
+    if (typeof syncModuleTables === 'function') syncModuleTables('stock-in');
+  }).catch(function(e) {
+    showToast('报损失败：' + (e && e.message ? e.message : e), 'error');
+  }).finally(function() {
+    hideButtonLoading(btn);
+  });
+}
+
+function renderNonPurchaseApproval() {
+  const tbody = document.getElementById('nonpurchase-approval-tbody');
+  const countEl = document.getElementById('nonpurchase-pending-count');
+  if (!tbody) return;
+  const list = (typeof _appCache !== 'undefined' && _appCache.nonPurchaseStockIns) ? _appCache.nonPurchaseStockIns : [];
+  const pending = list.filter(function(r) { return r.status === 'pending'; });
+  if (countEl) countEl.textContent = pending.length;
+  if (pending.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty-state">暂无待审核的非采购入库</td></tr>';
+    return;
+  }
+  const canApprove = (typeof currentUser !== 'undefined' && currentUser) &&
+    (currentUser.role === 'admin' || (typeof hasPermission === 'function' && hasPermission('approve_requisition')));
+  tbody.innerHTML = pending.map(function(r) {
+    const actions = canApprove
+      ? '<button class="btn btn-sm" onclick="approveNonPurchaseUI(' + r.id + ', this)" style="background:var(--success);border-color:var(--success);color:#fff;">通过</button> ' +
+        '<button class="btn btn-sm" onclick="rejectNonPurchaseUI(' + r.id + ', this)" style="background:var(--danger);border-color:var(--danger);color:#fff;">驳回</button>'
+      : '<span style="color:var(--text-muted);">待审核</span>';
+    return '<tr>' +
+      '<td>' + (r.code || '') + '</td>' +
+      '<td>' + (r.name || '') + '</td>' +
+      '<td>' + (r.item_code || '') + '</td>' +
+      '<td>' + (r.tour_name || '-') + '</td>' +
+      '<td>' + (Number(r.qty) || 0) + ' ' + (r.unit || '') + '</td>' +
+      '<td>¥' + (Number(r.price) || 0).toFixed(2) + '</td>' +
+      '<td>' + (r.applicant_name || '') + '</td>' +
+      '<td>' + (r.reason || '') + '</td>' +
+      '<td>' + actions + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+async function approveNonPurchaseUI(id, btn) {
+  if (!(typeof currentUser !== 'undefined' && currentUser) || !(currentUser.role === 'admin' || (typeof hasPermission === 'function' && hasPermission('approve_requisition')))) {
+    showToast('只有仓库管理员可以审核', 'warning');
+    return;
+  }
+  showButtonLoading(btn, '审核中...');
+  try {
+    await SupaDB.approveNonPurchaseStockIn(id, '');
+    showToast('已通过，库存已更新', 'success');
+    await syncModuleTables('stock-in');
+    renderNonPurchaseApproval();
+  } catch (e) {
+    showToast('审核失败：' + (e && e.message ? e.message : e), 'error');
+  } finally {
+    hideButtonLoading(btn);
+  }
+}
+
+async function rejectNonPurchaseUI(id, btn) {
+  if (!(typeof currentUser !== 'undefined' && currentUser) || !(currentUser.role === 'admin' || (typeof hasPermission === 'function' && hasPermission('approve_requisition')))) {
+    showToast('只有仓库管理员可以审核', 'warning');
+    return;
+  }
+  const reason = (typeof prompt === 'function') ? prompt('请输入驳回理由：') : null;
+  if (reason === null) return;
+  showButtonLoading(btn, '驳回中...');
+  try {
+    await SupaDB.rejectNonPurchaseStockIn(id, reason || '');
+    showToast('已驳回', 'success');
+    renderNonPurchaseApproval();
+  } catch (e) {
+    showToast('驳回失败：' + (e && e.message ? e.message : e), 'error');
+  } finally {
+    hideButtonLoading(btn);
+  }
 }
 
 // 导出函数
