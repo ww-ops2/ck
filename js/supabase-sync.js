@@ -29,7 +29,8 @@ window._appCache = {
   users: [],
   settings: [],
   lossRecords: [],
-  nonPurchaseStockIns: []
+  nonPurchaseStockIns: [],
+  tourNames: []
 };
 
 let _isInitialLoading = false;
@@ -67,7 +68,8 @@ async function syncFromSupabase(options) {
       consumption: sb.from('consumption_standards').select('*').order('id'),
       settings: sb.from('settings').select('*'),
       nonPurchaseStockIns: sb.from('non_purchase_stock_in').select('*').order('created_at', { ascending: false }),
-      lossRecords: sb.from('loss_records').select('*').order('created_at', { ascending: false }).limit(500)
+      lossRecords: sb.from('loss_records').select('*').order('created_at', { ascending: false }).limit(500),
+      tourNames: sb.from('tour_names').select('*').order('name')
     };
   
     // 用 allSettled 替代 all，失败的表不影响其他表
@@ -98,6 +100,7 @@ async function syncFromSupabase(options) {
     var settingsResult = results.settings;
     var nonPurchaseStockInsResult = results.nonPurchaseStockIns;
     var lossRecordsResult = results.lossRecords;
+    var tourNamesResult = results.tourNames;
 
     // ---- 品类 ----
     if (categoriesResult.data) {
@@ -226,6 +229,11 @@ async function syncFromSupabase(options) {
       _appCache.lossRecords = lossRecordsResult.data;
     }
 
+    // ---- 团期名称主数据 ----
+    if (tourNamesResult && tourNamesResult.data) {
+      _appCache.tourNames = tourNamesResult.data;
+    }
+
     var elapsed = Date.now() - startTime;
     console.log('[Sync] 同步完成 (' + elapsed + 'ms)');
     console.log('[Sync] 数据概览:', {
@@ -238,7 +246,8 @@ async function syncFromSupabase(options) {
       users: _appCache.users.length,
       consumptionStandards: _appCache.consumptionStandards.length,
       nonPurchaseStockIns: _appCache.nonPurchaseStockIns.length,
-      lossRecords: _appCache.lossRecords.length
+      lossRecords: _appCache.lossRecords.length,
+      tourNames: _appCache.tourNames.length
     });
 
     // 同步完成后刷新通知徽章
@@ -369,6 +378,11 @@ async function refreshData(dataType) {
         if (data) _appCache.lossRecords = data;
         break;
       }
+      case 'tourNames': {
+        const data = await SupaDB.getTourNames();
+        if (data) _appCache.tourNames = data;
+        break;
+      }
     }
     console.log('[Sync] 局部刷新 ' + dataType + ' 完成');
   } catch (err) {
@@ -387,8 +401,9 @@ function waitForSupabaseSync() {
 // MODULE_TABLE_PLAN — 模块增量同步计划：模块 → 需要刷新的缓存键
 // ============================================================
 var MODULE_TABLE_PLAN = {
-  'stock-in': ['nonPurchaseStockIns', 'lossRecords', 'stockInRecords'],
-  'reports': ['lossRecords', 'stockOutRecords', 'requisitions']
+  'stock-in': ['nonPurchaseStockIns', 'lossRecords', 'stockInRecords', 'tourNames'],
+  'reports': ['lossRecords', 'stockOutRecords', 'requisitions', 'tourNames'],
+  'requisition': ['requisitions', 'tourNames']
 };
 
 // 增量同步指定模块的数据（写入后即时刷新，避免依赖整页轮询）
@@ -406,6 +421,9 @@ async function syncModuleTables(module) {
       } else if (key === 'lossRecords') {
         const data = await SupaDB.getLossRecords({});
         if (data) _appCache.lossRecords = data;
+      } else if (key === 'tourNames') {
+        const data = await SupaDB.getTourNames();
+        if (data) _appCache.tourNames = data;
       } else {
         await refreshData(key);
       }
