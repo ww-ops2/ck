@@ -341,8 +341,54 @@ function loadReports() {
   // 更新 KPI
   _rptUpdateKPI(tourSet.size, totalOutQty, totalCost, overLimitRows.length, totalOverLimitLoss, scenarioSet.size);
 
+  // 报损财务分析
+  _rptLossData = _rptComputeLoss(startDate, endDate);
+  _rptRenderLossBlock(_rptLossData);
+
   // 渲染团期列表（左栏：主数据 ∪ 使用数据）+ 默认选中第一个
   _rptRenderTourList(detailRows);
+}
+
+// ============== 报损财务分析 ==============
+var _rptLossData = { rows: [], totalQty: 0, totalAmount: 0 };
+
+function _rptComputeLoss(startDate, endDate) {
+  const lossRecords = (_appCache && _appCache.lossRecords) ? _appCache.lossRecords : [];
+  const map = {};
+  let totalQty = 0, totalAmount = 0;
+  lossRecords.forEach(function(lr) {
+    const d = new Date(lr.created_at);
+    if (isNaN(d.getTime())) return;
+    if (d < startDate || d > endDate) return;
+    const tour = (lr.tour_name || '').trim() || '未关联团期';
+    if (!map[tour]) map[tour] = { tour_name: tour, qty: 0, amount: 0 };
+    map[tour].qty += (Number(lr.qty) || 0);
+    map[tour].amount += (Number(lr.loss_amount) || 0);
+    totalQty += (Number(lr.qty) || 0);
+    totalAmount += (Number(lr.loss_amount) || 0);
+  });
+  return { rows: Object.keys(map).map(function(k) { return map[k]; }), totalQty: totalQty, totalAmount: totalAmount };
+}
+
+function _rptRenderLossBlock(data) {
+  const qtyEl = document.getElementById('rpt-kpi-loss-qty');
+  const amtEl = document.getElementById('rpt-kpi-loss-amount');
+  const tourEl = document.getElementById('rpt-kpi-loss-tours');
+  const tbody = document.getElementById('report-loss-tbody');
+  if (qtyEl) qtyEl.textContent = data.totalQty;
+  if (amtEl) amtEl.textContent = '¥' + data.totalAmount.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  if (tourEl) tourEl.textContent = data.rows.length;
+  if (!tbody) return;
+  if (data.rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">本月暂无报损记录</td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.rows.map(function(r) {
+    return '<tr><td>' + r.tour_name + '</td>' +
+      '<td>' + r.qty + '</td>' +
+      '<td>¥' + r.amount.toFixed(2) + '</td>' +
+      '<td>报损损失</td></tr>';
+  }).join('');
 }
 
 // ============== KPI 更新 ==============
@@ -713,6 +759,18 @@ function exportTourReport() {
   if (overLimitRows.length > 0) {
     const ws2 = XLSX.utils.aoa_to_sheet(overData);
     XLSX.utils.book_append_sheet(wb, ws2, '超额领用汇总');
+  }
+
+  // 报损汇总 sheet
+  const lossData = [['团期', '报损数量', '损失金额']];
+  (_rptLossData ? _rptLossData.rows : []).forEach(function(r) {
+    lossData.push([r.tour_name, r.qty, r.amount.toFixed(2)]);
+  });
+  if (_rptLossData && _rptLossData.rows.length > 0) {
+    lossData.push([]);
+    lossData.push(['合计', _rptLossData.totalQty, _rptLossData.totalAmount.toFixed(2)]);
+    const wsLoss = XLSX.utils.aoa_to_sheet(lossData);
+    XLSX.utils.book_append_sheet(wb, wsLoss, '报损汇总');
   }
 
   const monthInput = document.getElementById('report-month');
