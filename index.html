@@ -7,36 +7,20 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>库存管理系统</title>
-  <!-- 版本自检：发现新版本自动带戳刷新，绕过浏览器/CDN 缓存（根治「同事打开是旧版」问题） -->
   <script>
-  (function () {
-    try {
-      var STORED = localStorage.getItem('app_version');
-      var req = new XMLHttpRequest();
-      req.open('GET', 'version.json?t=' + Date.now(), true);
-      req.onreadystatechange = function () {
-        if (req.readyState === 4 && req.status === 200) {
-          try {
-            var CUR = JSON.parse(req.responseText).version;
-            if (CUR && STORED && STORED !== CUR && location.search.indexOf('_v=') < 0) {
-              localStorage.setItem('app_version', CUR);
-              location.href = location.pathname + '?_v=' + encodeURIComponent(CUR);
-              return;
-            }
-            if (CUR) localStorage.setItem('app_version', CUR);
-          } catch (e) { /* ignore */ }
-        }
-      };
-      req.send();
-    } catch (e) { /* ignore */ }
+  // 强制拉取云端最新版本：检查URL是否带时间戳，没有则自动跳转加戳
+  (function() {
+    var url = window.location.href;
+    var sep = url.indexOf('?') >= 0 ? '&' : '?';
+    if (url.indexOf('_t=') < 0 && url.indexOf('file://') < 0) {
+      var newUrl = url + sep + '_t=' + Date.now();
+      window.history.replaceState(null, '', newUrl);
+    }
   })();
   </script>
-  <link rel="stylesheet" href="css/style.css?v=5.47">
-  <link rel="stylesheet" href="css/redesign.css?v=5.47">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- v5.43：补引 Newsreader（--font-display 需要，之前只声明未加载） -->
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=5.48">
+  <link rel="stylesheet" href="css/redesign.css?v=5.48">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -572,6 +556,9 @@
                 <input type="month" id="stockin-month" value="">
                 <button class="btn btn-sm" id="stockin-month-this">本月</button>
                 <button class="btn btn-sm" id="stockin-month-last">上月</button>
+                <span style="width:1px;height:20px;background:var(--border);margin:0 8px;display:inline-block;"></span>
+                <button class="btn btn-sm" id="btn-nonpurchase-stockin" style="border:1px solid var(--border);">非采购入库</button>
+                <button class="btn btn-sm" id="btn-loss-record" style="border:1px solid var(--border);color:var(--danger);">异常报损</button>
               </div>
             </div>
             <div class="kpi-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">
@@ -670,6 +657,24 @@
             <div class="stockin-actionbar-right">
               <button class="btn btn-sm" id="stockin-reset-btn" style="border:1px solid var(--border);">重置数量</button>
               <button class="btn btn-sm btn-accent" id="stockin-confirm-btn" style="font-weight:600;">确认入库</button>
+            </div>
+          </div>
+
+          <!-- 非采购入库审核 -->
+          <div class="panel" id="nonpurchase-approval-panel" style="margin-top:16px;">
+            <div class="panel-header">
+              <div class="panel-title">非采购入库审核 <span class="badge" id="nonpurchase-pending-count" style="background:var(--accent);color:#fff;margin-left:6px;padding:1px 8px;border-radius:10px;font-size:12px;">0</span></div>
+              <div class="panel-actions"><span style="font-size:12px;color:var(--text-muted);">由仓库管理员审核（退库回收，按当前加权均价入库，均价不变）</span></div>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead><tr>
+                  <th>单号</th><th>名称</th><th>物品编码</th><th>关联团期</th><th>数量</th><th>单价</th><th>申请人</th><th>原因</th><th>操作</th>
+                </tr></thead>
+                <tbody id="nonpurchase-approval-tbody">
+                  <tr><td colspan="9" class="empty-state">暂无待审核的非采购入库</td></tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -927,6 +932,27 @@
             </div>
           </div>
 
+          <!-- 报损财务分析 -->
+          <div class="panel" id="report-loss-panel" style="margin-top:16px;">
+            <div class="panel-header">
+              <div class="panel-title">报损财务分析</div>
+              <div class="panel-actions"><span style="font-size:12px;color:var(--text-muted);">损失金额 = 当前加权均价 × 报损数量</span></div>
+            </div>
+            <div class="kpi-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:16px;">
+              <div class="kpi-card"><div class="kpi-label">报损总数量</div><div class="kpi-value" id="rpt-kpi-loss-qty">0</div></div>
+              <div class="kpi-card"><div class="kpi-label">报损损失金额</div><div class="kpi-value" id="rpt-kpi-loss-amount" style="color:var(--danger);">¥0</div></div>
+              <div class="kpi-card"><div class="kpi-label">涉及团期数</div><div class="kpi-value" id="rpt-kpi-loss-tours">0</div></div>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead><tr><th>关联团期</th><th>报损数量</th><th>损失金额</th><th>说明</th></tr></thead>
+                <tbody id="report-loss-tbody">
+                  <tr><td colspan="4" class="empty-state">本月暂无报损记录</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <div class="panel">
             <div class="panel-header">
               <div class="panel-title">团期使用报表</div>
@@ -942,49 +968,70 @@
               </div>
             </div>
 
-            <!-- 团期使用报表：左右分栏（左=团期列表，右=选中团期详情） -->
-            <div class="report-split">
-              <div class="report-tour-list">
-                <div class="tour-list-header">
-                  <div class="detail-section-title" style="margin:0;">团期列表</div>
-                  <button class="btn btn-sm" id="add-tour-btn" type="button">+ 新增团期</button>
-                </div>
-                <!-- 新增团期内联表单 -->
-                <div id="add-tour-form" class="add-tour-form" style="display:none;">
-                  <input type="text" id="new-tour-name" placeholder="输入团期名称，如：G1234 北京-上海" maxlength="60" autocomplete="off">
-                  <button class="btn btn-sm btn-primary" id="add-tour-confirm" type="button">保存</button>
-                  <button class="btn btn-sm" id="add-tour-cancel" type="button">取消</button>
-                </div>
-                <ul id="report-tour-list" class="tour-list"></ul>
+            <!-- 图表区 -->
+            <div class="grid-2" style="margin-bottom:20px;">
+              <div class="chart-wrap">
+                <h4 style="margin:0 0 8px 0;font-size:13px;color:var(--text-secondary);">各团期出库量趋势</h4>
+                <canvas id="tour-period-chart"></canvas>
               </div>
-              <div class="report-tour-detail">
-                <div class="detail-section-title" style="margin-bottom:8px;">团期使用详情 <span id="report-detail-tour-name" style="color:var(--accent);font-weight:600;"></span></div>
-                <div class="detail-filter-row">
-                  <label for="detail-month-filter">按月筛选：</label>
-                  <select id="detail-month-filter">
-                    <option value="">-- 选择月份 --</option>
-                  </select>
-                  <span class="detail-filter-tip">切换月份可查看该团期不同月份的使用明细</span>
-                </div>
-                <div class="table-scroll">
-                  <table class="data-table" id="report-detail-table">
-                    <thead>
-                      <tr>
-                        <th>团期日期</th>
-                        <th>使用场景</th>
-                        <th>物品名称</th>
-                        <th>类别</th>
-                        <th>出库数量</th>
-                        <th>成本</th>
-                        <th>领用标准</th>
-                        <th>状态</th>
-                      </tr>
-                    </thead>
-                    <tbody id="report-tour-detail-tbody">
-                      <tr><td colspan="8" class="empty-state">请选择左侧团期查看详情</td></tr>
-                    </tbody>
-                  </table>
-                </div>
+              <div class="chart-wrap">
+                <h4 style="margin:0 0 8px 0;font-size:13px;color:var(--text-secondary);">场景消耗占比</h4>
+                <canvas id="scenario-chart"></canvas>
+              </div>
+            </div>
+
+            <!-- 品类对比图 -->
+            <div style="margin-bottom:20px;">
+              <div class="chart-wrap">
+                <h4 style="margin:0 0 8px 0;font-size:13px;color:var(--text-secondary);">各团期品类消耗对比</h4>
+                <canvas id="category-compare-chart"></canvas>
+              </div>
+            </div>
+
+            <!-- 团期明细表 -->
+            <div class="detail-section-title" style="margin-top:12px;">团期出库明细</div>
+            <div class="table-scroll" style="margin-top: 8px;">
+              <table class="data-table" id="report-table">
+                <thead>
+                  <tr>
+                    <th>团期日期</th>
+                    <th>团期名称</th>
+                    <th>使用场景</th>
+                    <th>物品名称</th>
+                    <th>类别</th>
+                    <th>出库数量</th>
+                    <th>成本</th>
+                    <th>领用标准</th>
+                    <th>状态</th>
+                  </tr>
+                </thead>
+                <tbody id="report-tbody">
+                  <tr>
+                    <td colspan="9" class="empty-state">请选择月份查看数据</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- 超额汇总 -->
+            <div id="report-overlimit-summary" style="margin-top:20px;display:none;">
+              <div class="detail-section-title" style="color:var(--danger);">超额领用汇总</div>
+              <div class="table-scroll" style="margin-top:8px;">
+                <table class="data-table" id="report-overlimit-table">
+                  <thead>
+                    <tr>
+                      <th>团期</th>
+                      <th>场景</th>
+                      <th>物品名称</th>
+                      <th>实际领用</th>
+                      <th>标准上限</th>
+                      <th>超出数量</th>
+                      <th>单价</th>
+                      <th>损失金额</th>
+                    </tr>
+                  </thead>
+                  <tbody id="report-overlimit-tbody"></tbody>
+                </table>
               </div>
             </div>
           </div>
@@ -1913,38 +1960,109 @@
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="js/supabase-db.js?v=5.47"></script>
-  <script src="js/supabase-sync.js?v=5.47"></script>
-  <script src="js/migrate-data.js?v=5.47"></script>
-  <script src="js/toast.js?v=5.47"></script>
-  <script src="js/login-characters.js?v=5.47"></script>
-  <script src="js/auth-fix.js?v=5.47"></script>
-  <script src="js/navigation.js?v=5.47"></script>
-  <script src="js/purchase.js?v=5.47"></script>
-  <script src="js/stock-in.js?v=5.47"></script>
-  <script src="js/requisition.js?v=5.47"></script>
-  <script src="js/monthly-summary.js?v=5.47"></script>
-  <script src="js/tour-reports.js?v=5.47"></script>
-  <script src="js/business-flow.js?v=5.47"></script>
-  <script src="js/app.js?v=5.47"></script>
-  <script src="js/inventory-hybrid.js?v=5.47"></script>
-  <script src="js/admin-bindings.js?v=5.47"></script>
+  <script src="js/supabase-db.js?v=5.48"></script>
+  <script src="js/supabase-sync.js?v=5.48"></script>
+  <script src="js/migrate-data.js?v=5.48"></script>
+  <script src="js/toast.js?v=5.48"></script>
+  <script src="js/login-characters.js?v=5.48"></script>
+  <script src="js/auth-fix.js?v=5.48"></script>
+  <script src="js/navigation.js?v=5.48"></script>
+  <script src="js/purchase.js?v=5.48"></script>
+  <script src="js/stock-in.js?v=5.48"></script>
+  <script src="js/requisition.js?v=5.48"></script>
+  <script src="js/monthly-summary.js?v=5.48"></script>
+  <script src="js/tour-reports.js?v=5.48"></script>
+  <script src="js/business-flow.js?v=5.48"></script>
+  <script src="js/app.js?v=5.48"></script>
+  <script src="js/inventory-hybrid.js?v=5.48"></script>
+  <script src="js/admin-bindings.js?v=5.48"></script>
 
-  <script src="js/user-admin.js?v=5.47"></script>
+  <script src="js/user-admin.js?v=5.48"></script>
 
-  <!-- v5.43 架构待升级提示：当检测到云端约束/新表未应用（__SCHEMA_OUTDATED）时显示 -->
-  <div id="schema-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#fff4e5;color:#8a5a08;border-bottom:1px solid #f0c987;padding:10px 16px;font-size:13px;line-height:1.5;box-shadow:0 2px 8px rgba(0,0,0,.08);">
-    <strong>⚠ 数据库架构待升级</strong>：检测到领用审核流所需的表/约束尚未应用（<code>pending_approval / approved / rejected / withdrawn</code> 状态、<code>consumption_standards</code>、<code>settings</code> 等）。审核流将自动降级为旧流程。请在 Supabase 控制台 <b>SQL Editor</b> 中执行 <code>database/migrations/20260806_v5.43_fullfix.sql</code> 后刷新页面，即可启用完整功能。
+  <!-- ===== 模态框：非采购入库（退库回收） ===== -->
+  <div id="modal-nonpurchase" class="modal">
+    <div class="modal-content" style="max-width:480px;">
+      <div class="modal-header">
+        <h2>非采购入库（退库回收）</h2>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>物品编码 <span style="color:var(--danger);">*</span></label>
+          <select id="np-item-code" class="form-control"><option value="">请选择物品</option></select>
+        </div>
+        <div class="form-group">
+          <label>关联团期</label>
+          <select id="np-tour" class="form-control"><option value="">不关联</option></select>
+        </div>
+        <div style="display:flex;gap:12px;">
+          <div class="form-group" style="flex:1;">
+            <label>数量</label>
+            <input type="number" id="np-qty" class="form-control" min="0" step="0.01" placeholder="请输入数量">
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>单位</label>
+            <input type="text" id="np-unit" class="form-control" readonly placeholder="自动带出">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>单价（当前加权均价，不可改）</label>
+          <input type="text" id="np-price" class="form-control" readonly placeholder="选择物品后带出">
+        </div>
+        <div class="form-group">
+          <label>原因</label>
+          <textarea id="np-reason" class="form-control" rows="2" placeholder="如：未用完退库"></textarea>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin:0;">提交后由仓库管理员审核；审核通过按当前加权均价入库，库存增加但均价保持不变。</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn modal-cancel" id="np-cancel">取消</button>
+        <button class="btn btn-accent" id="np-submit">提交入库申请</button>
+      </div>
+    </div>
   </div>
-  <script>
-  (function(){
-    var tries=0, el=document.getElementById('schema-banner');
-    var t=setInterval(function(){
-      tries++;
-      if(window.__SCHEMA_OUTDATED){ if(el) el.style.display='block'; clearInterval(t); }
-      else if(tries>25){ clearInterval(t); }
-    },800);
-  })();
-  </script>
+
+  <!-- ===== 模态框：异常报损 ===== -->
+  <div id="modal-loss" class="modal">
+    <div class="modal-content" style="max-width:480px;">
+      <div class="modal-header">
+        <h2>异常报损</h2>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>物品编码 <span style="color:var(--danger);">*</span></label>
+          <select id="loss-item-code" class="form-control"><option value="">请选择物品</option></select>
+        </div>
+        <div class="form-group">
+          <label>关联团期</label>
+          <select id="loss-tour" class="form-control"><option value="">不关联</option></select>
+        </div>
+        <div style="display:flex;gap:12px;">
+          <div class="form-group" style="flex:1;">
+            <label>报损数量</label>
+            <input type="number" id="loss-qty" class="form-control" min="0" step="0.01" placeholder="请输入数量">
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>单位</label>
+            <input type="text" id="loss-unit" class="form-control" readonly placeholder="自动带出">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>单价（当前加权均价）</label>
+          <input type="text" id="loss-price" class="form-control" readonly placeholder="选择物品后带出">
+        </div>
+        <div class="form-group">
+          <label>损失原因 <span style="color:var(--danger);">*</span></label>
+          <textarea id="loss-reason" class="form-control" rows="2" placeholder="必填，说明损失原因"></textarea>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);margin:0;">损失金额 = 当前加权均价 × 报损数量，将计入报损财务分析报表。</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn modal-cancel" id="loss-cancel">取消</button>
+        <button class="btn btn-accent" id="loss-submit" style="background:var(--danger);border-color:var(--danger);">确认报损</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
