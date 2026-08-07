@@ -1113,7 +1113,10 @@ async function _saveInvSupplement() {
   var allSuccess = errors.length === 0;
   if (allSuccess && successCount > 0) {
     try {
-      if (typeof refreshData === 'function') {
+      if (typeof syncModuleTables === 'function') {
+        await syncModuleTables('inventory');
+        console.log('云端刷新完成');
+      } else if (typeof refreshData === 'function') {
         await refreshData('inventory');
         console.log('云端刷新完成');
       }
@@ -1137,8 +1140,8 @@ async function _saveInvSupplement() {
   console.log(msg, errors.length > 0 ? errors : '');
 
   _invSupplementMode = false;
-  // 全部成功 → 从云端渲染；部分失败 → 从本地缓存渲染（保留修改）
-  loadInventory(!allSuccess);
+  // 全部成功 → 从已刷新的缓存渲染（更快）；部分失败 → 从云端重新拉取权威数据
+  loadInventory(allSuccess);
 }
 
 function _cancelInvSupplement() {
