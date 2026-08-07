@@ -38,8 +38,7 @@ $headers = @{
 if ($args.Count -gt 0) {
     $projectDir = $args[0]
 } else {
-    # 默认使用脚本所在目录（push.ps1 即位于项目根目录）
-    $projectDir = $PSScriptRoot
+    $projectDir = $env:PROJECT_DIR
 }
 
 if ([string]::IsNullOrWhiteSpace($projectDir) -or -not (Test-Path $projectDir)) {
@@ -59,17 +58,19 @@ Write-Host ""
 $filesToPush = @(
     ".gitignore",
     ".nojekyll",
+    "version.json",
     "index.html",
     "css/style.css",
     "css/redesign.css",
     "database/schema.sql",
     "database/migrations/20260616_add_adjustments_permissions.sql",
     "database/migrations/20260622_change_stock_to_numeric.sql",
-    "database/migrations/20260806_tour_names.sql",
-    "database/migrations/20260806_v5.43_fullfix.sql",
+    "database/migrations/20260807_nonpurchase_loss.sql",
     "js/admin-bindings.js",
     "js/app.js",
+    "js/auth.js",
     "js/auth-fix.js",
+    "js/auth-fixed.js",
     "js/business-flow.js",
     "js/inventory-hybrid.js",
     "js/login-characters.js",
@@ -78,13 +79,13 @@ $filesToPush = @(
     "js/navigation.js",
     "js/purchase.js",
     "js/requisition.js",
+    "js/role-admin.js",
     "js/stock-in.js",
     "js/supabase-db.js",
     "js/supabase-sync.js",
     "js/toast.js",
     "js/tour-reports.js",
     "js/user-admin.js",
-    "version.json",
     "package.json",
     "push.ps1",
     "CHANGELOG.md",
@@ -120,53 +121,44 @@ foreach ($relPath in $filesToPush) {
     $b64 = [Convert]::ToBase64String($contentBytes)
     $localSize = $contentBytes.Length
     $totalSize += $localSize
+    
+    # 查询远程文件 SHA（用于更新）
+    $cloudSha = $null
+    try {
+        $resp = Invoke-RestMethod -Uri "$apiBase/contents/$relPath" -Headers $headers -Method Get -ErrorAction Stop
+        $cloudSha = $resp.sha
+    } catch {}
 
-    # 仅推送到仓库根目录 $relPath —— 这是 GitHub Pages 实际发布的目录。
-    # 历史教训：仓库根曾因「根目录旧副本」「3-库存管理 重复子目录」「编码损坏的乱码目录」
-    # 导致 GitHub Pages 构建失败 / 始终显示旧版。现已清理为单一根目录副本，杜绝多副本。
-    $targets = @(
-        "$relPath"
-    )
-
-    foreach ($target in $targets) {
-        # 查询远程文件 SHA（用于更新）
-        $cloudSha = $null
-        try {
-            $resp = Invoke-RestMethod -Uri "$apiBase/contents/$target" -Headers $headers -Method Get -ErrorAction Stop
-            $cloudSha = $resp.sha
-        } catch {}
-
-        $msg = "v5.47 " + $(if ($cloudSha) { "update" } else { "add" }) + " $target"
-        $body = @{
-            message = $msg
-            content = $b64
-        }
-        if ($cloudSha) { $body.sha = $cloudSha }
-
-        $bodyJson = $body | ConvertTo-Json -Depth 3
-
-        try {
-            $response = Invoke-RestMethod `
-                -Uri "$apiBase/contents/$target" `
-                -Headers $headers `
-                -Method Put `
-                -Body $bodyJson `
-                -ContentType "application/json" `
-                -ErrorAction Stop
-            
-            $action = if ($cloudSha) { "UPDATE" } else { "CREATE" }
-            $sizeKB = [math]::Round($localSize / 1024, 1)
-            Write-Host "  OK   $target ($sizeKB KB) [$action]" -ForegroundColor Green
-            $successCount++
-        } catch {
-            $statusCode = $_.Exception.Response.StatusCode.value__
-            Write-Host "  FAIL $target - HTTP $statusCode" -ForegroundColor Red
-            $failCount++
-        }
-        
-        # 间隔 250ms 避免 API 限流
-        Start-Sleep -Milliseconds 250
+    $msg = "v5.48 " + $(if ($cloudSha) { "update" } else { "add" }) + " $relPath"
+    $body = @{
+        message = $msg
+        content = $b64
     }
+    if ($cloudSha) { $body.sha = $cloudSha }
+
+    $bodyJson = $body | ConvertTo-Json -Depth 3
+
+    try {
+        $response = Invoke-RestMethod `
+            -Uri "$apiBase/contents/$relPath" `
+            -Headers $headers `
+            -Method Put `
+            -Body $bodyJson `
+            -ContentType "application/json" `
+            -ErrorAction Stop
+        
+        $action = if ($cloudSha) { "UPDATE" } else { "CREATE" }
+        $sizeKB = [math]::Round($localSize / 1024, 1)
+        Write-Host "  OK   $relPath ($sizeKB KB) [$action]" -ForegroundColor Green
+        $successCount++
+    } catch {
+        $statusCode = $_.Exception.Response.StatusCode.value__
+        Write-Host "  FAIL $relPath - HTTP $statusCode" -ForegroundColor Red
+        $failCount++
+    }
+    
+    # 间隔 500ms 避免 API 限流
+    Start-Sleep -Milliseconds 500
 }
 
 Write-Host ""
@@ -176,4 +168,12 @@ Write-Host "  Result: $successCount OK, $failCount FAIL, $skipCount SKIP" -Foreg
 Write-Host "  Total: $totalKB KB | Files: $($filesToPush.Count)" -ForegroundColor White
 Write-Host "========================================" -ForegroundColor $(if ($failCount -eq 0) { "Green" } else { "Yellow" })
 Write-Host "Pages: https://$owner.github.io/$repo/" -ForegroundColor Cyan
+Write-Host "Requesting Pages rebuild..." -ForegroundColor Yellow
+try {
+    Invoke-RestMethod -Uri "$apiBase/pages/main" -Headers $headers -Method Post -ErrorAction Stop | Out-Null
+    Write-Host "  Pages rebuild requested" -ForegroundColor Green
+} catch {
+    $statusCode = $_.Exception.Response.StatusCode.value__
+    Write-Host "  Pages rebuild request returned HTTP $statusCode (may already be building)" -ForegroundColor Yellow
+}
 Write-Host "Will update in 1-2 minutes" -ForegroundColor Yellow
