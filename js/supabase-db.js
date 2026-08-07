@@ -1114,6 +1114,148 @@ const SupaDB = {
     return await this.getRequisitions({ status: 'pending_approval' });
   },
 
+  // ---- 非采购入库（退库/调拨/盘盈等，需仓库管理员审核）----
+  async createNonPurchaseStockIn(payload) {
+    const sb = getSupabase();
+    if (!sb) throw new Error('Supabase 未连接');
+    const u = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : null;
+    const code = await getNextCode('nonpurchase', 'NPS', 5);
+    const qty = Number(payload.qty) || 0;
+    const price = Number(payload.price) || 0;
+    const row = {
+      code,
+      item_code: payload.code || '',
+      name: payload.name || '',
+      category: payload.category || '',
+      unit: payload.unit || '',
+      qty,
+      tour_id: payload.tour_id ? _numOrNull(Number(payload.tour_id)) : null,
+      tour_name: payload.tour_name || '',
+      price,
+      amount: Number((qty * price).toFixed(2)),
+      reason: payload.reason || '',
+      status: 'pending',
+      applicant_id: _numOrNull(u && u.id),
+      applicant_name: u ? u.name : ''
+    };
+    const { data, error } = await sb.from('non_purchase_stock_in').insert(row).select().single();
+    if (error) throw new Error('非采购入库创建失败: ' + error.message);
+    await writeAuditLog('NONPURCHASE_CREATE', 'non_purchase_stock_in', data.id, data.code, { qty, price });
+    return data;
+  },
+
+  async getNonPurchaseStockIns(filter) {
+    const sb = getSupabase();
+    if (!sb) return [];
+    let q = sb.from('non_purchase_stock_in').select('*').order('created_at', { ascending: false });
+    if (filter && filter.status) q = q.eq('status', filter.status);
+    const { data, error } = await q;
+    if (error) { console.warn('[NonPurchase] 查询失败:', error.message); return []; }
+    return data || [];
+  },
+
+  async approveNonPurchaseStockIn(id, remark) {
+    const sb = getSupabase();
+    if (!sb) throw new Error('Supabase 未连接');
+    const list = await this.getNonPurchaseStockIns({});
+    const r = (list || []).find(x => x.id === id);
+    if (!r) throw new Error('非采购入库单不存在');
+    if (r.status !== 'pending') throw new Error('该单已处理，无法重复审核');
+
+    // 入库价取物品当前加权均价 → 均价保持不变（退库语义：物品按结存成本回收）
+    const invRows = await _sbQuery(sb.from('inventory_items').select('*').eq('code', r.item_code).limit(1));
+    const inv = (invRows && invRows[0]) ? invRows[0] : null;
+    const curPrice = inv ? (Number(inv.unit_price) || 0) : (Number(r.price) || 0);
+    const item = {
+      code: r.item_code, name: r.name, category: r.category, brand: '', model: '', unit: r.unit,
+      actual_quantity: Number(r.qty) || 0, price: curPrice
+    };
+    const stockInData = { stockin_date: new Date().toISOString().slice(0, 10), batch_code: 'NPS-' + (r.code || '') };
+    await _syncInventoryOnStockIn(item, stockInData);
+
+    const u = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : null;
+    const { error } = await sb.from('non_purchase_stock_in').update({
+      status: 'approved',
+      reviewer_id: _numOrNull(u && u.id),
+      reviewer_name: u ? u.name : '',
+      reviewed_at: new Date().toISOString(),
+      approved_price: curPrice,
+      remark: remark || ''
+    }).eq('id', id);
+    if (error) throw new Error('审核更新失败: ' + error.message);
+    await writeAuditLog('NONPURCHASE_APPROVE', 'non_purchase_stock_in', id, r.code, { by: u ? u.name : '' });
+  },
+
+  async rejectNonPurchaseStockIn(id, reason) {
+    const sb = getSupabase();
+    if (!sb) throw new Error('Supabase 未连接');
+    const u = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : null;
+    const { error } = await sb.from('non_purchase_stock_in').update({
+      status: 'rejected',
+      reviewer_id: _numOrNull(u && u.id),
+      reviewer_name: u ? u.name : '',
+      reviewed_at: new Date().toISOString(),
+      reject_reason: reason || ''
+    }).eq('id', id);
+    if (error) throw new Error('驳回失败: ' + error.message);
+    await writeAuditLog('NONPURCHASE_REJECT', 'non_purchase_stock_in', id, '', { reason: reason || '' });
+  },
+
+  // ---- 异常报损（不审核，必填原因；损失金额 = 当前加权均价 × 数量）----
+  async createLossRecord(payload) {
+    const sb = getSupabase();
+    if (!sb) throw new Error('Supabase 未连接');
+    const u = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : null;
+    const qty = Number(payload.qty) || 0;
+    if (qty <= 0) throw new Error('报损数量必须大于 0');
+
+    const invRows = await _sbQuery(sb.from('inventory_items').select('*').eq('code', payload.code).limit(1));
+    const inv = (invRows && invRows[0]) ? invRows[0] : null;
+    const curPrice = inv ? (Number(inv.unit_price) || 0) : 0;
+    const curStock = inv ? (Number(inv.stock) || 0) : 0;
+    if (curStock < qty) {
+      throw new Error('库存不足，无法报损：' + (inv ? inv.name : payload.name) + '（现有 ' + curStock + '，报损 ' + qty + '）');
+    }
+    const lossAmount = Number((qty * curPrice).toFixed(2));
+
+    const code = await getNextCode('loss', 'LOSS', 5);
+    const row = {
+      code,
+      item_code: payload.code || '',
+      name: payload.name || '',
+      category: payload.category || (inv ? inv.category_name : ''),
+      unit: payload.unit || (inv ? inv.unit : ''),
+      qty,
+      tour_id: payload.tour_id ? _numOrNull(Number(payload.tour_id)) : null,
+      tour_name: payload.tour_name || '',
+      unit_price: curPrice,
+      loss_amount: lossAmount,
+      reason: payload.reason || '',
+      applicant_id: _numOrNull(u && u.id),
+      applicant_name: u ? u.name : ''
+    };
+    const { data, error } = await sb.from('loss_records').insert(row).select().single();
+    if (error) throw new Error('报损创建失败: ' + error.message);
+
+    // 扣减库存（单价不变，仅减数量与总价值）
+    if (inv) {
+      const { error: updErr } = await sb.from('inventory_items').update({ stock: curStock - qty }).eq('id', inv.id);
+      if (updErr) throw new Error('库存扣减失败: ' + updErr.message);
+    }
+    await writeAuditLog('LOSS_CREATE', 'loss_records', data.id, data.code, { qty, lossAmount });
+    return data;
+  },
+
+  async getLossRecords(filter) {
+    const sb = getSupabase();
+    if (!sb) return [];
+    let q = sb.from('loss_records').select('*').order('created_at', { ascending: false });
+    if (filter && filter.tour_name) q = q.eq('tour_name', filter.tour_name);
+    const { data, error } = await q;
+    if (error) { console.warn('[Loss] 查询失败:', error.message); return []; }
+    return data || [];
+  },
+
   async deleteRequisition(id) {
     const sb = getSupabase();
     await _sbQuery(sb.from('requisitions').delete().eq('id', id));
