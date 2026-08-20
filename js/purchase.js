@@ -1758,49 +1758,55 @@ function displayImportPreview(errors) {
 /**
  * 执行导入
  */
-function executeImport() {
+async function executeImport() {
   if (importData.length === 0) {
     showToast('没有可导入的数据', 'warning');
     return;
   }
 
-  // 预处理：确保类别/品牌/型号存在于系统中；若系统内无该物品则创建空库存记录（stock=0）以便后续同步
+  // 预处理：确保类别/品牌/型号存在；若物品不存在则创建空库存占位（stock=0）
   try {
     let inventory = (typeof _appCache !== 'undefined' && _appCache.inventory) ? _appCache.inventory.slice() : [];
+    const newPlaceholders = [];
 
-    importData.forEach(it => {
-      // 类别自动创建
+    for (const it of importData) {
+      // 类别自动创建（落云端）
       if (it.category && !categories.find(c => c.name === it.category)) {
         autoCreateCategory(it.category);
       }
-      // 品牌/型号历史记录
       if (it.brand) addBrandToHistory(it.item_name, it.brand);
       if (it.model) addModelToHistory(it.item_name, it.model);
 
-      // 若系统中不存在该物品（按 name+brand+model），则创建一条库存占位（stock 0）
       const exists = inventory.find(inv => inv.name === it.item_name && (inv.brand || '') === (it.brand || '') && (inv.model || '') === (it.model || ''));
       if (!exists) {
-        const newInv = {
-          id: Date.now() + Math.random(),
+        const ph = {
           code: `ITEM${String(inventory.length + 1).padStart(3, '0')}`,
           name: it.item_name,
           brand: it.brand || '',
           model: it.model || '',
-          category: it.category || '未分类',
+          category_name: it.category || '未分类',
           stock: 0,
           unit: it.unit || '',
           safety_stock: 10,
           created_at: new Date().toISOString(),
           source: 'import-placeholder'
         };
-        inventory.push(newInv);
+        inventory.push(ph);
+        newPlaceholders.push(ph);
       }
-    });
+    }
 
-    // 保存可能新增的类别和 inventory
     if (typeof _appCache !== 'undefined') {
       _appCache.categories = categories.slice();
       _appCache.inventory = inventory.slice();
+    }
+
+    // 占位库存落云端（失败不阻断导入主流程）
+    if (typeof SupaDB !== 'undefined' && SupaDB.createInventoryItem) {
+      for (const ph of newPlaceholders) {
+        try { await SupaDB.createInventoryItem(ph); } catch (e) { console.warn('[Import] 占位库存落库失败:', e.message); }
+      }
+      try { await refreshData('inventory'); } catch (e) {}
     }
   } catch (e) { console.warn('预创建条目失败', e); }
 
@@ -1828,11 +1834,53 @@ function executeImport() {
     });
   });
 
-  // 创建采购单
-  Object.values(groups).forEach(group => {
+  const groupList = Object.values(groups);
+
+  // 优先落云端：逐组创建采购单（与手动录入一致，确保切换账号/刷新后仍可见）
+  if (typeof SupaDB !== 'undefined' && SupaDB.createPurchaseOrder) {
+    try {
+      let _ok = 0;
+      for (const group of groupList) {
+        const poData = {
+          purchase_date: group.purchase_date,
+          purchaser: group.purchaser,
+          suppliers: [group.supplier].filter(Boolean),
+          remark: 'Excel导入',
+          total_amount: group.items.reduce((s, i) => s + i.amount, 0),
+          items: group.items.map(it => ({
+            name: it.name,
+            brand: it.brand || '',
+            model: it.model || '',
+            category: it.category || '',
+            quantity: it.quantity,
+            unit: it.unit || '',
+            price: it.price || 0,
+            amount: it.amount || 0,
+            supplier: group.supplier || '',
+            code: ''
+          }))
+        };
+        const created = await SupaDB.createPurchaseOrder(poData);
+        if (typeof _appCache !== 'undefined') {
+          if (!Array.isArray(_appCache.purchaseOrders)) _appCache.purchaseOrders = [];
+          _appCache.purchaseOrders.unshift(created);
+        }
+        _ok++;
+      }
+      closeModal();
+      loadPurchaseOrders();
+      if (typeof refreshAllBusinessKPI === 'function') refreshAllBusinessKPI();
+      showToast(`成功导入 ${_ok} 个采购单（已同步至云端）`, 'success');
+      return;
+    } catch (e) {
+      console.warn('[Import] 采购单云端保存失败，回退本地：', e.message);
+    }
+  }
+
+  // 回退：仅写入本地缓存（刷新/切换账号后会丢失，仅作兜底）
+  groupList.forEach(group => {
     const orderCode = generatePurchaseCode();
     const totalAmount = group.items.reduce((sum, item) => sum + item.amount, 0);
-    
     const purchaseOrder = {
       id: Date.now() + Math.random(),
       code: orderCode,
@@ -1845,20 +1893,12 @@ function executeImport() {
       created_at: new Date().toISOString(),
       remark: 'Excel导入'
     };
-
     purchaseOrders.push(purchaseOrder);
   });
-
-  // 保存数据
   savePurchaseOrders();
-
-  // 关闭模态框
   closeModal();
-
-  // 刷新列表
   loadPurchaseOrders();
-
-  showToast(`成功导入 ${Object.keys(groups).length} 个采购单`, 'success');
+  showToast(`成功导入 ${groupList.length} 个采购单（本地，未同步云端）`, 'warning');
 }
 
 /**
@@ -1936,12 +1976,19 @@ function autoCreateCategory(categoryName) {
   
   // 保存到内存缓存
   if (typeof _appCache !== 'undefined') _appCache.categories = categories.slice();
-  
+
   // 同步到库存分类
   syncCategoryToInventory(codePrefix, categoryName);
-  
+
+  // 尽力落云端（失败不阻断，仅本地可见）
+  if (typeof SupaDB !== 'undefined' && SupaDB.createCategory) {
+    SupaDB.createCategory(categoryName).catch(function (e) {
+      console.warn('[autoCreateCategory] 云端落库失败:', e.message);
+    });
+  }
+
   console.log(`自动创建类别：${categoryName} (${codePrefix})`);
-  
+
   return categories[categories.length - 1];
 }
 
