@@ -284,16 +284,16 @@ function addItemToGroup(groupId) {
   const codeDisplay = row.querySelector('.item-code-display');
   
   if (categoryInput) {
-    categoryInput.addEventListener('blur', function() {
+    categoryInput.addEventListener('blur', async function() {
       const categoryName = this.value.trim();
       if (categoryName) {
         // 查找或创建类别
         let category = categories.find(c => c.name === categoryName);
         if (!category) {
-          category = autoCreateCategory(categoryName);
+          category = await autoCreateCategory(categoryName);
           refreshAllCategoryDropdowns();
         }
-        
+
         // 生成该类别下的商品编码
         const itemCode = generateItemCodeByCategory(category.code);
         codeDisplay.textContent = itemCode;
@@ -393,11 +393,11 @@ function addPurchaseItemRow() {
   // 绑定类别输入事件，如果输入新类别则自动创建
   const categoryInput = row.querySelector('.item-category');
   if (categoryInput) {
-    categoryInput.addEventListener('blur', function() {
+    categoryInput.addEventListener('blur', async function() {
       const categoryName = this.value.trim();
       if (categoryName && !categories.find(c => c.name === categoryName)) {
         // 自动创建新类别
-        autoCreateCategory(categoryName);
+        await autoCreateCategory(categoryName);
         refreshAllCategoryDropdowns();
       }
     });
@@ -1764,23 +1764,46 @@ async function executeImport() {
     return;
   }
 
+  // 预处理：先拉取云端最新 categories / inventory，避免本地缓存缺失导致重复创建
+  try {
+    if (typeof SupaDB !== 'undefined' && SupaDB.getCategories) {
+      const cloudCats = await SupaDB.getCategories();
+      if (cloudCats && cloudCats.length) {
+        _appCache.categories = cloudCats.slice();
+        _appCache.inventoryCategories = cloudCats.map(c => ({ code: c.code, name: c.name, created_at: c.created_at }));
+        categories = cloudCats.slice();
+      }
+    }
+  } catch (e) { console.warn('[Import] 拉取云端品类失败，使用本地缓存:', e.message); }
+
+  try {
+    if (typeof SupaDB !== 'undefined' && SupaDB.getInventory) {
+      const cloudInv = await SupaDB.getInventory();
+      if (cloudInv && cloudInv.length) _appCache.inventory = cloudInv.slice();
+    }
+  } catch (e) { console.warn('[Import] 拉取云端库存失败，使用本地缓存:', e.message); }
+
   // 预处理：确保类别/品牌/型号存在；若物品不存在则创建空库存占位（stock=0）
   try {
     let inventory = (typeof _appCache !== 'undefined' && _appCache.inventory) ? _appCache.inventory.slice() : [];
     const newPlaceholders = [];
+    const createdCategoryNames = new Set();
+    const createdPlaceholderKeys = new Set();
 
     for (const it of importData) {
-      // 类别自动创建（落云端）
-      if (it.category && !categories.find(c => c.name === it.category)) {
-        autoCreateCategory(it.category);
+      // 类别自动创建（落云端），本批次内已创建过的跳过
+      if (it.category && !categories.find(c => c.name === it.category) && !createdCategoryNames.has(it.category)) {
+        await autoCreateCategory(it.category);
+        createdCategoryNames.add(it.category);
       }
       if (it.brand) addBrandToHistory(it.item_name, it.brand);
       if (it.model) addModelToHistory(it.item_name, it.model);
 
+      const phKey = [it.item_name, it.brand || '', it.model || ''].join('|');
       const exists = inventory.find(inv => inv.name === it.item_name && (inv.brand || '') === (it.brand || '') && (inv.model || '') === (it.model || ''));
-      if (!exists) {
+      if (!exists && !createdPlaceholderKeys.has(phKey)) {
         const ph = {
-          code: `ITEM${String(inventory.length + 1).padStart(3, '0')}`,
+          // 占位库存不传 code，由 SupaDB 通过 next_code 生成唯一 SKU，避免 ITEM001 冲突
           name: it.item_name,
           brand: it.brand || '',
           model: it.model || '',
@@ -1793,6 +1816,7 @@ async function executeImport() {
         };
         inventory.push(ph);
         newPlaceholders.push(ph);
+        createdPlaceholderKeys.add(phKey);
       }
     }
 
@@ -1804,7 +1828,12 @@ async function executeImport() {
     // 占位库存落云端（失败不阻断导入主流程）
     if (typeof SupaDB !== 'undefined' && SupaDB.createInventoryItem) {
       for (const ph of newPlaceholders) {
-        try { await SupaDB.createInventoryItem(ph); } catch (e) { console.warn('[Import] 占位库存落库失败:', e.message); }
+        try { await SupaDB.createInventoryItem(ph); } catch (e) {
+          // 已存在的占位库存忽略 duplicate 警告
+          if (!e || !e.message || !e.message.toLowerCase().includes('duplicate')) {
+            console.warn('[Import] 占位库存落库失败:', e.message);
+          }
+        }
       }
       try { await refreshData('inventory'); } catch (e) {}
     }
@@ -1952,7 +1981,11 @@ function getCategoryOptions() {
 /**
  * 自动创建新类别（生成类别编码前缀）
  */
-function autoCreateCategory(categoryName) {
+async function autoCreateCategory(categoryName) {
+  // 若本地已有，直接返回，避免重复创建
+  const existing = categories.find(c => c.name === categoryName);
+  if (existing) return existing;
+
   // 根据类别名称生成编码前缀（新体系）
   let codePrefix;
   if (categoryName.includes('循环') || categoryName.toLowerCase().includes('reuse')) {
@@ -1965,7 +1998,7 @@ function autoCreateCategory(categoryName) {
     // 默认使用 SK + 序号
     codePrefix = 'SK' + String(categories.length + 1).padStart(2, '0');
   }
-  
+
   categories.push({
     code: codePrefix,
     name: categoryName,
@@ -1973,18 +2006,28 @@ function autoCreateCategory(categoryName) {
     remark: '自动创建',
     created_at: new Date().toISOString()
   });
-  
+
   // 保存到内存缓存
   if (typeof _appCache !== 'undefined') _appCache.categories = categories.slice();
 
   // 同步到库存分类
   syncCategoryToInventory(codePrefix, categoryName);
 
-  // 尽力落云端（失败不阻断，仅本地可见）
+  // 尽力落云端；duplicate 视为已存在，不抛错
   if (typeof SupaDB !== 'undefined' && SupaDB.createCategory) {
-    SupaDB.createCategory(categoryName).catch(function (e) {
-      console.warn('[autoCreateCategory] 云端落库失败:', e.message);
-    });
+    try {
+      const created = await SupaDB.createCategory(categoryName);
+      const localCat = categories[categories.length - 1];
+      if (created && created.code) localCat.code = created.code;
+      if (created && created.id) localCat.id = created.id;
+    } catch (e) {
+      if (e && e.message && e.message.toLowerCase().includes('duplicate')) {
+        console.log(`[autoCreateCategory] 品类「${categoryName}」云端已存在，使用本地占位`);
+      } else {
+        console.warn('[autoCreateCategory] 云端落库失败:', e.message);
+        throw e;
+      }
+    }
   }
 
   console.log(`自动创建类别：${categoryName} (${codePrefix})`);
