@@ -91,7 +91,6 @@
           code: code,
           name: name,
           category_name: category,
-          category: category,  // 兼容前端
           unit: unit,
           stock: stock,
           safety_stock: safety,
