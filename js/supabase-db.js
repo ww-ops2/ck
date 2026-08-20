@@ -633,16 +633,24 @@ const SupaDB = {
 
   async createInventoryItem(itemData) {
     const sb = getSupabase();
-    if (!itemData.code) {
-      itemData.code = await getNextCode('item_code', 'SKU', 5);
+    // 安全列白名单：线上 inventory_items 无 `category` 列，防止 UI/旧数据传错字段导致 400
+    const SAFE_COLS = ['code','name','brand','model','category_id','category_name','unit',
+                       'stock','safety_stock','unit_price','source',
+                       'last_stockin_date','last_stockin_batch'];
+    var safeItem = {};
+    Object.keys(itemData).forEach(function(k) {
+      if (SAFE_COLS.indexOf(k) >= 0) safeItem[k] = itemData[k];
+    });
+    if (!safeItem.code) {
+      safeItem.code = await getNextCode('item_code', 'SKU', 5);
     }
     const { data, error } = await sb
       .from('inventory_items')
-      .insert(itemData)
+      .insert(safeItem)
       .select()
       .single();
     if (error) throw new Error('物品创建失败: ' + error.message);
-    await writeAuditLog('CREATE', 'inventory_items', data.id, data.code, itemData);
+    await writeAuditLog('CREATE', 'inventory_items', data.id, data.code, safeItem);
     return data;
   },
 
