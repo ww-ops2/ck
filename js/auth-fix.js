@@ -18,11 +18,15 @@ Object.defineProperty(window, 'currentUser', {
 });
 
 function initAuth() {
-  // 恢复已登录用户
+  // 不自动恢复会话：每次打开都显示登录页，避免共享/公共设备上直接以管理员态进入。
+  // （满足“每次用网页登录默认显示登录页面”的诉求，也防止旧版缓存直接进 admin 的观感）
+  let prefillUser = null;
   try {
     const s = localStorage.getItem('currentUser');
-    if (s) currentUserFallback = JSON.parse(s);
-  } catch (e) { currentUserFallback = null; }
+    if (s) prefillUser = JSON.parse(s).username;
+  } catch (e) {}
+  currentUserFallback = null;
+  try { localStorage.removeItem('currentUser'); } catch (e) {}
 
   // 绑定登录表单
   const loginForm = document.getElementById('login-form');
@@ -48,15 +52,9 @@ function initAuth() {
   const regBtn = document.getElementById('register-btn');
   if (regBtn) regBtn.addEventListener('click', openRegisterModal);
 
-  // 已有登录会话
-  if (currentUserFallback) {
-    // 先用 localStorage 权限缓存渲染，再异步向数据库核对
-    loadPermissions(currentUserFallback)
-      .catch(function (e) { console.warn('[Auth] 恢复会话时加载权限失败:', e.message); })
-      .finally(function () { showApp(); });
-  } else {
-    showLoginPage();
-  }
+  showLoginPage();
+  // 预填上次登录账号（仅用户名，不自动登录）
+  if (prefillUser && phoneInput) phoneInput.value = prefillUser;
 }
 
 /**
