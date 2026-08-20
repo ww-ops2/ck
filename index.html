@@ -13,7 +13,7 @@
   //    只要 version.json 已更新就会强制硬刷新（解决旧版无自检、永久卡旧版的问题）。
   // 2) localStorage 兜底（离线时仍按上次记录的版本判断）。
   (function() {
-    var APP_VERSION = '5.51';
+    var APP_VERSION = '5.52';
     function forceReload() {
       if (window.location.href.indexOf('_relver=') >= 0) return;
       if (window.location.href.indexOf('file://') >= 0) return;
@@ -38,8 +38,8 @@
     } catch (e) {}
   })();
   </script>
-  <link rel="stylesheet" href="css/style.css?v=5.51">
-  <link rel="stylesheet" href="css/redesign.css?v=5.51">
+  <link rel="stylesheet" href="css/style.css?v=5.52">
+  <link rel="stylesheet" href="css/redesign.css?v=5.52">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
@@ -1925,24 +1925,24 @@
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="js/supabase-db.js?v=5.51"></script>
-  <script src="js/supabase-sync.js?v=5.51"></script>
-  <script src="js/migrate-data.js?v=5.51"></script>
-  <script src="js/toast.js?v=5.51"></script>
-  <script src="js/login-characters.js?v=5.51"></script>
-  <script src="js/auth-fix.js?v=5.51"></script>
-  <script src="js/navigation.js?v=5.51"></script>
-  <script src="js/purchase.js?v=5.51"></script>
-  <script src="js/stock-in.js?v=5.51"></script>
-  <script src="js/requisition.js?v=5.51"></script>
-  <script src="js/monthly-summary.js?v=5.51"></script>
-  <script src="js/tour-reports.js?v=5.51"></script>
-  <script src="js/business-flow.js?v=5.51"></script>
-  <script src="js/app.js?v=5.51"></script>
-  <script src="js/inventory-hybrid.js?v=5.51"></script>
-  <script src="js/admin-bindings.js?v=5.51"></script>
+  <script src="js/supabase-db.js?v=5.52"></script>
+  <script src="js/supabase-sync.js?v=5.52"></script>
+  <script src="js/migrate-data.js?v=5.52"></script>
+  <script src="js/toast.js?v=5.52"></script>
+  <script src="js/login-characters.js?v=5.52"></script>
+  <script src="js/auth-fix.js?v=5.52"></script>
+  <script src="js/navigation.js?v=5.52"></script>
+  <script src="js/purchase.js?v=5.52"></script>
+  <script src="js/stock-in.js?v=5.52"></script>
+  <script src="js/requisition.js?v=5.52"></script>
+  <script src="js/monthly-summary.js?v=5.52"></script>
+  <script src="js/tour-reports.js?v=5.52"></script>
+  <script src="js/business-flow.js?v=5.52"></script>
+  <script src="js/app.js?v=5.52"></script>
+  <script src="js/inventory-hybrid.js?v=5.52"></script>
+  <script src="js/admin-bindings.js?v=5.52"></script>
 
-  <script src="js/user-admin.js?v=5.51"></script>
+  <script src="js/user-admin.js?v=5.52"></script>
 
   <!-- ===== 模态框：非采购入库（退库回收） ===== -->
   <div id="modal-nonpurchase" class="modal">
