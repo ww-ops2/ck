@@ -66,6 +66,7 @@ $filesToPush = @(
     "database/migrations/20260616_add_adjustments_permissions.sql",
     "database/migrations/20260622_change_stock_to_numeric.sql",
     "database/migrations/20260807_nonpurchase_loss.sql",
+    "database/migrations/20260821_po_locked.sql",
     "js/admin-bindings.js",
     "js/app.js",
     "js/auth.js",
@@ -129,7 +130,7 @@ foreach ($relPath in $filesToPush) {
         $cloudSha = $resp.sha
     } catch {}
 
-    $msg = "v5.54 " + $(if ($cloudSha) { "update" } else { "add" }) + " $relPath"
+    $msg = "v5.55 " + $(if ($cloudSha) { "update" } else { "add" }) + " $relPath"
     $body = @{
         message = $msg
         content = $b64
