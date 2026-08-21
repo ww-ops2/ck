@@ -15,7 +15,7 @@
   //    确保“长时间开着页面”也能自动升级到最新版（收藏夹点开场景同样覆盖）。
   // 3) localStorage 兜底（离线时按上次记录的版本判断）。
   (function() {
-    var APP_VERSION = '5.58';
+    var APP_VERSION = '5.59';
     var reloading = false;
     function forceReload() {
       if (reloading) return;
@@ -50,8 +50,8 @@
     } catch (e) {}
   })();
   </script>
-  <link rel="stylesheet" href="css/style.css?v=5.58">
-  <link rel="stylesheet" href="css/redesign.css?v=5.58">
+  <link rel="stylesheet" href="css/style.css?v=5.59">
+  <link rel="stylesheet" href="css/redesign.css?v=5.59">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
@@ -302,87 +302,16 @@
         
         <!-- ===== 仪表盘模块 (v5.42 新设计) ===== -->
         <div id="module-dashboard" class="module-pane active">
-          <div class="dashboard-kpi-grid">
-            <div class="kpi-card-new anim-enter" data-kpi-type="total-items">
-              <div class="kpi-top">
-                <span class="kpi-label">总库存物品</span>
-                <span class="kpi-icon kpi-icon-primary">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
-                </span>
-              </div>
-              <div class="kpi-value" id="kpi-total-items">0</div>
-              <div class="kpi-change"><span>个品类</span></div>
-            </div>
-            <div class="kpi-card-new anim-enter" data-kpi-type="month-in">
-              <div class="kpi-top">
-                <span class="kpi-label">本月入库</span>
-                <span class="kpi-icon kpi-icon-success">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                </span>
-              </div>
-              <div class="kpi-value" id="kpi-month-in">0</div>
-              <div class="kpi-change"><span>件</span></div>
-            </div>
-            <div class="kpi-card-new anim-enter" data-kpi-type="month-out">
-              <div class="kpi-top">
-                <span class="kpi-label">本月出库</span>
-                <span class="kpi-icon kpi-icon-danger">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                </span>
-              </div>
-              <div class="kpi-value" id="kpi-month-out">0</div>
-              <div class="kpi-change"><span>件</span></div>
-            </div>
-            <div class="kpi-card-new anim-enter" data-kpi-type="pending-purchase">
-              <div class="kpi-top">
-                <span class="kpi-label">待处理采购单</span>
-                <span class="kpi-icon kpi-icon-warning">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                </span>
-              </div>
-              <div class="kpi-value" id="kpi-pending-purchase">0</div>
-              <div class="kpi-change"><span>单</span></div>
-            </div>
-            <div class="kpi-card-new anim-enter" data-kpi-type="pending-stockin">
-              <div class="kpi-top">
-                <span class="kpi-label">待确认入库</span>
-                <span class="kpi-icon kpi-icon-warning">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                </span>
-              </div>
-              <div class="kpi-value" id="kpi-pending-stockin">0</div>
-              <div class="kpi-change"><span>单</span></div>
-            </div>
-            <div class="kpi-card-new anim-enter" data-kpi-type="low-stock">
-              <div class="kpi-top">
-                <span class="kpi-label">低库存预警</span>
-                <span class="kpi-icon kpi-icon-danger">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                </span>
-              </div>
-              <div class="kpi-value" id="kpi-low-stock">0</div>
-              <div class="kpi-change"><span>项</span></div>
-            </div>
-            <div class="kpi-card-new anim-enter" data-kpi-type="pending-outbound">
-              <div class="kpi-top">
-                <span class="kpi-label">待确认出库</span>
-                <span class="kpi-icon kpi-icon-primary">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                </span>
-              </div>
-              <div class="kpi-value" id="kpi-pending-outbound">0</div>
-              <div class="kpi-change"><span>单</span></div>
-            </div>
+          <div class="dash-head">
+            <div class="dash-role" id="dash-role-badge">角色：—</div>
+            <div class="dash-asof" id="dash-asof"></div>
           </div>
 
-          <!-- KPI 卡片展开详情面板 -->
-          <div id="kpi-expand-panel" class="kpi-expand-panel">
-            <div class="kpi-expand-header">
-              <span class="kpi-expand-title" id="kpi-expand-title"></span>
-              <button class="kpi-expand-close" id="kpi-expand-close" title="关闭">&times;</button>
-            </div>
-            <div class="kpi-expand-body" id="kpi-expand-body"></div>
-          </div>
+          <div class="dash-sec-title">今日待办（按角色动态显示）</div>
+          <div class="dashboard-kpi-grid" id="dash-todo-grid"></div>
+
+          <div class="dash-sec-title">库存概览</div>
+          <div class="dashboard-kpi-grid" id="dash-overview-grid"></div>
 
           <div class="dashboard-chart-section">
             <div class="chart-panel-new anim-enter">
@@ -407,7 +336,6 @@
           <div class="activity-section-new anim-enter">
             <div class="activity-header">
               <div class="activity-title"><span class="chart-dot" style="background:var(--warning)"></span>最近动态</div>
-              <button class="btn btn-sm" style="background:none;border:none;font-size:0.75rem;color:var(--accent);cursor:pointer;font-weight:500;">查看全部 →</button>
             </div>
             <div class="activity-list" id="recent-activities"></div>
           </div>
@@ -1937,24 +1865,24 @@
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="js/supabase-db.js?v=5.58"></script>
-  <script src="js/supabase-sync.js?v=5.58"></script>
-  <script src="js/migrate-data.js?v=5.58"></script>
-  <script src="js/toast.js?v=5.58"></script>
-  <script src="js/login-characters.js?v=5.58"></script>
-  <script src="js/auth-fix.js?v=5.58"></script>
-  <script src="js/navigation.js?v=5.58"></script>
-  <script src="js/purchase.js?v=5.58"></script>
-  <script src="js/stock-in.js?v=5.58"></script>
-  <script src="js/requisition.js?v=5.58"></script>
-  <script src="js/monthly-summary.js?v=5.58"></script>
-  <script src="js/tour-reports.js?v=5.58"></script>
-  <script src="js/business-flow.js?v=5.58"></script>
-  <script src="js/app.js?v=5.58"></script>
-  <script src="js/inventory-hybrid.js?v=5.58"></script>
-  <script src="js/admin-bindings.js?v=5.58"></script>
+  <script src="js/supabase-db.js?v=5.59"></script>
+  <script src="js/supabase-sync.js?v=5.59"></script>
+  <script src="js/migrate-data.js?v=5.59"></script>
+  <script src="js/toast.js?v=5.59"></script>
+  <script src="js/login-characters.js?v=5.59"></script>
+  <script src="js/auth-fix.js?v=5.59"></script>
+  <script src="js/navigation.js?v=5.59"></script>
+  <script src="js/purchase.js?v=5.59"></script>
+  <script src="js/stock-in.js?v=5.59"></script>
+  <script src="js/requisition.js?v=5.59"></script>
+  <script src="js/monthly-summary.js?v=5.59"></script>
+  <script src="js/tour-reports.js?v=5.59"></script>
+  <script src="js/business-flow.js?v=5.59"></script>
+  <script src="js/app.js?v=5.59"></script>
+  <script src="js/inventory-hybrid.js?v=5.59"></script>
+  <script src="js/admin-bindings.js?v=5.59"></script>
 
-  <script src="js/user-admin.js?v=5.58"></script>
+  <script src="js/user-admin.js?v=5.59"></script>
 
   <!-- ===== 模态框：非采购入库（退库回收） ===== -->
   <div id="modal-nonpurchase" class="modal">
