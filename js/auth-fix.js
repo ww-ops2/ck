@@ -52,6 +52,26 @@ function initAuth() {
   const regBtn = document.getElementById('register-btn');
   if (regBtn) regBtn.addEventListener('click', openRegisterModal);
 
+  // v5.58：刷新保持登录态——sessionStorage 在 F5 刷新后仍在、新开标签页/窗口为空。
+  // 仅用 sessionStorage 恢复，绝不读 localStorage 自动恢复，避免旧版"直接进管理员态"回归。
+  let restoredSession = null;
+  try {
+    const s = sessionStorage.getItem('inv_session');
+    if (s) restoredSession = JSON.parse(s);
+  } catch (e) {}
+
+  if (restoredSession && restoredSession.id) {
+    currentUserFallback = restoredSession;
+    if (typeof loadPermissions === 'function') {
+      loadPermissions(currentUserFallback)
+        .then(function() { showApp(); })
+        .catch(function() { showApp(); });
+    } else {
+      showApp();
+    }
+    return;
+  }
+
   showLoginPage();
   // 预填上次登录账号（仅用户名，不自动登录）
   if (prefillUser && phoneInput) phoneInput.value = prefillUser;
@@ -94,6 +114,7 @@ async function handleLogin(e) {
     // 管理员固定 id=1，与数据库 users 表对齐（否则审计日志 user_id 写不进去）
     currentUserFallback = { id: 1, username: 'admin', name: '系统管理员', role: 'admin', status: 'active' };
     localStorage.setItem('currentUser', JSON.stringify(currentUserFallback));
+    try { sessionStorage.setItem('inv_session', JSON.stringify(currentUserFallback)); } catch (e) {}
     await loadPermissions(currentUserFallback);
     showApp();
     return;
@@ -139,6 +160,8 @@ async function handleLogin(e) {
     status: 'active'
   };
   localStorage.setItem('currentUser', JSON.stringify(currentUserFallback));
+  // v5.58：刷新保持登录态——仅写入 sessionStorage（F5 刷新保留、新开标签页清空）
+  try { sessionStorage.setItem('inv_session', JSON.stringify(currentUserFallback)); } catch (e) {}
   // 权限必须在渲染前就绪，否则首帧按钮显隐会用兜底映射
   await loadPermissions(currentUserFallback);
   showApp();
@@ -229,7 +252,8 @@ async function submitRegistration() {
 function handleLogout() {
   const doLogout = function() {
     currentUserFallback = null;
-    localStorage.removeItem('currentUser');
+    try { localStorage.removeItem('currentUser'); } catch (e) {}
+    try { sessionStorage.removeItem('inv_session'); } catch (e) {}
     clearPermissionCache();
     showLoginPage();
   };
