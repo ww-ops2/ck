@@ -596,17 +596,27 @@ async function submitPurchaseOrder() {
   // 先尝试写入云端
   if (typeof SupaDB !== 'undefined' && SupaDB.createPurchaseOrder) {
     try {
-      const created = await SupaDB.createPurchaseOrder(purchaseOrder);
+      let saved;
+      const isEdit = !!_editingPurchaseOrderId;
+      if (isEdit) {
+        // 编辑模式：更新原单，而非新建（否则刷新后出现重复单据）
+        saved = await SupaDB.updatePurchaseOrder(_editingPurchaseOrderId, purchaseOrder);
+        _editingPurchaseOrderId = null;
+      } else {
+        saved = await SupaDB.createPurchaseOrder(purchaseOrder);
+      }
       // 更新内存缓存
       if (typeof _appCache !== 'undefined') {
         if (!Array.isArray(_appCache.purchaseOrders)) _appCache.purchaseOrders = [];
-        _appCache.purchaseOrders.unshift(created);
+        const idx = _appCache.purchaseOrders.findIndex(o => o.id === saved.id);
+        if (idx >= 0) _appCache.purchaseOrders[idx] = saved;
+        else _appCache.purchaseOrders.unshift(saved);
       }
 
       closeModal();
       loadPurchaseOrders();
       if (typeof refreshAllBusinessKPI === 'function') refreshAllBusinessKPI();
-      showToast(`采购单 ${created.code} 已创建并同步至云端`, 'success');
+      showToast(`采购单 ${saved.code} 已${isEdit ? '更新' : '创建'}并同步至云端`, 'success');
       return;
     } catch (e) {
       console.warn('云端保存采购单失败，回退到本地：', e.message);
@@ -938,7 +948,11 @@ function loadPurchaseOrders() {
     let actionButtons = `<button class="btn btn-sm" onclick="viewPurchaseDetail(${order.id})">查看</button>`;
     
     if (isPending && hasPermission('edit_purchase')) {
-      actionButtons += ` <button class="btn btn-sm btn-accent" onclick="editPurchaseOrder(${order.id})">编辑</button>`;
+      if (order.is_locked) {
+        actionButtons += ` <button class="btn btn-sm" disabled style="opacity:.5;cursor:not-allowed;">已锁定</button>`;
+      } else {
+        actionButtons += ` <button class="btn btn-sm btn-accent" onclick="editPurchaseOrder(${order.id})">编辑</button>`;
+      }
     }
     
     if (isPending && hasPermission('confirm_stockin')) {
@@ -952,7 +966,7 @@ function loadPurchaseOrders() {
         <td>${order.purchaser}</td>
         <td>${order.items.length} 种</td>
         <td>¥${order.total_amount.toFixed(2)}</td>
-        <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+        <td><span class="status-badge ${statusClass}">${statusText}</span>${order.is_locked ? ' <span class="status-badge danger" style="font-size:10px;padding:1px 6px;">🔒 已锁定</span>' : ''}</td>
         <td>${actionButtons}</td>
       </tr>
     `;
@@ -1113,6 +1127,11 @@ function editPurchaseOrder(orderId) {
 
   const order = purchaseOrders.find(o => o.id === orderId);
   if (!order) return;
+
+  if (order.is_locked) {
+    showToast('采购单已入库锁定，无法修改', 'warning');
+    return;
+  }
 
   if (order.status !== 'pending_stockin') {
     showToast('只有待入库状态的采购单可以编辑', 'warning');
