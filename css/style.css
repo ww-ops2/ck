@@ -4130,3 +4130,50 @@ input[type="number"]::-webkit-inner-spin-button {
   to { opacity: 1; transform: translateY(0); }
 }
 .anim-enter { animation: fadeSlideUp 0.45s ease both; }
+
+/* ===== 仪表盘 v5.59 角色化驾驶舱 ===== */
+.dash-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.dash-role {
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 12px;
+}
+.dash-asof {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.dash-sec-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin: 18px 0 10px;
+}
+.db-act-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.db-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.activity-empty {
+  padding: 16px 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
