@@ -124,41 +124,44 @@ async function loadHybridStockInData() {
   }
 
   try {
-    // 从 _appCache 获取采购单
+    // 从 _appCache 获取采购单（作为即时渲染与失败兜底）
     var pos = (_appCache && _appCache.purchaseOrders) ? _appCache.purchaseOrders.slice() : [];
     // 只取待入库、部分入库和已入库的
     _siData.purchaseOrders = pos.filter(function(o) {
       return ['pending_stockin', 'partially_stockin', 'stockin_completed'].indexOf(o.status) >= 0;
     });
 
-    // 从 _appCache 获取入库记录
+    // 从 _appCache 获取入库记录（兜底）
     _siData.stockInRecords = (_appCache && _appCache.stockInRecords) ? _appCache.stockInRecords.slice() : [];
 
-    // 如果数据为空，尝试从 Supabase 加载
-    if (_siData.purchaseOrders.length === 0 || _siData.stockInRecords.length === 0) {
-      try {
-        if (typeof SupaDB !== 'undefined') {
-          var [dbPOs, dbSIRecords] = await Promise.all([
-            SupaDB.getPurchaseOrders().catch(function() { return []; }),
-            SupaDB.getStockInRecords().catch(function() { return []; })
-          ]);
-          if (dbPOs && dbPOs.length > 0) {
-            // 转换成本地格式
-            _siData.purchaseOrders = dbPOs.map(function(po) {
-              return formatPOFromDB(po);
-            });
-            if (typeof _appCache !== 'undefined') _appCache.purchaseOrders = _siData.purchaseOrders.slice();
-          }
-          if (dbSIRecords && dbSIRecords.length > 0) {
-            _siData.stockInRecords = dbSIRecords.map(function(si) {
-              return formatSIRecordFromDB(si);
-            });
-            if (typeof _appCache !== 'undefined') _appCache.stockInRecords = _siData.stockInRecords.slice();
-          }
+    // v5.58：每次进入入库管理都从云端重新拉取，保证采购单明细与看板实时勾稽
+    // 失败则保留本地缓存（绝不清空看板）；正常网络下仅一次 SELECT，亚秒级
+    try {
+      if (typeof SupaDB !== 'undefined') {
+        var [dbPOs, dbSIRecords] = await Promise.all([
+          SupaDB.getPurchaseOrders().catch(function() { return null; }),
+          SupaDB.getStockInRecords().catch(function() { return null; })
+        ]);
+        if (dbPOs && dbPOs.length > 0) {
+          // 转换成本地格式并再次按状态过滤
+          _siData.purchaseOrders = dbPOs.map(function(po) {
+            return formatPOFromDB(po);
+          }).filter(function(o) {
+            return ['pending_stockin', 'partially_stockin', 'stockin_completed'].indexOf(o.status) >= 0;
+          });
+          if (typeof _appCache !== 'undefined') _appCache.purchaseOrders = _siData.purchaseOrders.slice();
+        } else if (dbPOs === null) {
+          console.warn('[StockIn] 采购单云端同步失败，使用本地缓存');
         }
-      } catch (e) {
-        console.warn('[StockIn] Supabase 加载失败:', e.message);
+        if (dbSIRecords && dbSIRecords.length > 0) {
+          _siData.stockInRecords = dbSIRecords.map(function(si) {
+            return formatSIRecordFromDB(si);
+          });
+          if (typeof _appCache !== 'undefined') _appCache.stockInRecords = _siData.stockInRecords.slice();
+        }
       }
+    } catch (e) {
+      console.warn('[StockIn] 云端加载失败，使用本地缓存:', e.message);
     }
 
     // 计算已入库数量映射
