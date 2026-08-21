@@ -2346,18 +2346,32 @@ function upsertConsumptionStandard(itemName, scenario, maxPerTour) {
   const idx = consumptionStandards.findIndex(
     s => s.item_name === itemName && s.scenario === scenario
   );
+  let entry;
   if (idx >= 0) {
     consumptionStandards[idx].max_per_tour = maxPerTour;
+    entry = consumptionStandards[idx];
   } else {
-    consumptionStandards.push({
+    entry = {
       id: Date.now(),
       item_name: itemName,
       scenario: scenario,
       max_per_tour: maxPerTour,
       created_at: new Date().toISOString()
-    });
+    };
+    consumptionStandards.push(entry);
   }
   saveConsumptionStandards();
+  // 落库（修复：之前只写缓存，刷新后被云端同步覆盖导致丢失）
+  if (typeof SupaDB !== 'undefined' && SupaDB.upsertConsumptionStandard) {
+    SupaDB.upsertConsumptionStandard({
+      item_name: itemName,
+      scenario: scenario,
+      max_per_tour: maxPerTour,
+      category: (entry && entry.category) || ''
+    }).catch(function (e) {
+      console.warn('[ConsumptionStandard] 云端同步失败:', e.message);
+    });
+  }
 }
 
 /**
@@ -2366,6 +2380,12 @@ function upsertConsumptionStandard(itemName, scenario, maxPerTour) {
 function deleteConsumptionStandard(id) {
   consumptionStandards = consumptionStandards.filter(s => s.id !== id);
   saveConsumptionStandards();
+  // 同步删除云端（id 与云端不一致时静默失败，下次全量同步会纠正）
+  if (typeof SupaDB !== 'undefined' && SupaDB.deleteConsumptionStandard) {
+    SupaDB.deleteConsumptionStandard(id).catch(function (e) {
+      console.warn('[ConsumptionStandard] 云端删除失败:', e.message);
+    });
+  }
   renderConsumptionStandardsPanel();
   showToast('领用标准已删除', 'success');
 }
