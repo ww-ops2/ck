@@ -814,6 +814,27 @@ const SupaDB = {
     return await this.getPurchaseOrder(id);
   },
 
+  async deletePurchaseOrder(id) {
+    const sb = getSupabase();
+    // 先删除明细行（避免依赖外键级联，兼容线上未配置 ON DELETE CASCADE 的表）
+    const { error: itemErr } = await sb
+      .from('purchase_order_items')
+      .delete()
+      .eq('purchase_order_id', id);
+    if (itemErr) throw new Error('删除采购单明细失败: ' + itemErr.message);
+
+    const { error: orderErr } = await sb
+      .from('purchase_orders')
+      .delete()
+      .eq('id', id);
+    if (orderErr) throw new Error('删除采购单失败: ' + orderErr.message);
+
+    if (typeof writeAuditLog === 'function') {
+      try { await writeAuditLog('DELETE', 'purchase_orders', id, null, null); } catch (e) {}
+    }
+    return true;
+  },
+
   async confirmStockIn(orderId, stockInData) {
     const sb = getSupabase();
     const order = await this.getPurchaseOrder(orderId);
