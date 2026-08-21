@@ -1373,6 +1373,15 @@ function editItem(itemId) {
       arr.push(adj);
       _appCache.inventoryAdjustments = arr;
 
+      // 同步落库（修复：之前只写缓存，刷新后调整历史与审计轨迹丢失）
+      if (typeof SupaDB !== 'undefined' && SupaDB.createInventoryAdjustment) {
+        try {
+          await SupaDB.createInventoryAdjustment(adj);
+        } catch (adjErr) {
+          console.warn('[EditItem] 调整记录落库失败（本地已缓存）:', adjErr.message);
+        }
+      }
+
       loadInventory();
       closeModal();
       var saveMsg = dbSaved ? '保存成功（已记录调整）' : '已保存到本地缓存（数据库连接失败，刷新后可能丢失）';
