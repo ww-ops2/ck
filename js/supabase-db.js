@@ -791,6 +791,29 @@ const SupaDB = {
     return await this.getPurchaseOrder(id);
   },
 
+  /**
+   * 设置采购单「入库锁定」状态（与入库进度正交）。
+   * locked=true 表示仓库已确认单据无误、准备入库，采购员不再可编辑；
+   * locked=false 表示仓库退回，采购员可继续修改。
+   * 依赖迁移 database/migrations/20260821_po_locked.sql（新增 is_locked 列）。
+   */
+  async setPurchaseOrderLocked(id, locked) {
+    const sb = getSupabase();
+    const { error } = await sb
+      .from('purchase_orders')
+      .update({ is_locked: !!locked })
+      .eq('id', id);
+    if (error) {
+      // 列不存在（迁移未执行）时给出明确提示
+      if (String(error.code || '') === '42703') {
+        throw new Error('数据库尚未启用「入库锁定」：请先在 Supabase SQL Editor 执行 database/migrations/20260821_po_locked.sql');
+      }
+      throw new Error('锁定状态更新失败: ' + error.message);
+    }
+    await writeAuditLog(locked ? 'LOCK' : 'UNLOCK', 'purchase_orders', id, null, { is_locked: !!locked });
+    return await this.getPurchaseOrder(id);
+  },
+
   async confirmStockIn(orderId, stockInData) {
     const sb = getSupabase();
     const order = await this.getPurchaseOrder(orderId);
