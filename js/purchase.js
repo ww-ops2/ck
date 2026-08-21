@@ -954,6 +954,11 @@ function loadPurchaseOrders() {
         actionButtons += ` <button class="btn btn-sm btn-accent" onclick="editPurchaseOrder(${order.id})">编辑</button>`;
       }
     }
+
+    // 删除：仅待入库、未锁定、且持有删除权限时可见（已入库单据不可删，以免破坏库存追溯）
+    if (isPending && !order.is_locked && hasPermission('delete_purchase')) {
+      actionButtons += ` <button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);" onclick="deletePurchaseOrder(${order.id})">删除</button>`;
+    }
     
     if (isPending && hasPermission('confirm_stockin')) {
       actionButtons += ` <button class="btn btn-sm" onclick="confirmStockIn(${order.id})" style="background:var(--success);border-color:var(--success);color:#fff;">入库</button>`;
@@ -1114,6 +1119,47 @@ function viewPurchaseDetail(orderId) {
   });
 
   openModal('modal-purchase-detail');
+}
+
+/**
+ * 删除采购单（仅待入库、未锁定可删；已入库单据禁止删除以免破坏库存追溯）
+ */
+async function deletePurchaseOrder(orderId) {
+  const order = purchaseOrders.find(o => o.id === orderId);
+  if (!order) return;
+
+  if (order.status !== 'pending_stockin') {
+    showToast('只有待入库状态的采购单可以删除', 'warning');
+    return;
+  }
+  if (order.is_locked) {
+    showToast('单据已锁定，请先到入库管理解锁后再删除', 'warning');
+    return;
+  }
+  if (typeof SupaDB === 'undefined' || !SupaDB.deletePurchaseOrder) {
+    showToast('删除功能暂不可用（云端未就绪）', 'error');
+    return;
+  }
+
+  showConfirm(
+    `确定删除采购单「${order.code}」吗？\n此操作将同时删除其 ${order.items ? order.items.length : 0} 条明细，且不可恢复。`,
+    async () => {
+      try {
+        await SupaDB.deletePurchaseOrder(orderId);
+        // 同步移除前端缓存
+        if (typeof _appCache !== 'undefined' && Array.isArray(_appCache.purchaseOrders)) {
+          _appCache.purchaseOrders = _appCache.purchaseOrders.filter(o => o.id !== orderId);
+        }
+        loadPurchaseOrders();
+        if (typeof renderStockInBoard === 'function') renderStockInBoard();
+        if (typeof refreshAllBusinessKPI === 'function') refreshAllBusinessKPI();
+        showToast(`采购单 ${order.code} 已删除`, 'success');
+      } catch (e) {
+        showToast('删除失败：' + e.message, 'error');
+      }
+    },
+    { danger: true, confirmText: '删除' }
+  );
 }
 
 /**
