@@ -382,6 +382,9 @@ function renderStockInBoard() {
   var container = document.getElementById('stockin-card-list');
   if (!container) return;
 
+  // 仓库管理员（confirm_stockin 权限）可锁定/解锁采购单
+  var canLock = (typeof hasPermission === 'function') ? hasPermission('confirm_stockin') : false;
+
   var filtered = _siData.purchaseOrders.slice();
 
   // 按 tab 筛选
@@ -456,6 +459,7 @@ function renderStockInBoard() {
       '<div class="stockin-card-header">' +
         '<span class="stockin-card-code">' + po.code + '</span>' +
         '<span class="status-badge ' + sc + '" style="font-size:10px;padding:1px 6px;">' + st + '</span>' +
+        (po.is_locked ? '<span class="status-badge danger" style="font-size:10px;padding:1px 6px;margin-left:4px;">🔒 已锁定</span>' : '') +
       '</div>' +
       '<div class="stockin-card-meta">' +
         '<span>' + supplierNames + '</span>' +
@@ -470,9 +474,49 @@ function renderStockInBoard() {
       '<div class="stockin-card-footer">' +
         '<span class="stockin-card-stat">' + stats.completedItems + '/' + stats.totalItems + ' 项</span>' +
         (effectiveStatus !== 'stockin_completed' ? '<span class="stockin-card-action">' + (stats.completedItems > 0 ? '继续入库 →' : '开始入库 →') + '</span>' : '<span class="stockin-card-done">✓ 已完成</span>') +
+        (canLock ? (po.is_locked
+          ? '<button class="stockin-lock-btn stockin-unlock-btn" onclick="event.stopPropagation();togglePurchaseOrderLock(' + po.id + ', false)">🔓 解锁</button>'
+          : '<button class="stockin-lock-btn" onclick="event.stopPropagation();togglePurchaseOrderLock(' + po.id + ', true)">🔒 锁定</button>') : '') +
       '</div>' +
     '</div>';
   }).join('');
+}
+
+/**
+ * 锁定/解锁采购单（仓库管理员在入库看板操作）
+ * lock=true：仓库已确认单据无误、准备入库，采购员不可再编辑
+ * lock=false：仓库退回，采购员可继续修改
+ */
+async function togglePurchaseOrderLock(poId, lock) {
+  if (typeof hasPermission === 'function' && !hasPermission('confirm_stockin')) {
+    showToast('只有仓库管理员可以锁定/解锁采购单', 'warning');
+    return;
+  }
+  if (typeof SupaDB === 'undefined' || !SupaDB.setPurchaseOrderLocked) {
+    showToast('锁定功能暂不可用', 'warning');
+    return;
+  }
+
+  try {
+    const saved = await SupaDB.setPurchaseOrderLocked(poId, lock);
+    // 同步到前端缓存（_appCache 与全局数组共享同一引用链）
+    if (typeof _appCache !== 'undefined' && Array.isArray(_appCache.purchaseOrders)) {
+      const idx = _appCache.purchaseOrders.findIndex(o => o.id === poId);
+      if (idx >= 0) _appCache.purchaseOrders[idx] = Object.assign({}, _appCache.purchaseOrders[idx], saved);
+    }
+    if (typeof purchaseOrders !== 'undefined') {
+      const i2 = purchaseOrders.findIndex(o => o.id === poId);
+      if (i2 >= 0) purchaseOrders[i2] = Object.assign({}, purchaseOrders[i2], saved);
+    }
+    // 重新渲染入库看板与采购单列表
+    renderStockInBoard();
+    if (typeof loadPurchaseOrders === 'function') loadPurchaseOrders();
+    if (typeof refreshAllBusinessKPI === 'function') refreshAllBusinessKPI();
+    showToast(lock ? '采购单已锁定，采购员无法再修改' : '采购单已解锁，采购员可继续修改', 'success');
+  } catch (e) {
+    console.warn('[Lock] 失败:', e);
+    showToast('操作失败：' + e.message, 'warning');
+  }
 }
 
 /**
