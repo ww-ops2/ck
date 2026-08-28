@@ -845,6 +845,13 @@ function renderInvSupplementTable() {
     items.forEach(function(item) {
       var catSelect = tableWrap.querySelector('.supp-edit-cat[data-item-id="' + String(item.id) + '"]');
       if (catSelect && item.category) {
+        // 兜底：当前分类不在下拉选项中时，先插入该选项再选中，避免默认变未分类
+        var hasOpt = [].some.call(catSelect.options, function(o) { return o.value === item.category; });
+        if (!hasOpt) {
+          var opt = document.createElement('option');
+          opt.value = item.category; opt.textContent = item.category;
+          catSelect.insertBefore(opt, catSelect.firstChild);
+        }
         catSelect.value = item.category;
       }
       [].forEach.call(tableWrap.querySelectorAll('[data-item-id="' + String(item.id) + '"]'), function(inp) {
