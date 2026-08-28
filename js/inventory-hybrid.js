@@ -17,6 +17,7 @@ var _invHybrid = {
   batchMode: false,        // 批量采购模式
   pendingMap: {},          // 采购中数量映射
   suppOriginalItems: [],   // 补充信息原始数据（用于比对改动）
+  lastInboxSig: '',        // 上一次渲染的明细签名（用于自动刷新去闪烁）
 };
 
 // 分类图标映射
@@ -307,6 +308,28 @@ function renderInvKPI() {
   if (el6) el6.textContent = categoryCount;
 }
 
+// 计算明细渲染签名：数据(含筛选结果) + 批量模式 + 筛选条件。自动刷新时签名不变即跳过重建
+function _invInboxSignature(items, batchMode) {
+  try {
+    var parts = [
+      String(batchMode ? 1 : 0),
+      (_invHybrid.selectedCat || ''),
+      (_invHybrid.searchText || ''),
+      (_invHybrid.currentStatusFilter || '')
+    ];
+    items.forEach(function(it) {
+      parts.push([
+        it.id, it.name, it.code, it.category, it.brand, it.model, it.unit,
+        it.stock, it.safety_stock, it.unit_price,
+        (_invHybrid.pendingMap && _invHybrid.pendingMap[it.id]) ? _invHybrid.pendingMap[it.id] : ''
+      ].join('~'));
+    });
+    return parts.join('|');
+  } catch (e) {
+    return 'fallback-' + Date.now();
+  }
+}
+
 // ============================================================
 // 物品明细渲染（卡片分类布局）— v5.42 新设计
 // ============================================================
@@ -324,8 +347,18 @@ function renderInvInbox() {
   var pendingMap = _invHybrid.pendingMap;
   var batchMode = _invHybrid.batchMode;
 
+  // 自动刷新去闪烁：计算「数据+筛选」签名，未变化则跳过整表重建（不重播动画、也不重建 DOM）
+  var sig = _invInboxSignature(items, batchMode);
+  var animate = (typeof window.__invForceAnim === 'boolean') ? window.__invForceAnim : false;
+  window.__invForceAnim = false; // 一次性标记：仅模块切换时由 navigation.js 置 true
+  if (_invHybrid.lastInboxSig === sig && !animate) {
+    // 数据与筛选均未变 → 直接返回，避免 30s 自动同步反复重建导致的闪烁
+    return;
+  }
+  _invHybrid.lastInboxSig = sig;
+
   if (items.length === 0) {
-    container.innerHTML = '<div class="anim-enter" style="text-align:center;padding:60px 0;color:var(--text-muted);font-size:0.85rem;">' +
+    container.innerHTML = (animate ? '<div class="anim-enter" ' : '<div ') + 'style="text-align:center;padding:60px 0;color:var(--text-muted);font-size:0.85rem;">' +
       '<div style="font-size:2rem;margin-bottom:8px;">📭</div>' +
       '<div style="font-weight:500;">暂无匹配数据</div>' +
       '<div style="font-size:0.75rem;margin-top:4px;">尝试调整筛选条件或新增物品</div>' +
@@ -351,7 +384,7 @@ function renderInvInbox() {
     var lowCount = catItems.filter(function(it) { return (it.stock||0) > 0 && (it.stock||0) < (it.safety_stock||10); }).length;
     var outCount = catItems.filter(function(it) { return (it.stock||0) === 0; }).length;
 
-    html += '<div class="cat-card-new anim-enter" style="animation-delay:' + (0.35 + ci * 0.06) + 's">';
+    html += '<div class="cat-card-new' + (animate ? ' anim-enter' : '') + '"' + (animate ? ' style="animation-delay:' + (0.35 + ci * 0.06) + 's"' : '') + '>';
     html += '  <div class="cat-header is-open" id="inv-cat-hdr-' + ci + '" onclick="toggleInvCard(' + ci + ')">';
     html += '    <div class="cat-icon">' + icon + '</div>';
     html += '    <div class="cat-info">';
@@ -774,13 +807,8 @@ function renderInvSupplementTable() {
 
   if (!tableWrap) return;
 
-  // 分类下拉选项
-  var catOptions = '';
-  if (typeof categories !== 'undefined' && categories.length > 0) {
-    catOptions = categories.map(function(c) { return '<option value="' + c.name + '">' + c.name + '</option>'; }).join('');
-  } else {
-    catOptions = '<option value="未分类">未分类</option><option value="循环使用类">循环使用类</option><option value="消耗类">消耗类</option>';
-  }
+  // 用品类管理 ∪ 物品实际使用分类的并集，避免下拉缺少物品已有分类
+  var catOptions = (typeof _buildCategoryOptionsHtml === 'function') ? _buildCategoryOptionsHtml() : '';
 
   var html = '<div style="margin-bottom:12px;padding:10px 16px;background:var(--accent-glow);border-radius:8px;font-size:13px;color:var(--text-secondary);">✏️ 补充信息模式 — 可编辑分类、品牌、型号、单位、单价</div>';
   html += '<table class="data-table inv-table" id="supplement-table"><thead><tr>';
