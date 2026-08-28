@@ -882,6 +882,13 @@ function _renderSupplementTable(container, items) {
     items.forEach(function(item) {
       var catSelect = container.querySelector('.supp-edit-cat[data-item-id="' + item.id + '"]');
       if (catSelect && item.category) {
+        // 兜底：当前分类不在下拉选项中时，先插入该选项再选中，避免默认变未分类
+        var hasOpt = [].some.call(catSelect.options, function(o) { return o.value === item.category; });
+        if (!hasOpt) {
+          var opt = document.createElement('option');
+          opt.value = item.category; opt.textContent = item.category;
+          catSelect.insertBefore(opt, catSelect.firstChild);
+        }
         catSelect.value = item.category;
       }
       [].forEach.call(container.querySelectorAll('[data-item-id="' + item.id + '"]'), function(inp) {
@@ -1334,17 +1341,19 @@ function _buildCategoryOptionsHtml() {
   }).join('');
 }
 
-function _populateCategorySelect(selectEl) {
+function _populateCategorySelect(selectEl, selectedValue) {
   if (!selectEl) return;
-  const currentVal = selectEl.value;
+  // 优先使用显式传入的当前分类（编辑物品时传 item.category），否则退回 select 现有值
+  const cur = (selectedValue != null && selectedValue !== '') ? String(selectedValue) : selectEl.value;
   const opts = _buildCategoryOptionsHtml();
   let html = '<option value="">请选择</option>' + opts;
-  // 安全网：当前值若不在选项中（理论上 union 已覆盖，再次兜底），补一条，避免编辑时分类被清空
-  if (currentVal && opts.indexOf('value="' + currentVal.replace(/"/g, '&quot;') + '"') === -1) {
-    html = '<option value="' + currentVal.replace(/"/g, '&quot;') + '">' + currentVal + '</option>' + html;
+  // 安全网：当前分类若不在选项中（理论上 union 已覆盖，再次兜底），强制补一条并选中，
+  // 避免「物品已有该分类但下拉里没有」导致编辑后变未分类
+  if (cur && opts.indexOf('value="' + cur.replace(/"/g, '&quot;') + '"') === -1) {
+    html = '<option value="' + cur.replace(/"/g, '&quot;') + '">' + cur + '</option>' + html;
   }
   selectEl.innerHTML = html;
-  if (currentVal) { try { selectEl.value = currentVal; } catch (e) {} }
+  if (cur) { try { selectEl.value = cur; } catch (e) {} }
 }
 
 /**
@@ -1437,9 +1446,8 @@ function editItem(itemId) {
   const form = document.getElementById('item-form');
   form.elements['name'].value = item.name || '';
   form.elements['code'].value = item.code || '';
-  // 填充品类下拉选项
-  _populateCategorySelect(form.elements['category']);
-  form.elements['category'].value = item.category || '';
+  // 填充品类下拉选项，并默认选中该物品当前分类（防止编辑数量/金额时分类被清空）
+  _populateCategorySelect(form.elements['category'], item.category || '');
   form.elements['unit'].value = item.unit || '';
   form.elements['stock'].value = item.stock || 0;
   form.elements['safety_stock'].value = item.safety_stock || 0;
