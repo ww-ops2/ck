@@ -157,6 +157,8 @@ function loadModuleData(moduleName) {
       }
       break;
     case 'inventory':
+      // 模块切换时重放一次入场动画；自动同步(loadModuleData)不置位 → 不重放，避免闪烁
+      window.__invForceAnim = true;
       if (typeof initInventoryHybrid === 'function') {
         initInventoryHybrid();
       } else if (typeof loadInventory === 'function') {
