@@ -208,30 +208,38 @@ function _dashCompute(raw) {
   };
 }
 
-function _dashCardHTML(def, m) {
+function _dashCardHTML(def, m, animate) {
   const val = typeof def.get === 'function' ? def.get(m) : def.get;
   const sub = typeof def.sub === 'function' ? def.sub(m) : def.sub;
   const click = def.action ? (' onclick="switchModule(\'' + def.action + '\')" style="cursor:pointer;"') : '';
-  return '<div class="kpi-card-new anim-enter"' + click + '>' +
+  return '<div class="kpi-card-new' + (animate ? ' anim-enter' : '') + '"' + click + '>' +
     '<div class="kpi-top"><span class="kpi-label">' + def.label + '</span></div>' +
     '<div class="kpi-value" style="color:' + def.color + '">' + val + '</div>' +
     '<div class="kpi-change"><span>' + sub + '</span></div>' +
     '</div>';
 }
 
+let _dashLastSig = '';
+let _dashAnimated = false;
 function _dashRenderFromCache() {
   const m = _dashCompute(_dashCollect());
   const role = (_dashCurrentUser() && _dashCurrentUser().role) || 'admin';
+  // 签名守卫：数据+角色未变则跳过整块重建，消除「缓存渲染→云端渲染」二次刷新与自动同步闪烁
+  const sig = role + '|' + JSON.stringify(m);
   const badge = document.getElementById('dash-role-badge');
   if (badge) badge.textContent = '角色：' + (ROLE_NAME[role] || role);
+  if (sig === _dashLastSig) return;
+  _dashLastSig = sig;
+  const animate = !_dashAnimated; // 仅首次渲染播放入场动画，后续自动刷新不重放
+  _dashAnimated = true;
   const todoGrid = document.getElementById('dash-todo-grid');
   if (todoGrid) {
     const keys = DASH_ROLE_TODO[role] || DASH_ROLE_TODO.admin;
-    todoGrid.innerHTML = keys.map(function(k){ return _dashCardHTML(DASH_TODO_DEFS[k], m); }).join('');
+    todoGrid.innerHTML = keys.map(function(k){ return _dashCardHTML(DASH_TODO_DEFS[k], m, animate); }).join('');
   }
   const ovGrid = document.getElementById('dash-overview-grid');
   if (ovGrid) {
-    ovGrid.innerHTML = DASH_OVERVIEW.map(function(k){ return _dashCardHTML(DASH_TODO_DEFS[k], m); }).join('');
+    ovGrid.innerHTML = DASH_OVERVIEW.map(function(k){ return _dashCardHTML(DASH_TODO_DEFS[k], m, animate); }).join('');
   }
   const asof = document.getElementById('dash-asof');
   if (asof) asof.textContent = '数据更新：' + new Date().toLocaleTimeString('zh-CN');
@@ -833,12 +841,8 @@ function toggleInvSupplementMode() {
 }
 
 function _renderSupplementTable(container, items) {
-  var catOptions = '';
-  if (typeof categories !== 'undefined' && categories.length > 0) {
-    catOptions = categories.map(function(c) { return '<option value="' + c.name + '">' + c.name + '</option>'; }).join('');
-  } else {
-    catOptions = '<option value="未分类">未分类</option><option value="循环使用类">循环使用类</option><option value="消耗类">消耗类</option>';
-  }
+  // 用品类管理 ∪ 物品实际使用分类的并集，避免下拉缺少物品已有分类
+  var catOptions = (typeof _buildCategoryOptionsHtml === 'function') ? _buildCategoryOptionsHtml() : '';
 
   var html = '<div style="margin-bottom:12px;padding:10px 16px;background:var(--accent-glow);border-radius:8px;font-size:13px;color:var(--text-secondary);">✏️ 补充信息模式 — 可编辑分类、品牌、型号、单位、单价，库存数量不可修改</div>';
   html += '<div class="table-scroll"><table class="data-table" id="supplement-table"><thead><tr>';
@@ -1300,13 +1304,47 @@ function generateRandomData(count, min, max) {
 /**
  * 填充品类下拉选项（从全局 categories 数组同步）
  */
+// 物品实际使用的分类（并集来源之一）：遍历库存数据，提取所有非空的 category
+function _allInUseCategories() {
+  var set = new Set();
+  var sources = [];
+  if (typeof _appCache !== 'undefined' && _appCache.inventory) sources.push(_appCache.inventory);
+  if (typeof mockData !== 'undefined' && mockData.items) sources.push(mockData.items);
+  sources.forEach(function(arr) {
+    (arr || []).forEach(function(it) {
+      var c = (it.category || it.category_name || '').trim();
+      if (c && c !== '未分类' && c !== '请选择') set.add(c);
+    });
+  });
+  return Array.from(set);
+}
+
+// 分类下拉选项 HTML：品类管理主数据 ∪ 物品实际使用的分类，避免「物品有该分类但下拉里没有」导致编辑后变未分类
+function _buildCategoryOptionsHtml() {
+  var master = (typeof categories !== 'undefined' && Array.isArray(categories))
+    ? categories.map(function(c) { return c.name; })
+    : [];
+  var used = _allInUseCategories();
+  var all = [];
+  master.forEach(function(n) { if (all.indexOf(n) === -1) all.push(n); });
+  used.forEach(function(n) { if (all.indexOf(n) === -1) all.push(n); });
+  return all.map(function(c) {
+    var esc = String(c).replace(/"/g, '&quot;');
+    return '<option value="' + esc + '">' + c + '</option>';
+  }).join('');
+}
+
 function _populateCategorySelect(selectEl) {
   if (!selectEl) return;
-  const cats = (typeof categories !== 'undefined' && Array.isArray(categories)) ? categories : [];
   const currentVal = selectEl.value;
-  selectEl.innerHTML = '<option value="">请选择</option>' +
-    cats.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
-  if (currentVal) selectEl.value = currentVal;
+  const opts = _buildCategoryOptionsHtml();
+  let html = '<option value="">请选择</option>' + opts;
+  // 安全网：当前值若不在选项中（理论上 union 已覆盖，再次兜底），补一条，避免编辑时分类被清空
+  if (currentVal && opts.indexOf('value="' + currentVal.replace(/"/g, '&quot;') + '"') === -1) {
+    html = '<option value="' + currentVal.replace(/"/g, '&quot;') + '">' + currentVal + '</option>' + html;
+  }
+  selectEl.innerHTML = html;
+  if (currentVal) { try { selectEl.value = currentVal; } catch (e) {} }
 }
 
 /**
