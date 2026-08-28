@@ -843,16 +843,17 @@ function renderInvSupplementTable() {
   // 设置分类选中值
   setTimeout(function() {
     items.forEach(function(item) {
+      var itemCat = item.category || item.category_name || '';
       var catSelect = tableWrap.querySelector('.supp-edit-cat[data-item-id="' + String(item.id) + '"]');
-      if (catSelect && item.category) {
+      if (catSelect && itemCat) {
         // 兜底：当前分类不在下拉选项中时，先插入该选项再选中，避免默认变未分类
-        var hasOpt = [].some.call(catSelect.options, function(o) { return o.value === item.category; });
+        var hasOpt = [].some.call(catSelect.options, function(o) { return o.value === itemCat; });
         if (!hasOpt) {
           var opt = document.createElement('option');
-          opt.value = item.category; opt.textContent = item.category;
+          opt.value = itemCat; opt.textContent = itemCat;
           catSelect.insertBefore(opt, catSelect.firstChild);
         }
-        catSelect.value = item.category;
+        catSelect.value = itemCat;
       }
       [].forEach.call(tableWrap.querySelectorAll('[data-item-id="' + String(item.id) + '"]'), function(inp) {
         inp.addEventListener('change', _suppUpdateChangeCount);
