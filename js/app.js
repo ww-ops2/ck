@@ -880,16 +880,17 @@ function _renderSupplementTable(container, items) {
 
   setTimeout(function() {
     items.forEach(function(item) {
+      var itemCat = item.category || item.category_name || '';
       var catSelect = container.querySelector('.supp-edit-cat[data-item-id="' + item.id + '"]');
-      if (catSelect && item.category) {
+      if (catSelect && itemCat) {
         // 兜底：当前分类不在下拉选项中时，先插入该选项再选中，避免默认变未分类
-        var hasOpt = [].some.call(catSelect.options, function(o) { return o.value === item.category; });
+        var hasOpt = [].some.call(catSelect.options, function(o) { return o.value === itemCat; });
         if (!hasOpt) {
           var opt = document.createElement('option');
-          opt.value = item.category; opt.textContent = item.category;
+          opt.value = itemCat; opt.textContent = itemCat;
           catSelect.insertBefore(opt, catSelect.firstChild);
         }
-        catSelect.value = item.category;
+        catSelect.value = itemCat;
       }
       [].forEach.call(container.querySelectorAll('[data-item-id="' + item.id + '"]'), function(inp) {
         inp.addEventListener('change', _suppUpdateChangeCount);
@@ -1447,7 +1448,8 @@ function editItem(itemId) {
   form.elements['name'].value = item.name || '';
   form.elements['code'].value = item.code || '';
   // 填充品类下拉选项，并默认选中该物品当前分类（防止编辑数量/金额时分类被清空）
-  _populateCategorySelect(form.elements['category'], item.category || '');
+  // 注意：_appCache.inventory 存的是 Supabase 原始字段 category_name，editItem 取的是它，所以要做 category/category_name 双兜底
+  _populateCategorySelect(form.elements['category'], item.category || item.category_name || '');
   form.elements['unit'].value = item.unit || '';
   form.elements['stock'].value = item.stock || 0;
   form.elements['safety_stock'].value = item.safety_stock || 0;
