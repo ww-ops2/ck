@@ -243,12 +243,12 @@ function openRequisitionModal() {
   _reqSelectedItems = [];
 
   // 从_appCache加载库存物品
-  const inventory = _appCache.inventory || [];
+  let inventory = _appCache.inventory || [];
   if (inventory.length === 0) {
     inventory = [
-      { id: 1, code: 'ITEM001', name: '矿泉水', category: '饮品', stock: 500, unit: '瓶' },
-      { id: 2, code: 'ITEM002', name: '方便面', category: '食品', stock: 200, unit: '箱' },
-      { id: 3, code: 'ITEM003', name: '纸巾', category: '日用品', stock: 80, unit: '包' }
+      { id: 1, code: 'ITEM001', name: '矿泉水', category: '饮品', category_name: '饮品', stock: 500, unit: '瓶' },
+      { id: 2, code: 'ITEM002', name: '方便面', category: '食品', category_name: '食品', stock: 200, unit: '箱' },
+      { id: 3, code: 'ITEM003', name: '纸巾', category: '日用品', category_name: '日用品', stock: 80, unit: '包' }
     ];
   }
   _reqInventoryCache = inventory;
@@ -280,7 +280,10 @@ function _populateCategoryFilter(selectId, inventory) {
   const select = document.getElementById(selectId);
   if (!select) return;
 
-  const categories = [...new Set(inventory.map(it => it.category_name || it.category || '未分类'))];
+  const categories = [...new Set(
+    inventory.map(it => it.category_name || it.category || '未分类')
+      .filter(c => String(c).trim() !== '')
+  )];
   categories.sort();
 
   select.innerHTML = '<option value="">全部分类</option>' +
@@ -837,7 +840,7 @@ function loadRequisitions() {
         <td>${_normalizeScenario(req.scenario)}</td>
         <td>${req.applicant}</td>
         <td>${req.apply_date}</td>
-        <td>${req.items.length} 种 / ${req.total_quantity} 件</td>
+        <td>${(req.items || []).length} 种 / ${req.total_quantity || 0} 件</td>
         <td><span class="status-badge ${statusClass}">${statusText}</span></td>
         <td>${actionBtns}</td>
       </tr>
