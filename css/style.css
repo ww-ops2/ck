@@ -1621,17 +1621,20 @@ body {
   border-bottom: 1px solid var(--border-light);
 }
 .item-picker-select {
+  flex: 0 0 calc(50% - 5px);
+  width: calc(50% - 5px);
   padding: 7px 10px;
   border: 1px solid var(--border);
   border-radius: var(--sketch-sm);
   background: var(--bg-input);
   color: var(--text-primary);
   font-size: 13px;
-  min-width: 130px;
+  min-width: auto;
   cursor: pointer;
 }
 .item-picker-search {
-  flex: 1;
+  flex: 0 0 calc(50% - 5px);
+  width: calc(50% - 5px);
   padding: 7px 10px;
   border: 1px solid var(--border);
   border-radius: var(--sketch-sm);
