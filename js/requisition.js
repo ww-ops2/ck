@@ -280,7 +280,7 @@ function _populateCategoryFilter(selectId, inventory) {
   const select = document.getElementById(selectId);
   if (!select) return;
 
-  const categories = [...new Set(inventory.map(it => it.category || '未分类'))];
+  const categories = [...new Set(inventory.map(it => it.category_name || it.category || '未分类'))];
   categories.sort();
 
   select.innerHTML = '<option value="">全部分类</option>' +
@@ -300,7 +300,7 @@ function _renderAvailableItems() {
   let items = _reqInventoryCache.slice();
 
   if (filterCat) {
-    items = items.filter(it => (it.category || '未分类') === filterCat);
+    items = items.filter(it => (it.category_name || it.category || '未分类') === filterCat);
   }
   if (keyword) {
     items = items.filter(it =>
@@ -322,7 +322,7 @@ function _renderAvailableItems() {
     const pendingQty = pendingMap[String(item.id)] || 0;
     const available = item.stock - pendingQty;
     const stockColor = available <= 0 ? 'var(--danger)' : (available < 10 ? 'var(--warning)' : 'var(--text-primary)');
-    const cat = item.category || '未分类';
+    const cat = item.category_name || item.category || '未分类';
 
     return `
       <div class="item-picker-row" data-item-id="${item.id}">
@@ -359,7 +359,7 @@ function _renderEditAvailableItems() {
   let items = _reqInventoryCache.slice();
 
   if (filterCat) {
-    items = items.filter(it => (it.category || '未分类') === filterCat);
+    items = items.filter(it => (it.category_name || it.category || '未分类') === filterCat);
   }
   if (keyword) {
     items = items.filter(it =>
@@ -382,7 +382,7 @@ function _renderEditAvailableItems() {
     const pendingQty = pendingMap[String(item.id)] || 0;
     const available = item.stock - pendingQty;
     const stockColor = available <= 0 ? 'var(--danger)' : (available < 10 ? 'var(--warning)' : 'var(--text-primary)');
-    const cat = item.category || '未分类';
+    const cat = item.category_name || item.category || '未分类';
 
     return `
       <div class="item-picker-row" data-item-id="${item.id}">
@@ -422,7 +422,7 @@ function _addItemToRequisition(itemId) {
     item_id: String(item.id),
     name: item.name,
     code: item.code,
-    category: item.category || '未分类',
+    category: item.category_name || item.category || '未分类',
     unit: item.unit,
     stock: item.stock,
     brand: item.brand || '',
@@ -452,7 +452,7 @@ function _addItemToEditRequisition(itemId) {
     item_id: String(item.id),
     name: item.name,
     code: item.code,
-    category: item.category || '未分类',
+    category: item.category_name || item.category || '未分类',
     unit: item.unit,
     stock: item.stock,
     brand: item.brand || '',
@@ -1387,7 +1387,7 @@ function editRequisition(reqId) {
     item_id: String(item.item_id),
     name: item.name,
     code: item.code,
-    category: item.category || '未分类',
+    category: item.category_name || item.category || '未分类',
     unit: item.unit,
     stock: (() => {
       const inv = inventory.find(it => String(it.id) === String(item.item_id));
