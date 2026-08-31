@@ -71,6 +71,7 @@ function initRequisitionModule() {
   const searchInput = document.getElementById('req-search-input');
   if (searchInput) {
     searchInput.addEventListener('input', _renderAvailableItems);
+    searchInput.addEventListener('keyup', _renderAvailableItems);
   }
 
   // 分类筛选 & 搜索（编辑）
@@ -81,6 +82,7 @@ function initRequisitionModule() {
   const editSearchInput = document.getElementById('edit-req-search-input');
   if (editSearchInput) {
     editSearchInput.addEventListener('input', _renderEditAvailableItems);
+    editSearchInput.addEventListener('keyup', _renderEditAvailableItems);
   }
 
   // 团期名称下拉（新建）
@@ -308,17 +310,23 @@ function _renderAvailableItems() {
   if (keyword) {
     items = items.filter(it =>
       it.name.toLowerCase().includes(keyword) ||
-      (it.code || '').toLowerCase().includes(keyword)
+      (it.code || '').toLowerCase().includes(keyword) ||
+      (it.model || '').toLowerCase().includes(keyword) ||
+      (it.brand || '').toLowerCase().includes(keyword) ||
+      (it.category_name || it.category || '').toLowerCase().includes(keyword)
     );
   }
+
+  const selectedIds = _reqSelectedItems.map(s => String(s.item_id));
+  const pendingMap = _getPendingQuantities(null);
+  const renderSig = [filterCat, keyword, _reqInventoryCache.length, selectedIds.length].join('::');
+  if (container.__lastRenderSig === renderSig) return;
+  container.__lastRenderSig = renderSig;
 
   if (items.length === 0) {
     container.innerHTML = '<div class="empty-state" style="padding:16px;text-align:center;color:var(--text-muted);">未找到匹配的物品</div>';
     return;
   }
-
-  const selectedIds = _reqSelectedItems.map(s => String(s.item_id));
-  const pendingMap = _getPendingQuantities(null);
 
   container.innerHTML = items.map(item => {
     const isSelected = selectedIds.includes(String(item.id));
@@ -367,18 +375,24 @@ function _renderEditAvailableItems() {
   if (keyword) {
     items = items.filter(it =>
       it.name.toLowerCase().includes(keyword) ||
-      (it.code || '').toLowerCase().includes(keyword)
+      (it.code || '').toLowerCase().includes(keyword) ||
+      (it.model || '').toLowerCase().includes(keyword) ||
+      (it.brand || '').toLowerCase().includes(keyword) ||
+      (it.category_name || it.category || '').toLowerCase().includes(keyword)
     );
-  }
-
-  if (items.length === 0) {
-    container.innerHTML = '<div class="empty-state" style="padding:16px;text-align:center;color:var(--text-muted);">未找到匹配的物品</div>';
-    return;
   }
 
   const editReqId = parseInt(document.getElementById('edit-req-id')?.value) || null;
   const selectedIds = _editReqSelectedItems.map(s => String(s.item_id));
   const pendingMap = _getPendingQuantities(editReqId);
+  const renderSig = [filterCat, keyword, _reqInventoryCache.length, selectedIds.length].join('::');
+  if (container.__lastRenderSig === renderSig) return;
+  container.__lastRenderSig = renderSig;
+
+  if (items.length === 0) {
+    container.innerHTML = '<div class="empty-state" style="padding:16px;text-align:center;color:var(--text-muted);">未找到匹配的物品</div>';
+    return;
+  }
 
   container.innerHTML = items.map(item => {
     const isSelected = selectedIds.includes(String(item.id));
