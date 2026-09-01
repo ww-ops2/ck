@@ -2460,6 +2460,66 @@ input[type="number"]::-webkit-inner-spin-button {
   padding-bottom: 10px;
 }
 
+/* ===== v5.73 出入库明细：月份开关 + 月份矩阵 ===== */
+.ms-month-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.ms-month-btn {
+  min-width: 42px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.ms-month-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.ms-month-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.ms-caliber-note {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: rgba(124, 58, 237, 0.05);
+  border: 1px dashed rgba(124, 58, 237, 0.25);
+  border-radius: 6px;
+  padding: 6px 10px;
+  line-height: 1.6;
+}
+/* 矩阵表头：月份组 */
+#ms-detail-thead th.ms-month-group {
+  text-align: center;
+  border-left: 1px solid var(--border-light);
+  font-size: 12px;
+}
+#ms-detail-thead th.ms-sub-in { color: #e7000b; font-size: 11px; text-align: center; }
+#ms-detail-thead th.ms-sub-out { color: #16a34a; font-size: 11px; text-align: center; }
+#ms-detail-thead th.ms-sub-other { color: #7c3aed; font-size: 11px; text-align: center; }
+/* 矩阵单元格 */
+#ms-detail-tbody td.ms-m-cell {
+  text-align: center;
+  border-left: 1px solid var(--border-light);
+  font-variant-numeric: tabular-nums;
+}
+#ms-detail-tbody td.ms-m-in { color: #e7000b; }
+#ms-detail-tbody td.ms-m-out { color: #16a34a; }
+#ms-detail-tbody td.ms-m-other { color: #7c3aed; cursor: help; }
+#ms-detail-tbody td.ms-zero { color: var(--text-muted); }
+
 /* Responsive */
 @media (max-width: 1200px) {
   .ms-kpi-grid { grid-template-columns: repeat(3, 1fr); }
