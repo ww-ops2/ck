@@ -15,7 +15,7 @@
   //    确保“长时间开着页面”也能自动升级到最新版（收藏夹点开场景同样覆盖）。
   // 3) localStorage 兜底（离线时按上次记录的版本判断）。
   (function() {
-    var APP_VERSION = '5.66';
+    var APP_VERSION = '5.67';
     var reloading = false;
     function forceReload() {
       if (reloading) return;
@@ -50,8 +50,8 @@
     } catch (e) {}
   })();
   </script>
-  <link rel="stylesheet" href="css/style.css?v=5.66">
-  <link rel="stylesheet" href="css/redesign.css?v=5.66">
+  <link rel="stylesheet" href="css/style.css?v=5.67">
+  <link rel="stylesheet" href="css/redesign.css?v=5.67">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
@@ -1176,6 +1176,16 @@
           </div>
           <div class="form-row">
             <div class="form-group">
+              <label>品牌</label>
+              <input type="text" name="brand" placeholder="品牌">
+            </div>
+            <div class="form-group">
+              <label>型号</label>
+              <input type="text" name="model" placeholder="型号">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
               <label>初始库存</label>
               <input type="number" name="stock" value="0" min="0">
             </div>
@@ -1865,24 +1875,24 @@
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="js/supabase-db.js?v=5.66"></script>
-  <script src="js/supabase-sync.js?v=5.66"></script>
-  <script src="js/migrate-data.js?v=5.66"></script>
-  <script src="js/toast.js?v=5.66"></script>
-  <script src="js/login-characters.js?v=5.66"></script>
-  <script src="js/auth-fix.js?v=5.66"></script>
-  <script src="js/navigation.js?v=5.66"></script>
-  <script src="js/purchase.js?v=5.66"></script>
-  <script src="js/stock-in.js?v=5.66"></script>
-  <script src="js/requisition.js?v=5.66"></script>
-  <script src="js/monthly-summary.js?v=5.66"></script>
-  <script src="js/tour-reports.js?v=5.66"></script>
-  <script src="js/business-flow.js?v=5.66"></script>
-  <script src="js/app.js?v=5.66"></script>
-  <script src="js/inventory-hybrid.js?v=5.66"></script>
-  <script src="js/admin-bindings.js?v=5.66"></script>
+  <script src="js/supabase-db.js?v=5.67"></script>
+  <script src="js/supabase-sync.js?v=5.67"></script>
+  <script src="js/migrate-data.js?v=5.67"></script>
+  <script src="js/toast.js?v=5.67"></script>
+  <script src="js/login-characters.js?v=5.67"></script>
+  <script src="js/auth-fix.js?v=5.67"></script>
+  <script src="js/navigation.js?v=5.67"></script>
+  <script src="js/purchase.js?v=5.67"></script>
+  <script src="js/stock-in.js?v=5.67"></script>
+  <script src="js/requisition.js?v=5.67"></script>
+  <script src="js/monthly-summary.js?v=5.67"></script>
+  <script src="js/tour-reports.js?v=5.67"></script>
+  <script src="js/business-flow.js?v=5.67"></script>
+  <script src="js/app.js?v=5.67"></script>
+  <script src="js/inventory-hybrid.js?v=5.67"></script>
+  <script src="js/admin-bindings.js?v=5.67"></script>
 
-  <script src="js/user-admin.js?v=5.66"></script>
+  <script src="js/user-admin.js?v=5.67"></script>
 
   <!-- ===== 模态框：非采购入库（退库回收） ===== -->
   <div id="modal-nonpurchase" class="modal">
