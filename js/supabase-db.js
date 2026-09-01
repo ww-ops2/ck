@@ -1549,6 +1549,10 @@ const SupaDB = {
   // ---- 删除库存物品 ----
   async deleteInventoryItem(id) {
     const sb = getSupabase();
+    // 先解除外键关联，否则会被 stock_in_items / requisition_items / stock_out_items 拦截
+    await sb.from('stock_in_items').delete().eq('inventory_item_id', id);
+    await sb.from('requisition_items').delete().eq('inventory_item_id', id);
+    await sb.from('stock_out_items').delete().eq('inventory_item_id', id);
     const { error } = await sb.from('inventory_items').delete().eq('id', id);
     if (error) throw new Error('物品删除失败: ' + error.message);
     await writeAuditLog('DELETE', 'inventory_items', id);
