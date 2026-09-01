@@ -260,7 +260,7 @@ function loadReports() {
           scenario: scenario,
           item_name: it.name,
           item_code: it.code || '',
-          category: it.category || '-',
+          category: _rptResolveCategory(it),
           unit: it.unit || '',
           quantity: qty,
           unit_price: unitPrice,
@@ -291,7 +291,7 @@ function loadReports() {
           scenario: scenario,
           item_name: it.name,
           item_code: it.code || '',
-          category: it.category || '-',
+          category: _rptResolveCategory(it),
           unit: it.unit || '',
           quantity: qty,
           unit_price: unitPrice,
@@ -465,21 +465,21 @@ function _rptBuildTourDetailRows(tourName, month) {
       so.items.forEach(it => {
         const qty = it.quantity || 0;
         const unitPrice = _rptResolvePrice(it.name, priceMap);
-        rows.push({
-          kind: 'use',
-          tour_date: so.tour_date || '',
-          tour_name: tourName,
-          scenario: scenario,
-          item_name: it.name,
-          item_code: it.code || '',
-          category: it.category || '-',
-          unit: it.unit || '',
-          quantity: qty,
-          unit_price: unitPrice,
-          cost: qty * unitPrice,
-          source: '出库记录',
-          source_code: so.code || ''
-        });
+rows.push({
+        kind: 'use',
+        tour_date: so.tour_date || '',
+        tour_name: tourName,
+        scenario: scenario,
+        item_name: it.name,
+        item_code: it.code || '',
+        category: _rptResolveCategory(it),
+        unit: it.unit || '',
+        quantity: qty,
+        unit_price: unitPrice,
+        cost: qty * unitPrice,
+        source: '出库记录',
+        source_code: so.code || ''
+      });
       });
     }
   });
@@ -493,21 +493,21 @@ function _rptBuildTourDetailRows(tourName, month) {
       req.items.forEach(it => {
         const qty = it.quantity || 0;
         const unitPrice = _rptResolvePrice(it.name, priceMap);
-        rows.push({
-          kind: 'use',
-          tour_date: req.tour_date || '',
-          tour_name: tourName,
-          scenario: scenario,
-          item_name: it.name,
-          item_code: it.code || '',
-          category: it.category || '-',
-          unit: it.unit || '',
-          quantity: qty,
-          unit_price: unitPrice,
-          cost: qty * unitPrice,
-          source: '待出库领用单',
-          source_code: req.code || ''
-        });
+rows.push({
+        kind: 'use',
+        tour_date: req.tour_date || '',
+        tour_name: tourName,
+        scenario: scenario,
+        item_name: it.name,
+        item_code: it.code || '',
+        category: _rptResolveCategory(it),
+        unit: it.unit || '',
+        quantity: qty,
+        unit_price: unitPrice,
+        cost: qty * unitPrice,
+        source: '待出库领用单',
+        source_code: req.code || ''
+      });
       });
     }
   });
@@ -893,4 +893,28 @@ function _rptNormalizeScenario(s) {
   if (s === '餐车') return '列车餐车';
   if (s === '客房') return '列车客房';
   return s;
+}
+
+/**
+ * 解析明细行物品的类别（容错）：
+ * 1) 优先取明细行自身的 category_name / category（入库快照字段，可能为空）
+ * 2) 兜底按 item_id / inventory_item_id 查 inventory_items 取 category_name
+ * 3) 还不行按 name 查 inventory_items
+ * 解决：早期出库/领用明细的 category 字段可能为空，导致报表"类别"列全是 "-"。
+ */
+function _rptResolveCategory(it) {
+  let cat = (it && (it.category_name || it.category)) || '';
+  if (cat) return cat;
+  const inv = (_appCache && _appCache.inventory) ? _appCache.inventory : [];
+  const id = String((it && (it.item_id || it.inventory_item_id)) || '');
+  if (id && id !== 'undefined') {
+    const hit = inv.find(x => String(x.id) === id);
+    if (hit) return hit.category_name || hit.category || '-';
+  }
+  if (it && it.name) {
+    const norm = (s) => String(s || '').trim().toLowerCase();
+    const hit = inv.find(x => norm(x.name) === norm(it.name));
+    if (hit) return hit.category_name || hit.category || '-';
+  }
+  return '-';
 }
