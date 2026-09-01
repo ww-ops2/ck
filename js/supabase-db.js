@@ -988,6 +988,81 @@ const SupaDB = {
     return insertedRecord;
   },
 
+  // ---- 采购单明细行：标记"不入库"/恢复入库 ----
+  /**
+   * 设置采购单明细行 is_skipped（true=不入库，false=恢复入库）。
+   * 同时根据该明细行所在采购单的所有明细行 + 已入库数量，重新计算并落库 PO 的 status：
+   *   - 所有明细行均 is_skipped 或已完成入库 → stockin_completed
+   *   - 部分明细行 is_skipped 或部分入库 → partially_stockin
+   *   - 否则 → pending_stockin
+   * 注意：写入 is_skipped 字段前，需要先执行 migrations/20260901_poi_skipped.sql
+   *       给 purchase_order_items 加 is_skipped 列。
+   */
+  async setPurchaseOrderItemSkipped(itemId, isSkipped) {
+    const sb = getSupabase();
+    // 1) 标记 / 恢复明细行
+    const { data: updatedItem, error: itemErr } = await sb
+      .from('purchase_order_items')
+      .update({ is_skipped: !!isSkipped })
+      .eq('id', itemId)
+      .select('id, purchase_order_id, item_code, name')
+      .single();
+    if (itemErr) throw new Error('更新采购单明细失败: ' + itemErr.message);
+    if (!updatedItem) throw new Error('采购单明细不存在');
+
+    // 2) 审计日志
+    try {
+      await writeAuditLog(
+        isSkipped ? 'SKIP_STOCKIN' : 'RESTORE_STOCKIN',
+        'purchase_order_items',
+        updatedItem.id,
+        updatedItem.item_code || '',
+        { name: updatedItem.name, is_skipped: !!isSkipped }
+      );
+    } catch (e) { console.warn('[SupaDB] 写审计日志失败:', e.message); }
+
+    // 3) 重算 PO 状态（基于该 PO 所有明细行 + 已入库记录）
+    let finalStatus = null;
+    try {
+      const orderId = updatedItem.purchase_order_id;
+      const order = await this.getPurchaseOrder(orderId);
+      if (order) {
+        // 已入库数量映射（按 code 或 name 聚合）
+        const siRecords = await _sbQuery(
+          sb.from('stock_in_records')
+            .select('*, stock_in_items(*)')
+            .eq('purchase_order_id', orderId)
+        );
+        const receivedMap = {};
+        for (const si of (siRecords || [])) {
+          for (const it of (si.stock_in_items || [])) {
+            const k = it.item_code || it.name;
+            receivedMap[k] = (receivedMap[k] || 0) + (Number(it.actual_quantity) || 0);
+          }
+        }
+
+        // 判定是否仍有未处理的明细行
+        let hasOpenItem = false;
+        for (const poItem of (order.purchase_order_items || [])) {
+          if (poItem.is_skipped) continue;
+          const received = receivedMap[poItem.item_code || poItem.name] || 0;
+          if (received < (Number(poItem.quantity) || 0)) {
+            hasOpenItem = true;
+            break;
+          }
+        }
+        // 注意：暂不自动降级 partially_stockin（避免「全跳过」也变 partially），
+        // 仅在仍有未处理项时维持 partially_stockin，否则已完成。
+        const wantStatus = hasOpenItem ? 'partially_stockin' : 'stockin_completed';
+        finalStatus = await _updatePOStatus(orderId, wantStatus);
+      }
+    } catch (e) {
+      console.warn('[SupaDB] 重算 PO 状态失败:', e.message);
+    }
+
+    return { item: updatedItem, finalStatus };
+  },
+
   // ---- 入库记录 ----
   async getStockInRecords() {
     const sb = getSupabase();
