@@ -70,7 +70,7 @@
     view_stockin: '查看入库',
     view_requisition: '查看领用单',
     view_stockout: '查看出库',
-    view_monthly: '查看月度汇总',
+    view_monthly: '查看出入库明细',
     view_reports: '查看团期报表',
     view_analytics: '查看数据分析',
     view_history: '查看操作记录',
