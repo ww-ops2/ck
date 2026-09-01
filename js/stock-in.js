@@ -280,7 +280,9 @@ function formatPOFromDB(po) {
         amount: poi.amount || 0,
         category: poi.category_name || '',
         supplier: poi.supplier || '',
-        sort_order: poi.sort_order || 0
+        sort_order: poi.sort_order || 0,
+        // v5.70：保留「不入库」标记
+        is_skipped: !!poi.is_skipped
       };
     });
   } else if (po.items && Array.isArray(po.items)) {
