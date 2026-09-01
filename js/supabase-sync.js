@@ -134,7 +134,10 @@ async function syncFromSupabase(options) {
       _appCache.stockInRecords = stockInResult.data.map(rec => ({
         ...rec,
         items: (rec.stock_in_items || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(item => ({
-          id: item.id, supplier: item.supplier, category: item.category_name,
+          // 与 stock_out/requisition 缓存保持一致：item_id = inventory_item_id
+          // 旧版只用 inventory_item_id 字段，导致月度汇总等模块按 id 匹配漏数据（v5.69 修复）
+          id: item.id, item_id: item.inventory_item_id,
+          supplier: item.supplier, category: item.category_name, category_name: item.category_name,
           code: item.item_code, name: item.name, brand: item.brand, model: item.model,
           quantity: Number(item.quantity), actual_quantity: Number(item.actual_quantity),
           unit: item.unit, price: Number(item.price), amount: Number(item.amount),
@@ -325,7 +328,10 @@ async function refreshData(dataType) {
           _appCache.stockInRecords = data.map(rec => ({
             ...rec,
             items: (rec.stock_in_items || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(item => ({
-              id: item.id, supplier: item.supplier, category: item.category_name,
+              // 与 stock_out/requisition 缓存保持一致：item_id = inventory_item_id
+              // 旧版只用 inventory_item_id 字段，导致月度汇总等模块按 id 匹配漏数据（v5.69 修复）
+              id: item.id, item_id: item.inventory_item_id,
+              supplier: item.supplier, category: item.category_name, category_name: item.category_name,
               code: item.item_code, name: item.name, brand: item.brand, model: item.model,
               quantity: Number(item.quantity), actual_quantity: Number(item.actual_quantity),
               unit: item.unit, price: Number(item.price), amount: Number(item.amount),
