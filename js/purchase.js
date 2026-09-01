@@ -14,6 +14,19 @@ let modelHistory = {};  // {物品名称: [型号列表]}
 let categoryCodeCounters = {};  // {类别编码: 计数器} 用于每个类别独立计数
 let consumptionStandards = [];  // [{item_name, scenario, max_per_tour}] 领用标准
 
+// 库存物品名称快速查找映射（采购单选择已有物品时自动填充用）
+let _purchaseInventoryMap = new Map();
+
+function _escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 /**
  * 初始化采购单模块
  */
@@ -207,6 +220,9 @@ function addItemToGroup(groupId) {
   // 先生成一个临时ID用于datalist
   const tempId = `item-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   
+  // 重建库存映射，保证最新
+  _buildPurchaseInventoryMap();
+
   row.innerHTML = `
     <td>
       <div style="display:flex;flex-direction:column;gap:4px;">
@@ -220,7 +236,12 @@ function addItemToGroup(groupId) {
         </div>
       </div>
     </td>
-    <td><input type="text" class="item-name" placeholder="物品名称" required style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:13px;"></td>
+    <td>
+      <div style="position:relative;">
+        <input type="text" class="item-name" placeholder="物品名称" list="item-name-list-${tempId}" required style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:13px;">
+        <datalist id="item-name-list-${tempId}">${_getInventoryItemOptions()}</datalist>
+      </div>
+    </td>
     <td>
       <div style="position:relative;">
         <input type="text" class="item-brand" placeholder="品牌" list="brand-list-${tempId}" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:13px;">
@@ -246,19 +267,41 @@ function addItemToGroup(groupId) {
   `;
 
   tbody.appendChild(row);
-  
-  // 绑定物品名称变化事件，更新品牌型号历史记录
+
+  // 绑定物品名称变化事件，更新品牌型号历史记录，并自动填充已有库存物品信息
   const nameInput = row.querySelector('.item-name');
+  const brandInput = row.querySelector('.item-brand');
+  const modelInput = row.querySelector('.item-model');
+  const unitInput = row.querySelector('.item-unit');
+  const categoryInput = row.querySelector('.item-category');
+  const codeDisplay = row.querySelector('.item-code-display');
+  const itemNameDatalist = row.querySelector(`#item-name-list-${tempId}`);
+
+  function _fillRowFromInventory(itemName) {
+    const matched = _purchaseInventoryMap.get(itemName.trim());
+    if (!matched) return false;
+    if (brandInput) brandInput.value = matched.brand || '';
+    if (modelInput) modelInput.value = matched.model || '';
+    if (unitInput) unitInput.value = matched.unit || '';
+    if (categoryInput && !categoryInput.value.trim()) {
+      categoryInput.value = matched.category_name || matched.category || '';
+    }
+    if (codeDisplay) {
+      const code = matched.code || '';
+      codeDisplay.textContent = code || '待选择类别';
+      codeDisplay.setAttribute('data-item-code', code);
+    }
+    return true;
+  }
+
   if (nameInput) {
     nameInput.addEventListener('blur', function() {
       updateBrandModelDatalist(this.value, tempId);
+      _fillRowFromInventory(this.value);
     });
   }
-  
+
   // 绑定品牌和型号输入事件，自动保存历史
-  const brandInput = row.querySelector('.item-brand');
-  const modelInput = row.querySelector('.item-model');
-  
   if (brandInput) {
     brandInput.addEventListener('blur', function() {
       const itemName = row.querySelector('.item-name').value;
@@ -268,7 +311,7 @@ function addItemToGroup(groupId) {
       }
     });
   }
-  
+
   if (modelInput) {
     modelInput.addEventListener('blur', function() {
       const itemName = row.querySelector('.item-name').value;
@@ -278,11 +321,8 @@ function addItemToGroup(groupId) {
       }
     });
   }
-  
-  // 绑定类别输入事件，如果输入新类别则自动创建，并更新商品编码
-  const categoryInput = row.querySelector('.item-category');
-  const codeDisplay = row.querySelector('.item-code-display');
-  
+
+  // 绑定类别输入事件：自动创建类别、生成编码，并按类别过滤物品名称提示
   if (categoryInput) {
     categoryInput.addEventListener('blur', async function() {
       const categoryName = this.value.trim();
@@ -294,10 +334,16 @@ function addItemToGroup(groupId) {
           refreshAllCategoryDropdowns();
         }
 
-        // 生成该类别下的商品编码
-        const itemCode = generateItemCodeByCategory(category.code);
-        codeDisplay.textContent = itemCode;
-        codeDisplay.setAttribute('data-item-code', itemCode);
+        // 生成该类别下的商品编码（仅在未匹配到已有物品时作为占位）
+        if (!codeDisplay.getAttribute('data-item-code')) {
+          const itemCode = generateItemCodeByCategory(category.code);
+          codeDisplay.textContent = itemCode;
+          codeDisplay.setAttribute('data-item-code', itemCode);
+        }
+      }
+      // 按当前类别过滤物品名称提示
+      if (itemNameDatalist) {
+        itemNameDatalist.innerHTML = _getInventoryItemOptions(categoryName);
       }
     });
   }
@@ -315,9 +361,11 @@ function addPurchaseItemRow() {
     tbody.innerHTML = '';
   }
 
+  _buildPurchaseInventoryMap();
+
   const row = document.createElement('tr');
   const itemCode = generateItemCode();
-  
+
   row.innerHTML = `
     <td>
       <div style="display:flex;flex-direction:column;gap:4px;">
@@ -331,7 +379,12 @@ function addPurchaseItemRow() {
         </div>
       </div>
     </td>
-    <td><input type="text" class="item-name" placeholder="物品名称" required style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:linear-gradient(145deg, #ffffff, #f5f5f5);color:var(--text-primary);font-size:13px;box-shadow:inset 0 1px 2px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.08);"></td>
+    <td>
+      <div style="position:relative;">
+        <input type="text" class="item-name" placeholder="物品名称" list="item-name-list-${itemCode}" required style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:linear-gradient(145deg, #ffffff, #f5f5f5);color:var(--text-primary);font-size:13px;box-shadow:inset 0 1px 2px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.08);">
+        <datalist id="item-name-list-${itemCode}">${_getInventoryItemOptions()}</datalist>
+      </div>
+    </td>
     <td>
       <div style="position:relative;">
         <input type="text" class="item-brand" placeholder="品牌" list="brand-list-${itemCode}" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:linear-gradient(145deg, #ffffff, #f5f5f5);color:var(--text-primary);font-size:13px;box-shadow:inset 0 1px 2px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.08);">
@@ -357,19 +410,41 @@ function addPurchaseItemRow() {
   `;
 
   tbody.appendChild(row);
-  
-  // 绑定物品名称变化事件，更新品牌型号历史记录
+
   const nameInput = row.querySelector('.item-name');
+  const brandInput = row.querySelector('.item-brand');
+  const modelInput = row.querySelector('.item-model');
+  const unitInput = row.querySelector('.item-unit');
+  const categoryInput = row.querySelector('.item-category');
+  const codeDisplay = row.querySelector('.item-code-display');
+  const itemNameDatalist = row.querySelector(`#item-name-list-${itemCode}`);
+
+  function _fillRowFromInventory(itemName) {
+    const matched = _purchaseInventoryMap.get(itemName.trim());
+    if (!matched) return false;
+    if (brandInput) brandInput.value = matched.brand || '';
+    if (modelInput) modelInput.value = matched.model || '';
+    if (unitInput) unitInput.value = matched.unit || '';
+    if (categoryInput && !categoryInput.value.trim()) {
+      categoryInput.value = matched.category_name || matched.category || '';
+    }
+    if (codeDisplay) {
+      const code = matched.code || '';
+      codeDisplay.textContent = code || itemCode;
+      codeDisplay.setAttribute('data-item-code', code || itemCode);
+    }
+    return true;
+  }
+
+  // 绑定物品名称变化事件，更新品牌型号历史记录，并自动填充已有库存物品信息
   if (nameInput) {
     nameInput.addEventListener('blur', function() {
       updateBrandModelDatalist(this.value, itemCode);
+      _fillRowFromInventory(this.value);
     });
   }
-  
+
   // 绑定品牌和型号输入事件，自动保存历史
-  const brandInput = row.querySelector('.item-brand');
-  const modelInput = row.querySelector('.item-model');
-  
   if (brandInput) {
     brandInput.addEventListener('blur', function() {
       const itemName = row.querySelector('.item-name').value;
@@ -379,7 +454,7 @@ function addPurchaseItemRow() {
       }
     });
   }
-  
+
   if (modelInput) {
     modelInput.addEventListener('blur', function() {
       const itemName = row.querySelector('.item-name').value;
@@ -389,16 +464,17 @@ function addPurchaseItemRow() {
       }
     });
   }
-  
-  // 绑定类别输入事件，如果输入新类别则自动创建
-  const categoryInput = row.querySelector('.item-category');
+
+  // 绑定类别输入事件：自动创建类别，并按类别过滤物品名称提示
   if (categoryInput) {
     categoryInput.addEventListener('blur', async function() {
       const categoryName = this.value.trim();
       if (categoryName && !categories.find(c => c.name === categoryName)) {
-        // 自动创建新类别
         await autoCreateCategory(categoryName);
         refreshAllCategoryDropdowns();
+      }
+      if (itemNameDatalist) {
+        itemNameDatalist.innerHTML = _getInventoryItemOptions(categoryName);
       }
     });
   }
@@ -748,7 +824,7 @@ function renderCategoryList() {
   if (inventory.length === 0 && typeof mockData !== 'undefined') inventory = mockData.items;
   const itemCountMap = {};
   inventory.forEach(item => {
-    const cat = item.category || '未分类';
+    const cat = item.category_name || item.category || '未分类';
     if (!itemCountMap[cat]) itemCountMap[cat] = { count: 0, stock: 0 };
     itemCountMap[cat].count++;
     itemCountMap[cat].stock += (item.stock || 0);
@@ -809,7 +885,7 @@ function _showCategoryItems(catName) {
 
   let inventory = (typeof _appCache !== 'undefined' && _appCache.inventory) ? _appCache.inventory : [];
   if (inventory.length === 0 && typeof mockData !== 'undefined') inventory = mockData.items;
-  const catItems = inventory.filter(item => (item.category || '未分类') === catName);
+  const catItems = inventory.filter(item => (item.category_name || item.category || '未分类') === catName);
 
   if (catItems.length === 0) {
     bodyEl.innerHTML = '<div class="expand-empty">该分类下暂无物品</div>';
@@ -1069,7 +1145,7 @@ function viewPurchaseDetail(orderId) {
             ${order.items.map((item, i) => `
               <tr>
                 <td>${i + 1}</td>
-                <td>${item.category || '-'}</td>
+                <td>${item.category_name || item.category || '-'}</td>
                 <td style="font-weight:600;">${item.name}</td>
                 <td>${item.brand || '-'}</td>
                 <td>${item.model || '-'}</td>
@@ -1240,8 +1316,8 @@ function editPurchaseOrder(orderId) {
       const priceInput = lastRow.querySelector('.item-price');
 
       if (categoryInput) {
-        categoryInput.value = item.category || '';
-        // 触发类别变更以生成编码
+        categoryInput.value = item.category_name || item.category || '';
+        // 触发类别变更以生成编码并过滤物品提示
         categoryInput.dispatchEvent(new Event('blur'));
       }
       if (nameInput) nameInput.value = item.name || '';
@@ -1802,7 +1878,7 @@ function displayImportPreview(errors) {
       <td>${item.row_number}</td>
       <td>${item.purchase_date}</td>
       <td>${item.purchaser}</td>
-      <td>${item.category || '-'}</td>
+      <td>${item.category_name || item.category || '-'}</td>
       <td>${item.item_name}</td>
       <td>${item.brand || '-'}</td>
       <td>${item.model || '-'}</td>
@@ -2026,11 +2102,49 @@ function generateItemCode() {
 }
 
 /**
+ * 采购单可用类别：品类管理 + 库存物品实际分类并集
+ */
+function _getAllCategoriesForPurchase() {
+  const inventory = (typeof _appCache !== 'undefined' && _appCache.inventory) ? _appCache.inventory : [];
+  const inventoryCats = inventory
+    .map(it => it.category_name || it.category)
+    .filter(c => c && String(c).trim() !== '');
+  const all = new Set([...categories.map(c => c.name), ...inventoryCats]);
+  return Array.from(all).sort();
+}
+
+/**
+ * 重建库存物品名称映射（用于自动填充）
+ */
+function _buildPurchaseInventoryMap() {
+  _purchaseInventoryMap.clear();
+  const inventory = (typeof _appCache !== 'undefined' && _appCache.inventory) ? _appCache.inventory : [];
+  inventory.forEach(it => {
+    if (it.name) _purchaseInventoryMap.set(String(it.name).trim(), it);
+  });
+}
+
+/**
+ * 库存物品名称 datalist options（可按类别过滤）
+ */
+function _getInventoryItemOptions(filterCat) {
+  const inventory = (typeof _appCache !== 'undefined' && _appCache.inventory) ? _appCache.inventory : [];
+  let items = inventory.slice();
+  if (filterCat) {
+    items = items.filter(it => (it.category_name || it.category || '未分类') === filterCat);
+  }
+  return items.map(it => {
+    const label = `${_escapeHtml(it.name)} (${_escapeHtml(it.code || '无编码')})`;
+    return `<option value="${_escapeHtml(it.name)}" label="${label}"></option>`;
+  }).join('');
+}
+
+/**
  * 获取类别选项HTML（用于datalist）
  */
 function getCategoryOptionsForDatalist() {
-  return categories.map(cat => 
-    `<option value="${cat.name}">`
+  return _getAllCategoriesForPurchase().map(name =>
+    `<option value="${_escapeHtml(name)}">`
   ).join('');
 }
 
@@ -2038,8 +2152,8 @@ function getCategoryOptionsForDatalist() {
  * 获取类别选项HTML（用于select）
  */
 function getCategoryOptions() {
-  return categories.map(cat => 
-    `<option value="${cat.name}">${cat.name}</option>`
+  return _getAllCategoriesForPurchase().map(name =>
+    `<option value="${_escapeHtml(name)}">${_escapeHtml(name)}</option>`
   ).join('');
 }
 
