@@ -124,7 +124,9 @@ async function syncFromSupabase(options) {
           id: item.id, supplier: item.supplier, category: item.category_name,
           code: item.item_code, name: item.name, brand: item.brand, model: item.model,
           quantity: Number(item.quantity), unit: item.unit,
-          price: Number(item.price), amount: Number(item.amount)
+          price: Number(item.price), amount: Number(item.amount),
+          // v5.70：保留「不入库」标记，避免下次刷新时该字段被丢导致收件箱再次出现
+          is_skipped: !!item.is_skipped
         }))
       }));
     }
@@ -290,7 +292,9 @@ async function refreshData(dataType) {
               id: item.id, supplier: item.supplier, category: item.category_name,
               code: item.item_code, name: item.name, brand: item.brand, model: item.model,
               quantity: Number(item.quantity), unit: item.unit,
-              price: Number(item.price), amount: Number(item.amount)
+              price: Number(item.price), amount: Number(item.amount),
+              // v5.70：保留「不入库」标记
+              is_skipped: !!item.is_skipped
             }))
           }));
         }
