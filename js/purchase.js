@@ -161,8 +161,12 @@ function addSupplierGroup() {
         <tbody class="items-tbody" data-group-id="${groupId}">
           <tr>
             <td colspan="9" style="text-align:center;padding:20px;">
-              <button type="button" class="btn btn-accent" onclick="addItemToGroup('${groupId}')" 
-                style="padding:8px 20px;font-size:13px;font-weight:600;">+ 添加物品</button>
+              <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+                <button type="button" class="btn btn-accent" onclick="addItemToGroup('${groupId}')"
+                  style="padding:8px 20px;font-size:13px;font-weight:600;">+ 添加新物品</button>
+                <button type="button" class="btn" onclick="_togglePurchaseInventoryPicker('${groupId}')"
+                  style="padding:8px 20px;font-size:13px;border:1px solid var(--accent);color:var(--accent);background:transparent;font-weight:600;">📦 从库存中选择</button>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -174,6 +178,17 @@ function addSupplierGroup() {
           </tr>
         </tfoot>
       </table>
+    </div>
+    <div id="purchase-picker-${groupId}" class="purchase-picker" style="display:none;margin-top:10px;">
+      <div class="item-picker-toolbar">
+        <select id="purchase-picker-cat-${groupId}" class="item-picker-select" data-group-id="${groupId}">
+          <option value="">全部分类</option>
+        </select>
+        <input type="text" id="purchase-picker-search-${groupId}" class="item-picker-search" data-group-id="${groupId}" placeholder="搜索名称/编码/型号/品牌...">
+      </div>
+      <div id="purchase-picker-list-${groupId}" class="item-picker-list" style="max-height:220px;">
+        <div class="empty-state" style="padding:16px;text-align:center;color:var(--text-muted);">加载中...</div>
+      </div>
     </div>
   `;
   
@@ -261,6 +276,7 @@ function addItemToGroup(groupId) {
     <td>
       <div style="display:flex;gap:4px;justify-content:center;">
         <button type="button" class="btn btn-sm" onclick="removePurchaseItemRow(this)" title="删除此行" style="color:var(--danger);padding:6px 10px;font-size:14px;">✕</button>
+        <button type="button" class="btn btn-sm" onclick="_togglePurchaseInventoryPicker('${groupId}')" title="从库存选择" style="color:var(--accent);padding:6px 10px;font-size:14px;">📦</button>
         <button type="button" class="btn btn-sm" onclick="addItemToGroup('${groupId}')" title="在此行后添加新物品" style="color:var(--success);padding:6px 10px;font-size:14px;">+</button>
       </div>
     </td>
@@ -552,8 +568,12 @@ function removePurchaseItemRow(btn) {
     tbody.innerHTML = `
       <tr>
         <td colspan="9" style="text-align:center;padding:20px;">
-          <button type="button" class="btn btn-accent" onclick="addItemToGroup('${groupId}')" 
-            style="padding:8px 20px;font-size:13px;font-weight:600;box-shadow:0 2px 8px rgba(64,158,255,0.3);">+ 添加物品</button>
+          <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+            <button type="button" class="btn btn-accent" onclick="addItemToGroup('${groupId}')"
+              style="padding:8px 20px;font-size:13px;font-weight:600;box-shadow:0 2px 8px rgba(64,158,255,0.3);">+ 添加新物品</button>
+            <button type="button" class="btn" onclick="_togglePurchaseInventoryPicker('${groupId}')"
+              style="padding:8px 20px;font-size:13px;border:1px solid var(--accent);color:var(--accent);background:transparent;font-weight:600;">📦 从库存中选择</button>
+          </div>
         </td>
       </tr>
     `;
@@ -2146,6 +2166,192 @@ function getCategoryOptionsForDatalist() {
   return _getAllCategoriesForPurchase().map(name =>
     `<option value="${_escapeHtml(name)}">`
   ).join('');
+}
+
+// ---- 采购单「从库存选择」picker（参考领用单） ----
+
+/**
+ * 切换 picker 显示状态，并按需初始化分类下拉与列表
+ */
+function _togglePurchaseInventoryPicker(groupId) {
+  const picker = document.getElementById(`purchase-picker-${groupId}`);
+  if (!picker) return;
+  const willShow = picker.style.display === 'none' || !picker.style.display;
+  picker.style.display = willShow ? 'block' : 'none';
+  if (willShow) {
+    _populatePurchasePickerCategories(groupId);
+    _renderPurchaseInventoryPicker(groupId);
+    const searchInput = document.getElementById(`purchase-picker-search-${groupId}`);
+    if (searchInput) {
+      // 避免重复绑定：clone 替换
+      const fresh = searchInput.cloneNode(true);
+      searchInput.parentNode.replaceChild(fresh, searchInput);
+      fresh.addEventListener('input', () => _renderPurchaseInventoryPicker(groupId));
+      fresh.addEventListener('keyup', () => _renderPurchaseInventoryPicker(groupId));
+      fresh.focus();
+  }
+  const select = document.getElementById(`purchase-picker-cat-${groupId}`);
+  if (select) {
+    const freshSel = select.cloneNode(true);
+    select.parentNode.replaceChild(freshSel, select);
+    freshSel.addEventListener('change', () => _renderPurchaseInventoryPicker(groupId));
+  }
+  }
+}
+
+/**
+ * 填充分类筛选下拉（取自库存物品实际分类）
+ */
+function _populatePurchasePickerCategories(groupId) {
+  const select = document.getElementById(`purchase-picker-cat-${groupId}`);
+  if (!select) return;
+  const inventory = (_appCache && _appCache.inventory) ? _appCache.inventory : [];
+  const cats = [...new Set(
+    inventory.map(it => it.category_name || it.category || '未分类')
+      .filter(c => String(c).trim() !== '')
+  )].sort();
+  const prev = select.value;
+  select.innerHTML = '<option value="">全部分类</option>' +
+    cats.map(c => `<option value="${_escapeHtml(c)}">${_escapeHtml(c)}</option>`).join('');
+  if (prev && cats.indexOf(prev) >= 0) select.value = prev;
+}
+
+/**
+ * 渲染 picker 列表（按分类/关键字过滤）
+ */
+function _renderPurchaseInventoryPicker(groupId) {
+  const container = document.getElementById(`purchase-picker-list-${groupId}`);
+  if (!container) return;
+  const select = document.getElementById(`purchase-picker-cat-${groupId}`);
+  const search = document.getElementById(`purchase-picker-search-${groupId}`);
+  const filterCat = (select && select.value) || '';
+  const keyword = (search && search.value ? search.value : '').trim().toLowerCase();
+
+  const inventory = (_appCache && _appCache.inventory) ? _appCache.inventory : [];
+  let items = inventory.slice();
+  if (filterCat) {
+    items = items.filter(it => (it.category_name || it.category || '未分类') === filterCat);
+  }
+  if (keyword) {
+    items = items.filter(it =>
+      (it.name || '').toLowerCase().includes(keyword) ||
+      (it.code || '').toLowerCase().includes(keyword) ||
+      (it.model || '').toLowerCase().includes(keyword) ||
+      (it.brand || '').toLowerCase().includes(keyword) ||
+      (it.category_name || it.category || '').toLowerCase().includes(keyword)
+    );
+  }
+
+  // 签名守卫，避免相同状态重复重建 DOM
+  const sig = [filterCat, keyword, inventory.length, _getPurchaseRowItemIds(groupId).join(',')].join('::');
+  if (container.__lastRenderSig === sig) return;
+  container.__lastRenderSig = sig;
+
+  if (items.length === 0) {
+    container.innerHTML = '<div class="empty-state" style="padding:16px;text-align:center;color:var(--text-muted);">未找到匹配的物品</div>';
+    return;
+  }
+
+  container.innerHTML = items.map(item => {
+    const cat = item.category_name || item.category || '未分类';
+    return `
+      <div class="item-picker-row" data-item-id="${_escapeHtml(String(item.id))}">
+        <div class="item-picker-info">
+          <div class="item-picker-name">${_escapeHtml(item.name)}${item.brand ? ' <span style="font-weight:400;color:var(--text-muted);">(' + _escapeHtml(item.brand) + ')</span>' : ''}
+            <span class="item-picker-category-tag">${_escapeHtml(cat)}</span>
+          </div>
+          <div class="item-picker-meta">${_escapeHtml(item.code || '无编码')}${item.model ? ' · ' + _escapeHtml(item.model) : ''}${item.unit ? ' · 单位 ' + _escapeHtml(item.unit) : ''}</div>
+        </div>
+        <div class="item-picker-stock" style="color:var(--text-primary);">
+          库存 ${item.stock || 0}${item.unit ? ' ' + _escapeHtml(item.unit) : ''}
+        </div>
+        <button class="item-picker-add-btn" onclick="_addInventoryItemToPurchase('${groupId}', '${_escapeHtml(String(item.id))}')">+ 添加</button>
+      </div>
+    `;
+  }).join('');
+}
+
+/**
+ * 已添加进采购明细行（tbody 里）的物品 ID 集合，用于 picker 标记"已添加"
+ */
+function _getPurchaseRowItemIds(groupId) {
+  const tbody = document.querySelector(`.items-tbody[data-group-id="${groupId}"]`);
+  if (!tbody) return [];
+  const ids = [];
+  tbody.querySelectorAll('tr').forEach(row => {
+    const nameInput = row.querySelector('.item-name');
+    if (nameInput && nameInput.value) {
+      const inventory = (_appCache && _appCache.inventory) ? _appCache.inventory : [];
+      const match = inventory.find(it => (it.name || '').trim() === nameInput.value.trim());
+      if (match) ids.push(String(match.id));
+    }
+  });
+  return ids;
+}
+
+/**
+ * 从库存选择后，新建一行并预填名称/品牌/型号/单位/分类/编码，留数量/单价给用户填
+ */
+function _addInventoryItemToPurchase(groupId, itemId) {
+  const inventory = (_appCache && _appCache.inventory) ? _appCache.inventory : [];
+  const item = inventory.find(it => String(it.id) === String(itemId));
+  if (!item) return;
+
+  // 检查同分组是否已添加（避免重复）
+  const tbody = document.querySelector(`.items-tbody[data-group-id="${groupId}"]`);
+  if (tbody) {
+    const dup = Array.from(tbody.querySelectorAll('tr')).some(row => {
+      const n = row.querySelector('.item-name');
+      return n && n.value && n.value.trim() === (item.name || '').trim();
+    });
+    if (dup) {
+      if (typeof showToast === 'function') showToast('该物品已在当前供应商分组中', 'warning');
+      return;
+    }
+  }
+
+  // 按现有流程创建新行
+  addItemToGroup(groupId);
+  const tbody2 = document.querySelector(`.items-tbody[data-group-id="${groupId}"]`);
+  if (!tbody2) return;
+  const rows = tbody2.querySelectorAll('tr');
+  const lastRow = rows[rows.length - 1];
+  if (!lastRow) return;
+
+  // 预填字段
+  const nameInput = lastRow.querySelector('.item-name');
+  const brandInput = lastRow.querySelector('.item-brand');
+  const modelInput = lastRow.querySelector('.item-model');
+  const unitInput = lastRow.querySelector('.item-unit');
+  const categoryInput = lastRow.querySelector('.item-category');
+  const codeDisplay = lastRow.querySelector('.item-code-display');
+  const quantityInput = lastRow.querySelector('.item-quantity');
+
+  if (nameInput) nameInput.value = item.name || '';
+  if (brandInput) brandInput.value = item.brand || '';
+  if (modelInput) modelInput.value = item.model || '';
+  if (unitInput) unitInput.value = item.unit || '';
+  if (categoryInput) categoryInput.value = item.category_name || item.category || '';
+  if (codeDisplay) {
+    codeDisplay.textContent = item.code || '待选择类别';
+    codeDisplay.setAttribute('data-item-code', item.code || '');
+  }
+
+  // 触发 blur 让历史 datalist 联动
+  try {
+    if (categoryInput) categoryInput.dispatchEvent(new Event('blur'));
+    if (nameInput) nameInput.dispatchEvent(new Event('blur'));
+  } catch (e) { /* noop */ }
+
+  // 聚焦到数量输入框，方便用户继续输入
+  if (quantityInput) {
+    setTimeout(() => { try { quantityInput.focus(); quantityInput.select(); } catch (e) {} }, 0);
+  }
+
+  // 更新合计并刷新 picker（标记已添加）
+  if (typeof updatePurchaseTotal === 'function') updatePurchaseTotal();
+  _renderPurchaseInventoryPicker(groupId);
+  if (typeof showToast === 'function') showToast(`已添加：${item.name}`, 'success');
 }
 
 /**
