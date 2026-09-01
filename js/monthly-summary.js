@@ -319,11 +319,19 @@ function _msRenderCategoryChart(filteredOut, inventory) {
 
   // 统计出库物品按品类汇总
   const catMap = {};
+  const _invById = {};
+  inventory.forEach(it => { _invById[String(it.id)] = it; });
   filteredOut.forEach(r => {
     if (r.items) {
       r.items.forEach(it => {
-        const cat = it.category || '未分类';
-        catMap[cat] = (catMap[cat] || 0) + it.quantity;
+        // 出库明细行 category 可能为空，按 item_id 查 inventory 兜底
+        let cat = it.category_name || it.category || '';
+        if (!cat) {
+          const id = String(it.item_id || it.inventory_item_id || '');
+          if (_invById[id]) cat = _invById[id].category_name || _invById[id].category || '';
+        }
+        if (!cat) cat = '未分类';
+        catMap[cat] = (catMap[cat] || 0) + (Number(it.quantity) || 0);
       });
     }
   });
@@ -431,6 +439,30 @@ function _msRenderTrendBarChart(allStockOutRecords) {
 
 let _msDetailData = [];
 
+/**
+ * 在 itemMap 中按多种规则查找明细行对应的库存物品桶（容错）：
+ * 1) 优先按 id（兼容 item_id / inventory_id / inventory_item_id 三种命名）
+ * 2) id 未命中时按 code 匹配
+ * 3) 还不行按 name 匹配
+ * 解决：stock_in 缓存字段叫 inventory_item_id、stock_out/requisition 叫 item_id，
+ *       部分记录 inventory_item_id 可能为 null，导致按 id 匹配漏掉，按 code/name 兜底。
+ */
+function _msResolveItemBucket(itemMap, item) {
+  if (!item) return null;
+  const id = String(item.item_id || item.inventory_id || item.inventory_item_id || '');
+  if (id && id !== 'undefined' && itemMap[id]) return itemMap[id];
+
+  if (item.code) {
+    const hit = Object.values(itemMap).find(b => b.code === item.code);
+    if (hit) return hit;
+  }
+  if (item.name) {
+    const hit = Object.values(itemMap).find(b => b.name === item.name);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 function _msBuildDetailData(inventory, filteredIn, filteredOut) {
   // 构建每个物品的期初/入库/出库/期末
   const itemMap = {};
@@ -440,7 +472,8 @@ function _msBuildDetailData(inventory, filteredIn, filteredOut) {
       id: String(it.id),
       code: it.code || '-',
       name: it.name,
-      category: it.category || '未分类',
+      // 字段修正：库存物品实际存的是 category_name（UI 旧代码用 category），做双兜底
+      category: it.category_name || it.category || '未分类',
       brand: it.brand || '-',
       model: it.model || '-',
       unit: it.unit,
@@ -454,10 +487,8 @@ function _msBuildDetailData(inventory, filteredIn, filteredOut) {
   filteredIn.forEach(r => {
     if (r.items) {
       r.items.forEach(it => {
-        const key = String(it.item_id || it.inventory_id);
-        if (itemMap[key]) {
-          itemMap[key].inQty += it.quantity;
-        }
+        const bucket = _msResolveItemBucket(itemMap, it);
+        if (bucket) bucket.inQty += (Number(it.quantity) || 0);
       });
     }
   });
@@ -466,10 +497,8 @@ function _msBuildDetailData(inventory, filteredIn, filteredOut) {
   filteredOut.forEach(r => {
     if (r.items) {
       r.items.forEach(it => {
-        const key = String(it.item_id || it.inventory_id);
-        if (itemMap[key]) {
-          itemMap[key].outQty += it.quantity;
-        }
+        const bucket = _msResolveItemBucket(itemMap, it);
+        if (bucket) bucket.outQty += (Number(it.quantity) || 0);
       });
     }
   });
