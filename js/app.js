@@ -1451,6 +1451,8 @@ function editItem(itemId) {
   // 注意：_appCache.inventory 存的是 Supabase 原始字段 category_name，editItem 取的是它，所以要做 category/category_name 双兜底
   _populateCategorySelect(form.elements['category'], item.category || item.category_name || '');
   form.elements['unit'].value = item.unit || '';
+  if (form.elements['brand']) form.elements['brand'].value = item.brand || '';
+  if (form.elements['model']) form.elements['model'].value = item.model || '';
   form.elements['stock'].value = item.stock || 0;
   form.elements['safety_stock'].value = item.safety_stock || 0;
   if (form.elements['unit_price']) form.elements['unit_price'].value = item.unit_price || 0;
@@ -1473,7 +1475,7 @@ function editItem(itemId) {
   var newDeleteBtn = deleteBtn.cloneNode(true);
   deleteBtn.parentNode.replaceChild(newDeleteBtn, deleteBtn);
   newDeleteBtn.addEventListener('click', function() {
-    showConfirm('\u786E\u8BA4\u8981\u5220\u9664 "' + (item.name || '') + '" \u5417\uFF1F\u6B64\u64CD\u4F5C\u4E0D\u53EF\u6062\u590D\uFF01', async function() {
+    showConfirm('\u786E\u8BA4\u8981\u5220\u9664 "' + (item.name || '') + '" \u5417\uFF1F\u82E5\u8BE5\u7269\u54C1\u5DF2\u6709\u5165\u5E93/\u9886\u7528/\u51FA\u5E93\u8BB0\u5F55\uFF0C\u5176\u660E\u7EC6\u5C06\u4E00\u5E76\u6E05\u9664\uFF0C\u6B64\u64CD\u4F5C\u4E0D\u53EF\u6062\u590D\uFF01', async function() {
       var deleteOk = true;
       // 从数据库删除
       try {
@@ -1523,6 +1525,8 @@ function editItem(itemId) {
       item.category = form.elements['category'].value;
       item.category_name = form.elements['category'].value;  // 兼容 Supabase
       item.unit = form.elements['unit'].value.trim();
+      item.brand = (form.elements['brand']?.value || '').trim();
+      item.model = (form.elements['model']?.value || '').trim();
       item.stock = newStock;
       item.safety_stock = newSafety;
       item.unit_price = Number(form.elements['unit_price']?.value || 0);
@@ -1549,6 +1553,8 @@ function editItem(itemId) {
           await SupaDB.updateInventoryItem(item.id, {
             name: item.name,
             code: item.code,
+            brand: item.brand,
+            model: item.model,
             category_name: item.category_name,
             unit: item.unit,
             stock: newStock,
