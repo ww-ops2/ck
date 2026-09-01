@@ -129,7 +129,7 @@ function updatePageTitle(moduleName) {
     'stock-in': '入库管理',
     'requisition': '领用单管理',
     'stock-out': '出库管理',
-    'monthly-summary': '月度汇总',
+    'monthly-summary': '出入库明细',
     'reports': '团期使用报表',
     'analytics': '数据分析',
     'history': '操作记录',
