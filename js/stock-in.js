@@ -433,24 +433,52 @@ function renderStockInBoard() {
     var totalReceived = 0;
     var completedItems = 0;
     var skippedItems = 0;
+    var skippedOrderedQty = 0;
     (po.items || []).forEach(function(item) {
       // v5.70：被标记「不入库」的明细行视为已完成，不计入待处理项
-      if (item.is_skipped) { skippedItems++; completedItems++; return; }
+      if (item.is_skipped) {
+        skippedItems++;
+        completedItems++;
+        skippedOrderedQty += (item.quantity || 0);
+        return;
+      }
       var key = po.id + '_' + (item.code || item.name);
       var received = _siData.receivedMap[key] || 0;
       totalReceived += received;
       if (received >= (item.quantity || 0)) completedItems++;
     });
-    var progress = totalOrdered > 0 ? Math.round(totalReceived / totalOrdered * 100) : 0;
+    // v5.72：进度按「实际需要入库的数量」做分母（跳过的不计入分母），
+    // 否则被跳过的物品会永远拖着进度条到不了 100%。
+    var effectiveOrdered = totalOrdered - skippedOrderedQty;
+    var progress;
+    if (effectiveOrdered > 0) {
+      progress = Math.round(totalReceived / effectiveOrdered * 100);
+    } else if (totalOrdered > 0) {
+      // 全部物品都标记为不入库 → 视为 100% 处理完毕
+      progress = 100;
+    } else {
+      progress = 0;
+    }
+    if (progress > 100) progress = 100;   // 超收时封顶
     var itemsProgress = totalItems > 0 ? Math.round(completedItems / totalItems * 100) : 0;
-    poStats[po.id] = { totalItems: totalItems, totalOrdered: totalOrdered, totalReceived: totalReceived, completedItems: completedItems, skippedItems: skippedItems, progress: progress, itemsProgress: itemsProgress };
+    poStats[po.id] = {
+      totalItems: totalItems,
+      totalOrdered: totalOrdered,
+      totalReceived: totalReceived,
+      completedItems: completedItems,
+      skippedItems: skippedItems,
+      skippedOrderedQty: skippedOrderedQty,
+      effectiveOrdered: effectiveOrdered,
+      progress: progress,
+      itemsProgress: itemsProgress
+    };
   });
 
   var statusText = { pending_stockin: '待入库', partially_stockin: '部分入库', stockin_completed: '已完成' };
   var statusClass = { pending_stockin: 'warning', partially_stockin: 'accent', stockin_completed: 'success' };
 
   container.innerHTML = filtered.map(function(po) {
-    var stats = poStats[po.id] || { totalItems: 0, totalOrdered: 0, totalReceived: 0, completedItems: 0, progress: 0, itemsProgress: 0 };
+    var stats = poStats[po.id] || { totalItems: 0, totalOrdered: 0, totalReceived: 0, completedItems: 0, skippedItems: 0, skippedOrderedQty: 0, progress: 0, itemsProgress: 0 };
     // 关键修复：根据实际入库进度重新计算显示状态，而非盲目使用数据库中的 po.status
     // 数据库 status 可能因为 parseFloat/parseInt 截断问题被错误标记为已完成
     var effectiveStatus;
@@ -485,9 +513,9 @@ function renderStockInBoard() {
       '</div>' +
       '<div class="stockin-card-footer">' +
         '<span class="stockin-card-stat">' + stats.completedItems + '/' + stats.totalItems + ' 项</span>' +
-        // v5.70：展示跳过数量 + 提供「查看/恢复」入口
+        // v5.70：展示跳过数量 + 提供「查看/恢复」入口；v5.72 补上跳过的件数
         (stats.skippedItems > 0
-          ? '<span class="stockin-card-skipped" title="其中 ' + stats.skippedItems + ' 项已标记为不入库" style="color:var(--text-muted);font-size:11px;">已跳过 ' + stats.skippedItems + ' · <a href="javascript:void(0);" onclick="event.stopPropagation();showSkippedItemsForPO(' + po.id + ')" style="color:var(--accent);text-decoration:underline;">查看/恢复</a></span>'
+          ? '<span class="stockin-card-skipped" title="其中 ' + stats.skippedItems + ' 项 / ' + stats.skippedOrderedQty + ' 件已标记为不入库，不计入进度分母" style="color:var(--text-muted);font-size:11px;">已跳过 ' + stats.skippedItems + ' 项 (' + stats.skippedOrderedQty + ') · <a href="javascript:void(0);" onclick="event.stopPropagation();showSkippedItemsForPO(' + po.id + ')" style="color:var(--accent);text-decoration:underline;">查看/恢复</a></span>'
           : '') +
         (effectiveStatus !== 'stockin_completed' ? '<span class="stockin-card-action">' + (stats.completedItems > 0 ? '继续入库 →' : '开始入库 →') + '</span>' : '<span class="stockin-card-done">✓ 已完成</span>') +
         (canLock ? (po.is_locked
