@@ -378,6 +378,11 @@ async function refreshData(dataType) {
         }
         break;
       }
+      case 'inventoryAdjustments': {
+        const { data } = await sb.from('inventory_adjustments').select('*').order('created_at', { ascending: false }).limit(500);
+        if (data) _appCache.inventoryAdjustments = data;
+        break;
+      }
       case 'nonPurchaseStockIns': {
         const data = await SupaDB.getNonPurchaseStockIns({});
         if (data) _appCache.nonPurchaseStockIns = data;
@@ -413,7 +418,9 @@ function waitForSupabaseSync() {
 var MODULE_TABLE_PLAN = {
   'stock-in': ['nonPurchaseStockIns', 'lossRecords', 'stockInRecords', 'tourNames'],
   'reports': ['lossRecords', 'stockOutRecords', 'requisitions', 'tourNames'],
-  'requisition': ['requisitions', 'tourNames']
+  'requisition': ['requisitions', 'tourNames'],
+  // v5.73 出入库明细矩阵：六张口径表全量覆盖（库存/入库/出库/非采购/报损/调整）
+  'monthly-summary': ['inventory', 'stockInRecords', 'stockOutRecords', 'nonPurchaseStockIns', 'lossRecords', 'inventoryAdjustments']
 };
 
 // 增量同步指定模块的数据（写入后即时刷新，避免依赖整页轮询）
