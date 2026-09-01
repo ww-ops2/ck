@@ -1605,8 +1605,9 @@ function editItem(itemId) {
 }
 
 /**
- * 动态注入月度汇总模块（导航项 + 页面面板）
+ * 动态注入「出入库明细」模块（导航项 + 页面面板）
  * 解决 file:// 协议下 HTML 页面被浏览器缓存的问题
+ * v5.73：由「月度汇总」改造为月份矩阵 — 删三图表，加月份开关 + 动态表头
  */
 function _injectMonthlySummaryModule() {
   // 1. 注入导航项（如果不存在）
@@ -1616,7 +1617,7 @@ function _injectMonthlySummaryModule() {
       const navItem = document.createElement('div');
       navItem.className = 'nav-item';
       navItem.dataset.module = 'monthly-summary';
-      navItem.innerHTML = '<span class="icon">📊</span><span class="text">月度汇总</span>';
+      navItem.innerHTML = '<span class="icon">📊</span><span class="text">出入库明细</span>';
       reportsNav.parentElement.insertBefore(navItem, reportsNav);
       // 绑定点击事件
       navItem.addEventListener('click', () => {
@@ -1636,23 +1637,14 @@ function _injectMonthlySummaryModule() {
       pane.innerHTML = `
         <div class="panel" style="margin-bottom:16px;">
           <div class="ms-filter-bar">
+            <div class="ms-month-btns" id="ms-month-btns"></div>
             <div class="ms-quick-btns">
-              <button class="btn btn-sm" id="ms-btn-this-month">本月</button>
-              <button class="btn btn-sm" id="ms-btn-last-month">上月</button>
-              <button class="btn btn-sm" id="ms-btn-this-quarter">本季度</button>
-              <button class="btn btn-sm" id="ms-btn-this-year">本年度</button>
-            </div>
-            <div class="ms-date-range">
-              <input type="date" id="ms-date-start" class="ms-date-input">
-              <span style="color:var(--text-muted);">~</span>
-              <input type="date" id="ms-date-end" class="ms-date-input">
-            </div>
-            <div class="ms-month-select">
-              <label style="font-size:13px;color:var(--text-secondary);">月份</label>
-              <input type="month" id="ms-month-picker" class="ms-date-input">
+              <button class="btn btn-sm" id="ms-btn-all-months">全选</button>
+              <button class="btn btn-sm" id="ms-btn-latest-month">仅最新</button>
             </div>
             <span id="ms-range-label" style="font-size:13px;color:var(--text-muted);margin-left:auto;"></span>
           </div>
+          <div class="ms-caliber-note">口径：期初 = 最早选中月月初 · 期末 = 最晚选中月月末 · 其他变动 = 非采购入库（退库/盘盈）+ 手工调整 − 异常报损 · 恒等式：期初 + 入库 − 出库 + 其他变动 = 期末</div>
         </div>
         <div class="ms-kpi-grid">
           <div class="kpi-card">
@@ -1660,56 +1652,30 @@ function _injectMonthlySummaryModule() {
             <div class="kpi-value" id="ms-kpi-begin-items">0</div>
             <div class="kpi-change">种 / <span id="ms-kpi-begin-stock">0</span> 件</div>
           </div>
-          <div class="kpi-card" style="border-left:3px solid var(--success);">
+          <div class="kpi-card" style="border-left:3px solid #e7000b;">
             <div class="kpi-label">本期入库</div>
-            <div class="kpi-value income" id="ms-kpi-in-qty">0</div>
+            <div class="kpi-value" id="ms-kpi-in-qty" style="color:#e7000b;">0</div>
             <div class="kpi-change"><span id="ms-kpi-in-count">0</span> 笔</div>
           </div>
-          <div class="kpi-card" style="border-left:3px solid var(--warning);">
+          <div class="kpi-card" style="border-left:3px solid #16a34a;">
             <div class="kpi-label">本期出库</div>
-            <div class="kpi-value cost" id="ms-kpi-out-qty">0</div>
+            <div class="kpi-value" id="ms-kpi-out-qty" style="color:#16a34a;">0</div>
             <div class="kpi-change"><span id="ms-kpi-out-count">0</span> 笔</div>
+          </div>
+          <div class="kpi-card" style="border-left:3px solid var(--accent);">
+            <div class="kpi-label">其他变动</div>
+            <div class="kpi-value" id="ms-kpi-other-qty" style="color:var(--accent);">0</div>
+            <div class="kpi-change">净额 / 件</div>
           </div>
           <div class="kpi-card">
             <div class="kpi-label">期末库存</div>
             <div class="kpi-value" id="ms-kpi-end-items">0</div>
             <div class="kpi-change">种 / <span id="ms-kpi-end-stock">0</span> 件</div>
           </div>
-          <div class="kpi-card" style="border-left:3px solid var(--accent);">
-            <div class="kpi-label">库存周转率</div>
-            <div class="kpi-value" id="ms-kpi-turnover" style="color:var(--accent);">0%</div>
-            <div class="kpi-change">出库/平均库存</div>
-          </div>
           <div class="kpi-card" style="border-left:3px solid var(--danger);">
             <div class="kpi-label">低库存预警</div>
             <div class="kpi-value danger" id="ms-kpi-low-stock">0</div>
             <div class="kpi-change">项</div>
-          </div>
-        </div>
-        <div class="grid-2" style="margin-top:16px;">
-          <div class="panel">
-            <div class="panel-header">
-              <div class="panel-title"><span class="dot" style="background:var(--accent)"></span>出入库趋势</div>
-            </div>
-            <div class="chart-wrap" style="min-height:260px;">
-              <canvas id="ms-inout-chart"></canvas>
-            </div>
-          </div>
-          <div class="panel">
-            <div class="panel-header">
-              <div class="panel-title"><span class="dot" style="background:var(--success)"></span>品类出库占比</div>
-            </div>
-            <div class="chart-wrap" style="min-height:260px;">
-              <canvas id="ms-category-chart"></canvas>
-            </div>
-          </div>
-        </div>
-        <div class="panel" style="margin-top:16px;">
-          <div class="panel-header">
-            <div class="panel-title"><span class="dot" style="background:var(--warning)"></span>近6月出库环比</div>
-          </div>
-          <div class="chart-wrap" style="min-height:220px;max-height:280px;">
-            <canvas id="ms-trend-chart"></canvas>
           </div>
         </div>
         <div class="panel" style="margin-top:16px;">
@@ -1722,21 +1688,9 @@ function _injectMonthlySummaryModule() {
           </div>
           <div class="table-scroll">
             <table class="data-table" id="ms-detail-table">
-              <thead>
-                <tr>
-                  <th>物品编号</th>
-                  <th>物品名称</th>
-                  <th>品牌/型号</th>
-                  <th>期初库存</th>
-                  <th>本期入库</th>
-                  <th>本期出库</th>
-                  <th>期末库存</th>
-                  <th>单位</th>
-                  <th>变动率</th>
-                </tr>
-              </thead>
+              <thead id="ms-detail-thead"></thead>
               <tbody id="ms-detail-tbody">
-                <tr><td colspan="9" class="empty-state">请选择时间范围</td></tr>
+                <tr><td colspan="9" class="empty-state">加载中…</td></tr>
               </tbody>
             </table>
           </div>
