@@ -229,6 +229,9 @@ function buildInboxItems() {
   _siData.inboxItems = [];
   _siData.purchaseOrders.forEach(function(po) {
     (po.items || []).forEach(function(item) {
+      // v5.70：跳过被标记为「不入库」的明细行（库存收件箱不再列出，避免干扰）
+      if (item.is_skipped) return;
+
       var key = po.id + '_' + (item.code || item.name);
       var received = _siData.receivedMap[key] || 0;
       var ordered = item.quantity || 0;
@@ -250,6 +253,7 @@ function buildInboxItems() {
         price: item.price || 0,
         amount: (item.amount || item.quantity * item.price || 0),
         category: item.category || '',
+        poItemId: item.id,   // v5.70：用于"不入库"标记
         // 用于传递到 confirm 的数据
         _originalItem: item
       });
@@ -426,7 +430,10 @@ function renderStockInBoard() {
     var totalOrdered = (po.items || []).reduce(function(s, item) { return s + (item.quantity || 0); }, 0);
     var totalReceived = 0;
     var completedItems = 0;
+    var skippedItems = 0;
     (po.items || []).forEach(function(item) {
+      // v5.70：被标记「不入库」的明细行视为已完成，不计入待处理项
+      if (item.is_skipped) { skippedItems++; completedItems++; return; }
       var key = po.id + '_' + (item.code || item.name);
       var received = _siData.receivedMap[key] || 0;
       totalReceived += received;
@@ -434,7 +441,7 @@ function renderStockInBoard() {
     });
     var progress = totalOrdered > 0 ? Math.round(totalReceived / totalOrdered * 100) : 0;
     var itemsProgress = totalItems > 0 ? Math.round(completedItems / totalItems * 100) : 0;
-    poStats[po.id] = { totalItems: totalItems, totalOrdered: totalOrdered, totalReceived: totalReceived, completedItems: completedItems, progress: progress, itemsProgress: itemsProgress };
+    poStats[po.id] = { totalItems: totalItems, totalOrdered: totalOrdered, totalReceived: totalReceived, completedItems: completedItems, skippedItems: skippedItems, progress: progress, itemsProgress: itemsProgress };
   });
 
   var statusText = { pending_stockin: '待入库', partially_stockin: '部分入库', stockin_completed: '已完成' };
@@ -476,6 +483,10 @@ function renderStockInBoard() {
       '</div>' +
       '<div class="stockin-card-footer">' +
         '<span class="stockin-card-stat">' + stats.completedItems + '/' + stats.totalItems + ' 项</span>' +
+        // v5.70：展示跳过数量 + 提供「查看/恢复」入口
+        (stats.skippedItems > 0
+          ? '<span class="stockin-card-skipped" title="其中 ' + stats.skippedItems + ' 项已标记为不入库" style="color:var(--text-muted);font-size:11px;">已跳过 ' + stats.skippedItems + ' · <a href="javascript:void(0);" onclick="event.stopPropagation();showSkippedItemsForPO(' + po.id + ')" style="color:var(--accent);text-decoration:underline;">查看/恢复</a></span>'
+          : '') +
         (effectiveStatus !== 'stockin_completed' ? '<span class="stockin-card-action">' + (stats.completedItems > 0 ? '继续入库 →' : '开始入库 →') + '</span>' : '<span class="stockin-card-done">✓ 已完成</span>') +
         (canLock ? (po.is_locked
           ? '<button class="stockin-lock-btn stockin-unlock-btn" onclick="event.stopPropagation();togglePurchaseOrderLock(' + po.id + ', false)">🔓 解锁</button>'
@@ -533,6 +544,113 @@ function selectStockInPO(poId) {
   });
   // 刷新收件箱
   renderStockInInbox();
+}
+
+/**
+ * 查看/恢复 指定 PO 的「已跳过」明细行（v5.70）
+ * 用 showCustomModal（复用 confirm 弹窗的样式）显示列表，每行带「恢复入库」按钮。
+ */
+function showSkippedItemsForPO(poId) {
+  var po = (_appCache && _appCache.purchaseOrders || []).find(function(p) { return String(p.id) === String(poId); });
+  if (!po) {
+    if (typeof showToast === 'function') showToast('未找到采购单', 'error');
+    return;
+  }
+  var skipped = (po.items || []).filter(function(it) { return it.is_skipped; });
+  if (skipped.length === 0) {
+    if (typeof showToast === 'function') showToast('该采购单没有已跳过的明细', 'info');
+    return;
+  }
+
+  // 复用 showConfirm 的样式逻辑，自己拼一个 overlay
+  var overlay = document.createElement('div');
+  overlay.id = 'skipped-items-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:10000;display:flex;align-items:center;justify-content:center;';
+
+  var box = document.createElement('div');
+  box.style.cssText = 'background:var(--bg-card,#fff);border-radius:12px;padding:0;max-width:640px;width:92%;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.18);';
+
+  // 头部
+  var header = document.createElement('div');
+  header.style.cssText = 'padding:18px 24px 12px;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between;align-items:center;';
+  header.innerHTML = '<div style="font-size:16px;font-weight:600;">采购单 ' + po.code + ' · 已跳过明细（' + skipped.length + '）</div>'
+    + '<button id="skipped-items-close" type="button" style="border:none;background:transparent;font-size:22px;cursor:pointer;color:var(--text-muted);">×</button>';
+  box.appendChild(header);
+
+  // 列表
+  var body = document.createElement('div');
+  body.style.cssText = 'padding:8px 16px;overflow-y:auto;flex:1;';
+  body.innerHTML = skipped.map(function(it) {
+    return '<div data-po-item-id="' + it.id + '" style="display:flex;justify-content:space-between;align-items:center;padding:10px 8px;border-bottom:1px solid var(--border-light);">'
+      + '<div style="flex:1;min-width:0;">'
+        + '<div style="font-weight:600;font-size:13px;">' + _escHtml(it.name) + '</div>'
+        + '<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">' + (it.code || '无编码') + ' · ' + (it.brand || '-') + ' / ' + (it.model || '-') + ' · 采购 ' + (it.quantity || 0) + ' ' + (it.unit || '') + '</div>'
+      + '</div>'
+      + '<button class="btn btn-sm restore-skip-btn" data-po-item-id="' + it.id + '" data-po-item-name="' + _escAttr(it.name) + '" type="button" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">恢复入库</button>'
+    + '</div>';
+  }).join('');
+  box.appendChild(body);
+
+  // 底部
+  var footer = document.createElement('div');
+  footer.style.cssText = 'padding:12px 24px;border-top:1px solid var(--border-light);text-align:right;';
+  footer.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">点击「恢复入库」后该明细行重新出现在收件箱</span>';
+  box.appendChild(footer);
+
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  // 关闭
+  function closeOverlay() { overlay.remove(); }
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) closeOverlay(); });
+  document.getElementById('skipped-items-close').addEventListener('click', closeOverlay);
+
+  // 绑定恢复按钮
+  body.querySelectorAll('.restore-skip-btn').forEach(function(btn) {
+    btn.addEventListener('click', async function() {
+      var itemId = btn.getAttribute('data-po-item-id');
+      var itemName = btn.getAttribute('data-po-item-name');
+      btn.disabled = true;
+      btn.textContent = '恢复中…';
+      try {
+        if (typeof SupaDB === 'undefined' || !SupaDB.setPurchaseOrderItemSkipped) {
+          throw new Error('SupaDB 未就绪');
+        }
+        await SupaDB.setPurchaseOrderItemSkipped(itemId, false);
+        // 本地缓存同步
+        try {
+          (_appCache.purchaseOrders || []).forEach(function(p) {
+            if (String(p.id) !== String(poId)) return;
+            (p.items || []).forEach(function(it) {
+              if (String(it.id) === String(itemId)) it.is_skipped = false;
+            });
+          });
+        } catch (e) {}
+        if (typeof showToast === 'function') showToast('已恢复入库：' + itemName, 'success');
+        // 移除该行
+        var row = body.querySelector('[data-po-item-id="' + itemId + '"]');
+        if (row) row.remove();
+        // 重新加载看板
+        if (typeof loadHybridStockInData === 'function') await loadHybridStockInData();
+        // 如果全部恢复了，关闭弹窗
+        if (body.querySelectorAll('.restore-skip-btn').length === 0) closeOverlay();
+      } catch (e) {
+        console.error(e);
+        if (typeof showToast === 'function') showToast('恢复失败：' + e.message, 'error');
+        btn.disabled = false;
+        btn.textContent = '恢复入库';
+      }
+    });
+  });
+}
+
+function _escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+function _escAttr(s) {
+  return _escHtml(s);
 }
 
 /**
@@ -670,6 +788,9 @@ function renderStockInInbox() {
           '<td class="cell-number">¥' + (item.price || 0).toFixed(2) + '</td>' +
           '<td><span class="status-badge ' + statusCls + '" style="font-size:10px;padding:1px 6px;">' + statusLabel + '</span></td>' +
           '<td><button class="btn btn-sm btn-accent stockin-row-confirm-btn" data-item-index="' + itemIdx + '" onclick="confirmStockInSingle(' + itemIdx + ')">确认入库</button></td>' +
+          // v5.70：增加「不入库」按钮。点击后该明细行从入库收件箱移除，
+          //        PO 状态自动重算。审计日志记录 SKIP_STOCKIN。
+          '<td><button class="btn btn-sm stockin-row-skip-btn" data-item-index="' + itemIdx + '" onclick="markPurchaseItemSkipped(' + itemIdx + ', true)" title="此物品不入库（已删库存/型号错发等）" style="background:transparent;border:1px solid var(--text-muted);color:var(--text-muted);padding:px;">不入库</button></td>' +
         '</tr>';
       });
 
@@ -842,6 +963,94 @@ function confirmStockInSingle(itemIndex) {
 
   // 直接打开确认弹窗
   openStockInConfirmModal();
+}
+
+/**
+ * 标记 / 恢复 采购单明细行「不入库」
+ * @param {number} itemIndex  _siData.inboxItems 索引
+ * @param {boolean} skipped   true=不入库，false=恢复入库
+ *
+ * 用法：
+ *   1) 用户在入库收件箱某行点「不入库」→ 弹二次确认 → 调 SupaDB.setPurchaseOrderItemSkipped
+ *   2) 审计日志 SKIP_STOCKIN / RESTORE_STOCKIN
+ *   3) 本地缓存就地更新 _appCache.purchaseOrders，避免全量刷新；再调用 loadHybridStockInData 刷新看板
+ *   4) PO 状态由 setPurchaseOrderItemSkipped 内部根据「是否有未处理明细」自动重算
+ */
+async function markPurchaseItemSkipped(itemIndex, skipped) {
+  var item = _siData.inboxItems[itemIndex];
+  if (!item || !item.poItemId) {
+    if (typeof showToast === 'function') showToast('该物品无法标记（缺少明细 id）', 'error');
+    return;
+  }
+
+  // 权限校验：仓库管理员 + 采购员可以标记（领用场景类似）
+  var canSkip = (typeof hasPermission === 'function') && (
+    hasPermission('stockin.confirm') ||
+    hasPermission('all') ||
+    (typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'admin')
+  );
+  if (!canSkip) {
+    if (typeof showToast === 'function') showToast('您没有标记不入库的权限', 'warning');
+    return;
+  }
+
+  var verb = skipped ? '标记为不入库' : '恢复为可入库';
+  var msg = '确定要将「' + item.itemName + '」' + verb + '吗？\n'
+    + (skipped
+        ? '此该采购明细不再出现在入库收件箱中，会记入审计日志。可在历史中点「恢复入库」撤销。'
+        : '该明细将重新出现在入库收件箱中。');
+
+  if (typeof showConfirm !== 'function') {
+    if (!confirm(msg)) return;
+    return _executeSkip(item, itemIndex, skipped);
+  }
+  showConfirm(msg, function() { _executeSkip(item, itemIndex, skipped); }, {
+    danger: skipped,
+    icon: skipped ? '🚫' : '↩️',
+    confirmText: skipped ? '确认不入库' : '确认恢复'
+  });
+}
+
+async function _executeSkip(item, itemIndex, skipped) {
+  // 找对应按钮以显示 loading
+  var btn = document.querySelector('.stockin-row-skip-btn[data-item-index="' + itemIndex + '"]');
+  if (btn && typeof showButtonLoading === 'function') showButtonLoading(btn, skipped ? '标记中…' : '恢复中…');
+
+  try {
+    if (typeof SupaDB === 'undefined' || !SupaDB.setPurchaseOrderItemSkipped) {
+      throw new Error('SupaDB 未就绪，请稍后再试');
+    }
+
+    var res = await SupaDB.setPurchaseOrderItemSkipped(item.poItemId, skipped);
+
+    // 同步更新本地缓存 _appCache.purchaseOrders（避免全量拉取）
+    try {
+      if (typeof _appCache !== 'undefined' && _appCache.purchaseOrders) {
+        _appCache.purchaseOrders.forEach(function(po) {
+          if (po.id !== item.poId) return;
+          (po.items || []).forEach(function(it) {
+            if (String(it.id) === String(item.poItemId)) it.is_skipped = !!skipped;
+          });
+          // 同步 PO status（setPurchaseOrderItemSkipped 已返回 finalStatus）
+        });
+      }
+    } catch (e) { console.warn('[StockIn] 更新本地缓存失败（不影响云端）:', e.message); }
+
+    if (typeof showToast === 'function') {
+      showToast(skipped ? '已标记为不入库：' + item.itemName : '已恢复入库：' + item.itemName, 'success');
+    }
+
+    // 重新加载看板与收件箱（轻量本地刷新）
+    if (typeof loadHybridStockInData === 'function') {
+      await loadHybridStockInData();
+    }
+  } catch (e) {
+    console.error('[StockIn] 标记不入库失败:', e);
+    if (typeof showToast === 'function') showToast('操作失败：' + e.message, 'error');
+    else alert('操作失败：' + e.message);
+  } finally {
+    if (btn && typeof hideButtonLoading === 'function') hideButtonLoading(btn);
+  }
 }
 
 /**
