@@ -83,6 +83,8 @@
         const code = form.elements['code'].value.trim() || null;
         const category = form.elements['category'].value || '未分类';
         const unit = form.elements['unit'].value || '';
+        const brand = (form.elements['brand']?.value || '').trim();
+        const model = (form.elements['model']?.value || '').trim();
         const stock = Number(form.elements['stock'].value || 0);
         const safety = Number(form.elements['safety_stock'].value || 0);
         const unitPrice = Number(form.elements['unit_price']?.value || 0);
@@ -90,6 +92,8 @@
         const newItem = {
           code: code,
           name: name,
+          brand: brand,
+          model: model,
           category_name: category,
           unit: unit,
           stock: stock,
