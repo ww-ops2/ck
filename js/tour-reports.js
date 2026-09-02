@@ -364,7 +364,7 @@ function loadReports() {
   // 渲染 D-1：成本排行 + 选中团期明细 + 维度对比分析
   _rptAgg = _rptBuildTourAgg(detailRows, lossRows);
   _rptRankSelIdx = -1;
-  _rptRenderRank();
+  _rptRenderTourBar();
   const firstIdx = _rptAgg.findIndex(a => (a.useCost > 0 || a.lossAmt > 0));
   if (firstIdx >= 0) _rptSelectTour(firstIdx);
   else _rptRenderAnalysis();
@@ -987,8 +987,8 @@ function _rptBuildTourAgg(detailRows, lossRows) {
   });
 }
 
-function _rptRenderRank() {
-  const el = document.getElementById('rpt-rank-bars');
+function _rptRenderTourBar() {
+  const el = document.getElementById('rpt-tour-bar');
   if (!el) return;
   if (!_rptAgg.length) {
     el.innerHTML = '<div class="rpt-rank-empty">本月暂无团期使用 / 报损数据</div>';
@@ -999,30 +999,27 @@ function _rptRenderRank() {
   const isAdmin = (typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'admin');
   el.innerHTML = sorted.map(a => {
     const idx = _rptAgg.indexOf(a);
-    const rk = sorted.indexOf(a) + 1;
     const totPct = maxNet ? Math.round(a.net / maxNet * 100) : 0;
     const uPct = a.net ? Math.round(a.useCost / a.net * 100) : 0;
-    const active = idx === _rptRankSelIdx ? 'rpt-rank-active' : '';
+    const active = idx === _rptRankSelIdx ? 'rpt-tour-active' : '';
     const delBtn = (isAdmin && a.masterId && !a.associated)
-      ? '<button class="rpt-rank-del" data-id="' + a.masterId + '" data-name="' + _rptEscapeHtml(a.name) + '" title="删除团期名称">删除</button>'
+      ? '<button class="rpt-tour-del" data-id="' + a.masterId + '" data-name="' + _rptEscapeHtml(a.name) + '" title="删除团期名称">删除</button>'
       : '';
-    return '<div class="rpt-rank-row ' + active + '" data-idx="' + idx + '">'
-      + '<span class="rpt-rank-no">' + rk + '</span>'
-      + '<div class="rpt-rank-mid">'
-      + '<div class="rpt-rank-name">' + _rptEscapeHtml(a.name) + delBtn + '</div>'
-      + '<div class="rpt-mini"><i style="width:' + (totPct * uPct / 100) + '%;background:var(--accent)"></i><i style="width:' + (totPct * (100 - uPct) / 100) + '%;background:var(--danger)"></i></div>'
-      + '</div>'
-      + '<span class="rpt-rank-val money">¥' + Math.round(a.net).toLocaleString('zh-CN') + '</span>'
+    return '<div class="rpt-tour-card ' + active + '" data-idx="' + idx + '">'
+      + '<div class="rpt-tour-name">' + _rptEscapeHtml(a.name) + '</div>'
+      + '<div class="rpt-tour-cost money">¥' + Math.round(a.net).toLocaleString('zh-CN') + '</div>'
+      + (delBtn ? delBtn : '')
+      + '<div class="rpt-tour-mini"><i style="width:' + (totPct * uPct / 100) + '%;background:var(--accent)"></i><i style="width:' + (totPct * (100 - uPct) / 100) + '%;background:var(--danger)"></i></div>'
       + '</div>';
   }).join('');
 
-  el.querySelectorAll('.rpt-rank-row').forEach(d => {
+  el.querySelectorAll('.rpt-tour-card').forEach(d => {
     d.addEventListener('click', e => {
-      if (e.target.closest('.rpt-rank-del')) return;
+      if (e.target.closest('.rpt-tour-del')) return;
       _rptSelectTour(+d.dataset.idx);
     });
   });
-  el.querySelectorAll('.rpt-rank-del').forEach(b => {
+  el.querySelectorAll('.rpt-tour-del').forEach(b => {
     b.addEventListener('click', e => {
       e.stopPropagation();
       _rptDeleteTourName(Number(b.dataset.id), b.dataset.name, b);
@@ -1035,7 +1032,7 @@ function _rptSelectTour(idx) {
   _rptRankSelIdx = idx;
   const a = _rptAgg[idx];
   _rptSelectedTourName = a.name;
-  document.querySelectorAll('#rpt-rank-bars .rpt-rank-row').forEach(d => d.classList.toggle('rpt-rank-active', (+d.dataset.idx) === idx));
+  document.querySelectorAll('#rpt-tour-bar .rpt-tour-card').forEach(d => d.classList.toggle('rpt-tour-active', (+d.dataset.idx) === idx));
   const nameEl = document.getElementById('report-detail-tour-name');
   if (nameEl) nameEl.textContent = a.name;
   _rptRenderDetailMonthFilter(a.name);
