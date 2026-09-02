@@ -1635,17 +1635,6 @@ function _injectMonthlySummaryModule() {
       pane.id = 'module-monthly-summary';
       pane.className = 'module-pane';
       pane.innerHTML = `
-        <div class="panel" style="margin-bottom:16px;">
-          <div class="ms-filter-bar">
-            <div class="ms-month-btns" id="ms-month-btns"></div>
-            <div class="ms-quick-btns">
-              <button class="btn btn-sm" id="ms-btn-all-months">全选</button>
-              <button class="btn btn-sm" id="ms-btn-latest-month">仅最新</button>
-            </div>
-            <span id="ms-range-label" style="font-size:13px;color:var(--text-muted);margin-left:auto;"></span>
-          </div>
-          <div class="ms-caliber-note">口径：期初 = 最早选中月月初 · 期末 = 最晚选中月月末 · 其他变动 = 非采购入库（退库/盘盈）+ 手工调整 − 异常报损 · 恒等式：期初 + 入库 − 出库 + 其他变动 = 期末</div>
-        </div>
         <div class="ms-kpi-grid">
           <div class="kpi-card">
             <div class="kpi-label">期初库存</div>
@@ -1679,18 +1668,27 @@ function _injectMonthlySummaryModule() {
           </div>
         </div>
         <div class="panel" style="margin-top:16px;">
-          <div class="panel-header">
-            <div class="panel-title">出入库明细</div>
-            <div class="panel-actions">
-              <select id="ms-filter-category"><option value="">全部分类</option></select>
-              <button class="btn btn-sm" id="ms-export-btn">📥 导出Excel</button>
+          <div class="panel-header" style="margin-bottom:10px;flex-wrap:wrap;gap:10px;">
+            <div class="panel-title" style="font-weight:600;">出入库明细</div>
+            <div class="ms-month-btns" id="ms-month-btns"></div>
+            <div class="ms-mx-quick">
+              <button class="btn btn-sm" id="ms-btn-all-months">全选</button>
+              <button class="btn btn-sm" id="ms-btn-latest-month">仅最新</button>
             </div>
+            <div class="ms-mx-spacer"></div>
+            <select id="ms-filter-category"><option value="">全部分类</option></select>
+            <button class="btn btn-sm" id="ms-export-btn">📥 导出Excel</button>
           </div>
-          <div class="table-scroll">
-            <table class="data-table" id="ms-detail-table">
+          <div class="ms-caliber-row">
+            <span>口径：<b>期初 = 最早选中月月初</b> · <b>期末 = 最晚选中月月末</b> · 其他变动 = 非采购入库 + 调整 − 报损 · 恒等式：期初 + 入库 − 出库 + 其他变动 = 期末</span>
+            <span id="ms-range-label"></span>
+          </div>
+          <div class="ms-table-wrap">
+            <table class="data-table ms-mx" id="ms-detail-table">
+              <colgroup id="ms-detail-colgroup"></colgroup>
               <thead id="ms-detail-thead"></thead>
               <tbody id="ms-detail-tbody">
-                <tr><td colspan="9" class="empty-state">加载中…</td></tr>
+                <tr><td class="empty-state">加载中…</td></tr>
               </tbody>
             </table>
           </div>
