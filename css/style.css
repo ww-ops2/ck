@@ -2520,7 +2520,170 @@ input[type="number"]::-webkit-inner-spin-button {
 #ms-detail-tbody td.ms-m-other { color: #7c3aed; cursor: help; }
 #ms-detail-tbody td.ms-zero { color: var(--text-muted); }
 
+/* ===== v5.75 出入库明细：月份矩阵（双向冻结 + 明暗底色 + 期末琥珀） ===== */
+
+/* 1. 双向滚动容器 */
+.ms-table-wrap {
+  max-height: 460px;
+  overflow: auto;
+  border-top: 1px solid var(--border-light);
+  background: #fff;
+}
+.ms-table-wrap::-webkit-scrollbar { height: 8px; width: 8px; }
+.ms-table-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+/* 2. 矩阵表：fixed 布局，列宽由 colgroup 控制 */
+table.ms-mx {
+  width: auto;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-size: 12.5px;
+}
+table.ms-mx th,
+table.ms-mx td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-light);
+  border-right: 1px solid rgba(15, 23, 42, 0.045);
+  white-space: nowrap;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+table.ms-mx th {
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+/* 3. 双层表头 sticky（第一层 top:0，第二层 top:30px） */
+table.ms-mx thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #f3f4f6;
+}
+table.ms-mx thead tr.ms-mx-sub th { top: 30px; }
+
+/* 4. 左冻结列：left 值与 colgroup 列宽严格对应（90/130/130/60/75） */
+table.ms-mx .sticky-l {
+  position: sticky;
+  z-index: 2;
+  background: #fff;
+  box-shadow: inset -1px 0 0 var(--border-light);
+}
+table.ms-mx .sticky-l.c-code  { left: 0; }
+table.ms-mx .sticky-l.c-name  { left: 90px; }
+table.ms-mx .sticky-l.c-brand { left: 220px; }
+table.ms-mx .sticky-l.c-unit  { left: 350px; }
+table.ms-mx .sticky-l.c-begin { left: 410px; }
+table.ms-mx .sticky-l.c-cat   { left: 0; }
+table.ms-mx thead th.sticky-l { z-index: 5; background: #f3f4f6; }
+
+/* 5. 右冻结列：期末库存（琥珀底，强调结果列） */
+table.ms-mx .sticky-end {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: #fff9e6;
+  box-shadow: inset 1px 0 0 var(--border-light);
+}
+table.ms-mx thead th.sticky-end { z-index: 5; background: #fdf1d0; }
+
+/* 6. 月份组明暗交替（0/1/2/3 循环） */
+table.ms-mx .shade-0 { background: #ffffff; }
+table.ms-mx .shade-1 { background: #f1f5f9; }
+table.ms-mx .shade-2 { background: #ffffff; }
+table.ms-mx .shade-3 { background: #f1f5f9; }
+/* 表头月份组：浅蓝系明暗 */
+table.ms-mx thead th.mh-0,
+table.ms-mx thead th.mh-2 { background: #dbeafe; color: #1e40af; }
+table.ms-mx thead th.mh-1,
+table.ms-mx thead th.mh-3 { background: #c7d2fe; color: #3730a3; }
+/* 第二层子表头跟随月份明暗 + 入库红/出库绿/其他紫 */
+table.ms-mx thead tr.ms-mx-sub th.shade-0,
+table.ms-mx thead tr.ms-mx-sub th.shade-2 { background: #eff6ff; }
+table.ms-mx thead tr.ms-mx-sub th.shade-1,
+table.ms-mx thead tr.ms-mx-sub th.shade-3 { background: #e0e7ff; }
+table.ms-mx thead tr.ms-mx-sub th.c-in { color: #e7000b; }
+table.ms-mx thead tr.ms-mx-sub th.c-out { color: #16a34a; }
+table.ms-mx thead tr.ms-mx-sub th.c-other { color: #7c3aed; }
+
+/* 7. 数据单元格配色 */
+table.ms-mx tbody td.ms-m-in { color: #e7000b; font-weight: 600; }
+table.ms-mx tbody td.ms-m-out { color: #16a34a; font-weight: 600; }
+table.ms-mx tbody td.ms-m-other { color: #7c3aed; font-weight: 600; cursor: help; }
+table.ms-mx tbody td.ms-zero { color: var(--text-muted); font-weight: 400; }
+table.ms-mx tbody td.ms-end-val { font-weight: 700; color: #b45309; font-size: 13px; }
+table.ms-mx tbody td.ms-code {
+  text-align: left;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+table.ms-mx tbody td.ms-name { text-align: left; font-weight: 600; color: var(--text-primary); }
+table.ms-mx tbody td.ms-brand { text-align: left; color: var(--text-secondary); }
+
+/* 8. 行 hover（三类底色分别加深） */
+table.ms-mx tbody tr.ms-item-row:hover td.shade-0,
+table.ms-mx tbody tr.ms-item-row:hover td.shade-2 { background: #f0f7ff; }
+table.ms-mx tbody tr.ms-item-row:hover td.shade-1,
+table.ms-mx tbody tr.ms-item-row:hover td.shade-3 { background: #e3eefb; }
+table.ms-mx tbody tr.ms-item-row:hover td.sticky-l { background: #f0f7ff; }
+table.ms-mx tbody tr.ms-item-row:hover td.sticky-end { background: #ffedb3; }
+
+/* 9. 分类分组行 / 合计行 */
+table.ms-mx tbody tr.ms-cat-row td {
+  background: #f8fafc;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: center;
+}
+/* 分类/合计行的冻结列（名称）左对齐，其余小计单元格居中 */
+table.ms-mx tbody tr.ms-cat-row td.sticky-l.c-cat { background: #f1f5f9; z-index: 2; text-align: left; }
+table.ms-mx tbody tr.ms-cat-row td.sticky-end { background: #fdf1d0; }
+table.ms-mx tbody tr.ms-total-row td {
+  background: #eef2f7;
+  font-weight: 700;
+  text-align: center;
+  border-top: 2px solid var(--accent);
+}
+table.ms-mx tbody tr.ms-total-row td.sticky-l.c-cat { left: 0; z-index: 2; text-align: left; }
+table.ms-mx tbody tr.ms-total-row td.sticky-end { background: #fdf1d0; }
+
+/* 10. 标题行：月份开关 + 快捷按钮同排 */
+.ms-mx-quick { display: flex; gap: 6px; align-items: center; }
+.ms-mx-spacer { flex: 1; }
+
+/* 11. 口径说明 + 范围标签（一行） */
+.ms-caliber-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: rgba(124, 58, 237, 0.05);
+  border: 1px dashed rgba(124, 58, 237, 0.25);
+  border-radius: 6px;
+  padding: 6px 10px;
+  line-height: 1.6;
+}
+.ms-caliber-row #ms-range-label {
+  margin-left: auto;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--accent);
+}
+
 /* Responsive */
+@media (max-width: 1400px) { .ms-table-wrap { max-height: 400px; } }
+@media (max-width: 1100px) { .ms-table-wrap { max-height: 340px; } }
 @media (max-width: 1200px) {
   .ms-kpi-grid { grid-template-columns: repeat(3, 1fr); }
 }
