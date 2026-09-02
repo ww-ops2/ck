@@ -4410,25 +4410,24 @@ table.ms-mx tbody tr.ms-total-row td.sticky-end { background: #fdf1d0; }
   text-align: center;
 }
 
-/* ===== 团期使用报表 D-1 版：成本排行 + 维度对比分析 ===== */
-.rpt-d1-grid{display:grid;grid-template-columns:1.05fr 0.95fr;gap:22px;align-items:start;}
-@media(max-width:900px){.rpt-d1-grid{grid-template-columns:1fr;}}
-.rpt-rank-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
-.rpt-rank-title{font-weight:700;font-size:13px;}
-.rpt-rank-legend{display:flex;gap:14px;font-size:11px;color:var(--text-muted);margin-bottom:10px;}
-.rpt-legend-item{display:inline-flex;align-items:center;gap:4px;}
-.rpt-legend-item i{width:9px;height:9px;border-radius:2px;display:inline-block;}
-.rpt-rank-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--border-light);border-radius:10px;cursor:pointer;margin-bottom:7px;background:var(--bg-card);transition:border-color .12s,box-shadow .12s;}
-.rpt-rank-row:hover{border-color:var(--accent);}
-.rpt-rank-active{border-color:var(--accent);box-shadow:inset 0 0 0 2px var(--accent-glow);background:var(--accent-glow-strong);}
-.rpt-rank-no{width:22px;height:22px;border-radius:50%;background:var(--bg-elevated);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex:none;color:var(--text-secondary);}
-.rpt-rank-mid{flex:1;min-width:0;}
-.rpt-rank-name{font-size:12px;font-weight:600;margin-bottom:5px;display:flex;align-items:center;gap:6px;}
-.rpt-rank-del{font-size:11px;padding:2px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text-muted);cursor:pointer;margin-left:auto;}
-.rpt-rank-del:hover{border-color:var(--danger);color:var(--danger);}
-.rpt-mini{height:9px;border-radius:5px;overflow:hidden;display:flex;background:var(--bg-elevated);}
-.rpt-mini i{display:block;height:100%;}
-.rpt-rank-val{width:96px;text-align:right;font-weight:700;font-size:12px;flex:none;}
+/* ===== 团期使用报表 D-1v2 版：顶部卡片选择 + 固定明细 + 维度分析 ===== */
+.rpt-tour-bar-wrap{margin-bottom:14px;}
+.rpt-tour-bar-title{font-size:12px;color:var(--text-muted);font-weight:600;margin-bottom:8px;}
+.rpt-tour-bar{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;}
+.rpt-tour-bar::-webkit-scrollbar{height:8px;}
+.rpt-tour-bar::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
+.rpt-tour-bar::-webkit-scrollbar-track{background:var(--bg-elevated);border-radius:4px;}
+.rpt-tour-bar{scrollbar-width:thin;scrollbar-color:var(--border) var(--bg-elevated);}
+.rpt-tour-card{flex:0 0 auto;width:158px;border:1px solid var(--border-light);border-radius:10px;padding:8px 10px;background:var(--bg-card);cursor:pointer;transition:border-color .12s,box-shadow .12s;}
+.rpt-tour-card:hover{border-color:var(--accent);}
+.rpt-tour-active{border-color:var(--accent);box-shadow:inset 0 0 0 2px var(--accent-glow);background:var(--accent-glow-strong);}
+.rpt-tour-name{font-size:12px;font-weight:700;line-height:1.25;max-height:2.5em;overflow:hidden;margin-bottom:3px;}
+.rpt-tour-cost{font-size:14px;font-weight:700;color:var(--accent);}
+.rpt-tour-mini{height:5px;border-radius:3px;overflow:hidden;display:flex;background:var(--bg-elevated);margin-top:6px;}
+.rpt-tour-mini i{display:block;height:100%;}
+.rpt-tour-del{font-size:10px;padding:1px 6px;border:1px solid var(--border);border-radius:5px;background:var(--bg-card);color:var(--text-muted);cursor:pointer;margin-top:6px;}
+.rpt-tour-del:hover{border-color:var(--danger);color:var(--danger);}
+.rpt-detail-area .table-scroll{max-height:calc(100vh - 430px);min-height:220px;}
 .rpt-detail-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
 .panel-title-sm{font-weight:700;font-size:13px;}
 .rpt-ana-desc{color:var(--text-muted);font-size:12px;margin:0 0 14px;}
