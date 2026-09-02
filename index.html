@@ -15,7 +15,7 @@
   //    确保“长时间开着页面”也能自动升级到最新版（收藏夹点开场景同样覆盖）。
   // 3) localStorage 兜底（离线时按上次记录的版本判断）。
   (function() {
-    var APP_VERSION = '5.74';
+    var APP_VERSION = '5.75';
     var reloading = false;
     function forceReload() {
       if (reloading) return;
@@ -50,8 +50,8 @@
     } catch (e) {}
   })();
   </script>
-  <link rel="stylesheet" href="css/style.css?v=5.74">
-  <link rel="stylesheet" href="css/redesign.css?v=5.74">
+  <link rel="stylesheet" href="css/style.css?v=5.75">
+  <link rel="stylesheet" href="css/redesign.css?v=5.75">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
@@ -739,21 +739,9 @@
           </div>
         </div>
 
-        <!-- ===== 出入库明细模块（v5.74，月度汇总改造：月份矩阵） ===== -->
+        <!-- ===== 出入库明细模块（v5.75，月份矩阵：双向冻结 + 明暗底色） ===== -->
         <div id="module-monthly-summary" class="module-pane">
-          <div class="panel" style="margin-bottom:16px;">
-            <div class="ms-filter-bar">
-              <div class="ms-month-btns" id="ms-month-btns"></div>
-              <div class="ms-quick-btns">
-                <button class="btn btn-sm" id="ms-btn-all-months">全选</button>
-                <button class="btn btn-sm" id="ms-btn-latest-month">仅最新</button>
-              </div>
-              <span id="ms-range-label" style="font-size:13px;color:var(--text-muted);margin-left:auto;"></span>
-            </div>
-            <div class="ms-caliber-note">口径：期初 = 最早选中月月初 · 期末 = 最晚选中月月末 · 其他变动 = 非采购入库（退库/盘盈）+ 手工调整 − 异常报损 · 恒等式：期初 + 入库 − 出库 + 其他变动 = 期末</div>
-          </div>
-
-          <!-- KPI 卡片 -->
+          <!-- 1. KPI 卡片（置顶） -->
           <div class="ms-kpi-grid">
             <div class="kpi-card">
               <div class="kpi-label">期初库存</div>
@@ -787,20 +775,29 @@
             </div>
           </div>
 
-          <!-- 月份矩阵明细表 -->
+          <!-- 2. 月份矩阵表格（月份开关合并进标题行） -->
           <div class="panel" style="margin-top:16px;">
-            <div class="panel-header">
-              <div class="panel-title">出入库明细</div>
-              <div class="panel-actions">
-                <select id="ms-filter-category"><option value="">全部分类</option></select>
-                <button class="btn btn-sm" id="ms-export-btn">📥 导出Excel</button>
+            <div class="panel-header" style="margin-bottom:10px;flex-wrap:wrap;gap:10px;">
+              <div class="panel-title" style="font-weight:600;">出入库明细</div>
+              <div class="ms-month-btns" id="ms-month-btns"></div>
+              <div class="ms-mx-quick">
+                <button class="btn btn-sm" id="ms-btn-all-months">全选</button>
+                <button class="btn btn-sm" id="ms-btn-latest-month">仅最新</button>
               </div>
+              <div class="ms-mx-spacer"></div>
+              <select id="ms-filter-category"><option value="">全部分类</option></select>
+              <button class="btn btn-sm" id="ms-export-btn">📥 导出Excel</button>
             </div>
-            <div class="table-scroll">
-              <table class="data-table" id="ms-detail-table">
+            <div class="ms-caliber-row">
+              <span>口径：<b>期初 = 最早选中月月初</b> · <b>期末 = 最晚选中月月末</b> · 其他变动 = 非采购入库 + 调整 − 报损 · 恒等式：期初 + 入库 − 出库 + 其他变动 = 期末</span>
+              <span id="ms-range-label"></span>
+            </div>
+            <div class="ms-table-wrap">
+              <table class="data-table ms-mx" id="ms-detail-table">
+                <colgroup id="ms-detail-colgroup"></colgroup>
                 <thead id="ms-detail-thead"></thead>
                 <tbody id="ms-detail-tbody">
-                  <tr><td colspan="9" class="empty-state">加载中…</td></tr>
+                  <tr><td class="empty-state">加载中…</td></tr>
                 </tbody>
               </table>
             </div>
@@ -1822,24 +1819,24 @@
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="js/supabase-db.js?v=5.74"></script>
-  <script src="js/supabase-sync.js?v=5.74"></script>
-  <script src="js/migrate-data.js?v=5.74"></script>
-  <script src="js/toast.js?v=5.74"></script>
-  <script src="js/login-characters.js?v=5.74"></script>
-  <script src="js/auth-fix.js?v=5.74"></script>
-  <script src="js/navigation.js?v=5.74"></script>
-  <script src="js/purchase.js?v=5.74"></script>
-  <script src="js/stock-in.js?v=5.74"></script>
-  <script src="js/requisition.js?v=5.74"></script>
-  <script src="js/monthly-summary.js?v=5.74"></script>
-  <script src="js/tour-reports.js?v=5.74"></script>
-  <script src="js/business-flow.js?v=5.74"></script>
-  <script src="js/app.js?v=5.74"></script>
-  <script src="js/inventory-hybrid.js?v=5.74"></script>
-  <script src="js/admin-bindings.js?v=5.74"></script>
+  <script src="js/supabase-db.js?v=5.75"></script>
+  <script src="js/supabase-sync.js?v=5.75"></script>
+  <script src="js/migrate-data.js?v=5.75"></script>
+  <script src="js/toast.js?v=5.75"></script>
+  <script src="js/login-characters.js?v=5.75"></script>
+  <script src="js/auth-fix.js?v=5.75"></script>
+  <script src="js/navigation.js?v=5.75"></script>
+  <script src="js/purchase.js?v=5.75"></script>
+  <script src="js/stock-in.js?v=5.75"></script>
+  <script src="js/requisition.js?v=5.75"></script>
+  <script src="js/monthly-summary.js?v=5.75"></script>
+  <script src="js/tour-reports.js?v=5.75"></script>
+  <script src="js/business-flow.js?v=5.75"></script>
+  <script src="js/app.js?v=5.75"></script>
+  <script src="js/inventory-hybrid.js?v=5.75"></script>
+  <script src="js/admin-bindings.js?v=5.75"></script>
 
-  <script src="js/user-admin.js?v=5.74"></script>
+  <script src="js/user-admin.js?v=5.75"></script>
 
   <!-- ===== 模态框：非采购入库（退库回收） ===== -->
   <div id="modal-nonpurchase" class="modal">
