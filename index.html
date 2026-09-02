@@ -15,7 +15,7 @@
   //    确保“长时间开着页面”也能自动升级到最新版（收藏夹点开场景同样覆盖）。
   // 3) localStorage 兜底（离线时按上次记录的版本判断）。
   (function() {
-    var APP_VERSION = '5.77';
+    var APP_VERSION = '5.78';
     var reloading = false;
     function forceReload() {
       if (reloading) return;
@@ -50,8 +50,8 @@
     } catch (e) {}
   })();
   </script>
-  <link rel="stylesheet" href="css/style.css?v=5.77">
-  <link rel="stylesheet" href="css/redesign.css?v=5.77">
+  <link rel="stylesheet" href="css/style.css?v=5.78">
+  <link rel="stylesheet" href="css/redesign.css?v=5.78">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
@@ -830,12 +830,12 @@
             </div>
           </div>
 
-          <!-- 团期列表（上） -->
+          <!-- 成本排行与明细（D-1 主视图：左排行 / 右明细） -->
           <div class="panel" style="margin-bottom:16px;">
             <div class="panel-header">
-              <div class="panel-title">团期列表</div>
+              <div class="panel-title">成本排行与明细</div>
               <div class="panel-actions">
-                <button class="btn btn-sm btn-accent" id="add-tour-btn">+ 新增团期</button>
+                <button class="btn btn-sm btn-accent" id="add-tour-btn">新增团期</button>
               </div>
             </div>
             <div id="add-tour-form" class="tour-add-form" style="display:none;">
@@ -843,46 +843,68 @@
               <button class="btn btn-sm btn-accent" id="add-tour-confirm">保存</button>
               <button class="btn btn-sm" id="add-tour-cancel">取消</button>
             </div>
-            <ul id="report-tour-list" class="tour-list-grid">
-              <li class="tour-empty">加载中…</li>
-            </ul>
+            <div class="rpt-d1-grid">
+              <div class="rpt-rank-col">
+                <div class="rpt-rank-head">
+                  <span class="rpt-rank-title">成本排行（按净成本降序）</span>
+                </div>
+                <div class="rpt-rank-legend">
+                  <span class="rpt-legend-item"><i style="background:var(--accent)"></i>使用成本</span>
+                  <span class="rpt-legend-item"><i style="background:var(--danger)"></i>报损额</span>
+                </div>
+                <div id="rpt-rank-bars"></div>
+              </div>
+              <div class="rpt-detail-col">
+                <div class="rpt-detail-head">
+                  <div class="panel-title-sm">使用与报损明细
+                    <span id="report-detail-tour-name" class="rpt-detail-tour"></span>
+                  </div>
+                  <div class="panel-actions">
+                    <select id="detail-month-filter">
+                      <option value="">当前所选月份</option>
+                    </select>
+                    <button class="btn" id="export-report-btn">导出报表</button>
+                  </div>
+                </div>
+                <div class="table-scroll">
+                  <table class="data-table" id="report-detail-table">
+                    <thead>
+                      <tr>
+                        <th style="width:72px;">类型</th>
+                        <th>团期日期</th>
+                        <th>场景 / 报损原因</th>
+                        <th>物品名称</th>
+                        <th>类别</th>
+                        <th>数量</th>
+                        <th>金额</th>
+                        <th>领用标准</th>
+                        <th>状态</th>
+                      </tr>
+                    </thead>
+                    <tbody id="report-tour-detail-tbody">
+                      <tr><td colspan="9" class="empty-state">请选择左侧团期查看明细</td></tr>
+                    </tbody>
+                    <tfoot id="report-detail-tfoot"></tfoot>
+                  </table>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <!-- 使用与报损明细（下） -->
+          <!-- 维度对比分析（D-1 下方：场景 / 同场景跨团期 / 同物品跨团期） -->
           <div class="panel">
             <div class="panel-header">
-              <div class="panel-title">
-                使用与报损明细
-                <span id="report-detail-tour-name" class="rpt-detail-tour"></span>
-              </div>
-              <div class="panel-actions">
-                <select id="detail-month-filter">
-                  <option value="">当前所选月份</option>
-                </select>
-                <button class="btn" id="export-report-btn">📥 导出报表</button>
-              </div>
+              <div class="panel-title">维度对比分析</div>
             </div>
-            <div class="table-scroll">
-              <table class="data-table" id="report-detail-table">
-                <thead>
-                  <tr>
-                    <th style="width:72px;">类型</th>
-                    <th>团期日期</th>
-                    <th>场景 / 报损原因</th>
-                    <th>物品名称</th>
-                    <th>类别</th>
-                    <th>数量</th>
-                    <th>金额</th>
-                    <th>领用标准</th>
-                    <th>状态</th>
-                  </tr>
-                </thead>
-                <tbody id="report-tour-detail-tbody">
-                  <tr><td colspan="9" class="empty-state">请选择上方团期查看明细</td></tr>
-                </tbody>
-                <tfoot id="report-detail-tfoot"></tfoot>
-              </table>
+            <p class="rpt-ana-desc">沿数据维度切片：一个团期钱花在哪些场景；同一场景下各团期谁超支；同一物品各团期领用是否异常（超均值 30% 标红）。</p>
+            <div class="rpt-seg" id="rpt-ana-seg">
+              <button class="active" data-mode="scene">团期场景分布</button>
+              <button data-mode="scenario">同场景·跨团期</button>
+              <button data-mode="item">同物品·跨团期</button>
             </div>
+            <div id="rpt-ana-ctrl" class="rpt-ana-ctrl"></div>
+            <div id="rpt-ana-chart" class="rpt-ana-chart"></div>
+            <div id="rpt-ana-hint" class="rpt-ana-hint"></div>
           </div>
         </div>
 
@@ -1819,24 +1841,24 @@
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="js/supabase-db.js?v=5.77"></script>
-  <script src="js/supabase-sync.js?v=5.77"></script>
-  <script src="js/migrate-data.js?v=5.77"></script>
-  <script src="js/toast.js?v=5.77"></script>
-  <script src="js/login-characters.js?v=5.77"></script>
-  <script src="js/auth-fix.js?v=5.77"></script>
-  <script src="js/navigation.js?v=5.77"></script>
-  <script src="js/purchase.js?v=5.77"></script>
-  <script src="js/stock-in.js?v=5.77"></script>
-  <script src="js/requisition.js?v=5.77"></script>
-  <script src="js/monthly-summary.js?v=5.77"></script>
-  <script src="js/tour-reports.js?v=5.77"></script>
-  <script src="js/business-flow.js?v=5.77"></script>
-  <script src="js/app.js?v=5.77"></script>
-  <script src="js/inventory-hybrid.js?v=5.77"></script>
-  <script src="js/admin-bindings.js?v=5.77"></script>
+  <script src="js/supabase-db.js?v=5.78"></script>
+  <script src="js/supabase-sync.js?v=5.78"></script>
+  <script src="js/migrate-data.js?v=5.78"></script>
+  <script src="js/toast.js?v=5.78"></script>
+  <script src="js/login-characters.js?v=5.78"></script>
+  <script src="js/auth-fix.js?v=5.78"></script>
+  <script src="js/navigation.js?v=5.78"></script>
+  <script src="js/purchase.js?v=5.78"></script>
+  <script src="js/stock-in.js?v=5.78"></script>
+  <script src="js/requisition.js?v=5.78"></script>
+  <script src="js/monthly-summary.js?v=5.78"></script>
+  <script src="js/tour-reports.js?v=5.78"></script>
+  <script src="js/business-flow.js?v=5.78"></script>
+  <script src="js/app.js?v=5.78"></script>
+  <script src="js/inventory-hybrid.js?v=5.78"></script>
+  <script src="js/admin-bindings.js?v=5.78"></script>
 
-  <script src="js/user-admin.js?v=5.77"></script>
+  <script src="js/user-admin.js?v=5.78"></script>
 
   <!-- ===== 模态框：非采购入库（退库回收） ===== -->
   <div id="modal-nonpurchase" class="modal">
