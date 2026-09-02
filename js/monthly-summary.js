@@ -477,6 +477,15 @@ function _msRenderDetailTable() {
   html += row;
 
   tbody.innerHTML = html;
+
+  // 关键：显式设置表格宽度 = 列宽之和（table-layout:fixed 下必须这样做）
+  // 否则浏览器会把表格锁成容器 100% 并按比例压缩所有列，
+  // 而 .sticky-l 的 left 是硬编码像素（0/90/220/350/410），列一压缩就与 left 错位 → 冻结列重叠。
+  const tbl = document.getElementById('ms-detail-table');
+  if (tbl) {
+    const totalW = W.code + W.name + W.brand + W.unit + W.begin + months.length * 3 * W.month + W.end;
+    tbl.style.width = totalW + 'px';
+  }
 }
 
 /* ================================================================
