@@ -8,6 +8,14 @@
 let _rptFilteredData = []; // 缓存当前筛选结果
 let _rptSelectedTourName = null; // 当前右侧选中的团期名称
 
+// D-1 版：团期级聚合与交互状态
+let _rptAgg = [];           // 团期级成本聚合（排行 + 分析用）
+let _rptRankSelIdx = -1;    // 当前排行选中的索引
+let _rptAnaMode = 'scene';  // 分析模式：scene | scenario | item
+let _rptAnaSc = '';         // 分析②选中的场景
+let _rptAnaItem = '';       // 分析③选中的物品
+let _rptAnaSegBound = false;// 分析分段按钮是否已绑定
+
 /**
  * 根据物品名称查找最近采购单价
  */
@@ -111,6 +119,9 @@ function initTourReports() {
 
   // 团期名称主数据维护（新增）
   _initTourNameManage();
+
+  // D-1 维度对比分析分段按钮（静态元素，仅绑定一次）
+  _rptBindAnaSeg();
 
   // 右侧详情月份筛选
   const detailMonthFilter = document.getElementById('detail-month-filter');
@@ -350,8 +361,13 @@ function loadReports() {
   // 本月报损明细行（物品级）：用于团期卡片统计与明细表混排
   const lossRows = _rptBuildLossRows('', monthInput.value);
 
-  // 渲染团期列表（主数据 ∪ 使用数据 ∪ 报损数据）+ 默认选中第一个
-  _rptRenderTourList(detailRows, lossRows);
+  // 渲染 D-1：成本排行 + 选中团期明细 + 维度对比分析
+  _rptAgg = _rptBuildTourAgg(detailRows, lossRows);
+  _rptRankSelIdx = -1;
+  _rptRenderRank();
+  const firstIdx = _rptAgg.findIndex(a => (a.useCost > 0 || a.lossAmt > 0));
+  if (firstIdx >= 0) _rptSelectTour(firstIdx);
+  else _rptRenderAnalysis();
 }
 
 // ============== 报损财务分析 ==============
@@ -442,7 +458,7 @@ function _rptUpdateKPI(tourCount, totalOut, totalCost, overLimitCount, overLimit
  * @param {string} tourName 团期名称
  * @param {string} month 格式 YYYY-MM，空字符串表示不过滤月份
  */
-function _rptBuildTourDetailRows(tourName, month) {
+function _rptBuildTourDetailRows(tourName, month, scenarioVal) {
   const stockOutRecords = (_appCache && _appCache.stockOutRecords) ? _appCache.stockOutRecords : [];
   const requisitions = (_appCache && _appCache.requisitions) ? _appCache.requisitions : [];
   const priceMap = _rptBuildPriceMap();
@@ -461,6 +477,7 @@ function _rptBuildTourDetailRows(tourName, month) {
     if ((so.tour_name || '').trim() !== tourName) return;
     if (!matchesMonth(so.stockout_date || so.created_at)) return;
     const scenario = _rptNormalizeScenario(so.scenario);
+    if (scenarioVal && scenarioVal !== scenario) return;
     if (so.items) {
       so.items.forEach(it => {
         const qty = it.quantity || 0;
@@ -489,6 +506,7 @@ rows.push({
     if (req.status === 'cancelled' || req.status === 'withdrawn' || req.status === 'outbound_completed') return;
     if (!matchesMonth(req.apply_date || req.created_at)) return;
     const scenario = _rptNormalizeScenario(req.scenario);
+    if (scenarioVal && scenarioVal !== scenario) return;
     if (req.items) {
       req.items.forEach(it => {
         const qty = it.quantity || 0;
@@ -547,7 +565,9 @@ function _rptRenderDetailMonthFilter(tourName) {
  * 按月份渲染右侧详情
  */
 function _rptRenderTourDetailForMonth(tourName, month) {
-  const rows = _rptBuildTourDetailRows(tourName, month);
+  const sf = document.getElementById('report-scenario-filter');
+  const sc = sf ? sf.value : '';
+  const rows = _rptBuildTourDetailRows(tourName, month, sc);
   _rptRenderTourDetail(rows);
 }
 
@@ -605,7 +625,7 @@ function _rptRenderTourList(detailRows, lossRows) {
     const protectedName = associatedNames.has(name);
     const deleteBtn = (isAdmin && master)
       ? (protectedName
-          ? `<button class="tour-delete-btn tour-delete-locked" data-protected="1" data-name="${_rptEscapeHtml(name)}" title="该团期已被领用单/出库/报损记录关联，无法删除" type="button">🔒</button>`
+          ? `<button class="tour-delete-btn tour-delete-locked" data-protected="1" data-name="${_rptEscapeHtml(name)}" title="该团期已被领用单/出库/报损记录关联，无法删除" type="button" disabled>已关联</button>`
           : `<button class="tour-delete-btn" data-id="${master.id}" data-name="${_rptEscapeHtml(name)}" title="删除团期名称" type="button">×</button>`)
       : '';
     let metaText;
@@ -681,7 +701,7 @@ async function _rptDeleteTourName(id, name, btnEl) {
         btnEl.textContent = '×';
       }
     }
-  }, { danger: true, icon: '🗑' });
+  }, { danger: true });
 }
 
 function selectTourByName(name) {
@@ -917,4 +937,217 @@ function _rptResolveCategory(it) {
     if (hit) return hit.category_name || hit.category || '-';
   }
   return '-';
+}
+
+// ============== D-1 版：成本排行 + 维度对比分析 ==============
+
+/**
+ * 构建团期级成本聚合（供排行与分析区使用）
+ * 数据来源：detailRows(使用，已含实时单价成本) + lossRows(报损，金额已冻结)
+ * 价格口径：与报表全局一致，来自 _rptBuildPriceMap（库存价优先 / 采购价兜底）
+ */
+function _rptBuildTourAgg(detailRows, lossRows) {
+  const masterMap = new Map();
+  ((_appCache && _appCache.tourNames) || []).forEach(t => {
+    const n = (t.name || '').trim();
+    if (n) masterMap.set(n, t);
+  });
+  const asoc = new Set();
+  ((_appCache && _appCache.requisitions) || []).forEach(r => { const n = (r.tour_name || '').trim(); if (n) asoc.add(n); });
+  ((_appCache && _appCache.stockOutRecords) || []).forEach(r => { const n = (r.tour_name || '').trim(); if (n) asoc.add(n); });
+  ((_appCache && _appCache.lossRecords) || []).forEach(r => { const n = (r.tour_name || '').trim(); if (n) asoc.add(n); });
+
+  const map = {};
+  (detailRows || []).forEach(r => {
+    const n = (r.tour_name || '').trim();
+    if (!n) return;
+    if (!map[n]) map[n] = { name: n, useCost: 0, lossAmt: 0, useQty: 0, items: [] };
+    map[n].useCost += (Number(r.cost) || 0);
+    map[n].useQty += (Number(r.quantity) || 0);
+    map[n].items.push({ scenario: r.scenario, item: r.item_name, qty: r.quantity, cost: r.cost, kind: 'use' });
+  });
+  (lossRows || []).forEach(r => {
+    const n = (r.tour_name || '').trim();
+    if (!n) return;
+    if (!map[n]) map[n] = { name: n, useCost: 0, lossAmt: 0, useQty: 0, items: [] };
+    map[n].lossAmt += (Number(r.cost) || 0);
+  });
+  return Object.values(map).map(a => {
+    const master = masterMap.get(a.name) || null;
+    return {
+      name: a.name,
+      useCost: a.useCost,
+      lossAmt: a.lossAmt,
+      net: a.useCost + a.lossAmt,
+      useQty: a.useQty,
+      items: a.items,
+      masterId: master ? master.id : null,
+      associated: asoc.has(a.name)
+    };
+  });
+}
+
+function _rptRenderRank() {
+  const el = document.getElementById('rpt-rank-bars');
+  if (!el) return;
+  if (!_rptAgg.length) {
+    el.innerHTML = '<div class="rpt-rank-empty">本月暂无团期使用 / 报损数据</div>';
+    return;
+  }
+  const sorted = [..._rptAgg].sort((a, b) => b.net - a.net);
+  const maxNet = Math.max(...sorted.map(a => a.net), 1);
+  const isAdmin = (typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'admin');
+  el.innerHTML = sorted.map(a => {
+    const idx = _rptAgg.indexOf(a);
+    const rk = sorted.indexOf(a) + 1;
+    const totPct = maxNet ? Math.round(a.net / maxNet * 100) : 0;
+    const uPct = a.net ? Math.round(a.useCost / a.net * 100) : 0;
+    const active = idx === _rptRankSelIdx ? 'rpt-rank-active' : '';
+    const delBtn = (isAdmin && a.masterId && !a.associated)
+      ? '<button class="rpt-rank-del" data-id="' + a.masterId + '" data-name="' + _rptEscapeHtml(a.name) + '" title="删除团期名称">删除</button>'
+      : '';
+    return '<div class="rpt-rank-row ' + active + '" data-idx="' + idx + '">'
+      + '<span class="rpt-rank-no">' + rk + '</span>'
+      + '<div class="rpt-rank-mid">'
+      + '<div class="rpt-rank-name">' + _rptEscapeHtml(a.name) + delBtn + '</div>'
+      + '<div class="rpt-mini"><i style="width:' + (totPct * uPct / 100) + '%;background:var(--accent)"></i><i style="width:' + (totPct * (100 - uPct) / 100) + '%;background:var(--danger)"></i></div>'
+      + '</div>'
+      + '<span class="rpt-rank-val money">¥' + Math.round(a.net).toLocaleString('zh-CN') + '</span>'
+      + '</div>';
+  }).join('');
+
+  el.querySelectorAll('.rpt-rank-row').forEach(d => {
+    d.addEventListener('click', e => {
+      if (e.target.closest('.rpt-rank-del')) return;
+      _rptSelectTour(+d.dataset.idx);
+    });
+  });
+  el.querySelectorAll('.rpt-rank-del').forEach(b => {
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      _rptDeleteTourName(Number(b.dataset.id), b.dataset.name, b);
+    });
+  });
+}
+
+function _rptSelectTour(idx) {
+  if (idx < 0 || idx >= _rptAgg.length) return;
+  _rptRankSelIdx = idx;
+  const a = _rptAgg[idx];
+  _rptSelectedTourName = a.name;
+  document.querySelectorAll('#rpt-rank-bars .rpt-rank-row').forEach(d => d.classList.toggle('rpt-rank-active', (+d.dataset.idx) === idx));
+  const nameEl = document.getElementById('report-detail-tour-name');
+  if (nameEl) nameEl.textContent = a.name;
+  _rptRenderDetailMonthFilter(a.name);
+  const g = document.getElementById('report-month');
+  const gm = g ? g.value : '';
+  const sf = document.getElementById('report-scenario-filter');
+  const sc = sf ? sf.value : '';
+  const rows = _rptBuildTourDetailRows(a.name, gm, sc);
+  _rptRenderTourDetail(rows);
+  _rptRenderAnalysis();
+}
+
+function _rptBindAnaSeg() {
+  const seg = document.getElementById('rpt-ana-seg');
+  if (!seg || _rptAnaSegBound) return;
+  _rptAnaSegBound = true;
+  seg.querySelectorAll('button').forEach(b => {
+    b.onclick = () => {
+      seg.querySelectorAll('button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      _rptAnaMode = b.dataset.mode;
+      _rptRenderAnalysis();
+    };
+  });
+}
+
+function _rptRenderAnalysis() {
+  const ctrl = document.getElementById('rpt-ana-ctrl');
+  const chart = document.getElementById('rpt-ana-chart');
+  const hint = document.getElementById('rpt-ana-hint');
+  if (!chart) return;
+  const yuan = (v) => '¥' + Number(v || 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 });
+
+  if (_rptAnaMode === 'scene') {
+    if (_rptRankSelIdx < 0 || !_rptAgg[_rptRankSelIdx]) {
+      if (ctrl) ctrl.innerHTML = '';
+      chart.innerHTML = '<div class="rpt-ana-empty">请先在上方排行选择团期</div>';
+      if (hint) hint.innerHTML = '';
+      return;
+    }
+    const a = _rptAgg[_rptRankSelIdx];
+    if (ctrl) ctrl.innerHTML = '<span class="rpt-ana-ctx">当前团期：</span><b>' + _rptEscapeHtml(a.name) + '</b>'
+      + '<span class="rpt-badge rpt-b-use">使用 ' + yuan(a.useCost) + '</span>'
+      + '<span class="rpt-badge rpt-b-loss">报损 ' + yuan(a.lossAmt) + '</span>';
+    const map = {};
+    a.items.forEach(it => {
+      if (!map[it.scenario]) map[it.scenario] = { scenario: it.scenario, cost: 0, qty: 0 };
+      map[it.scenario].cost += (Number(it.cost) || 0);
+      map[it.scenario].qty += (Number(it.qty) || 0);
+    });
+    const dist = Object.values(map).sort((x, y) => y.cost - x.cost);
+    const total = dist.reduce((s, d) => s + d.cost, 0);
+    const mx = Math.max(...dist.map(d => d.cost), 1);
+    chart.innerHTML = dist.map(d => {
+      const pct = Math.round(d.cost / mx * 100);
+      const share = total ? Math.round(d.cost / total * 100) : 0;
+      return '<div class="rpt-cmp-row"><div class="rpt-cmp-label">' + _rptEscapeHtml(d.scenario) + '</div>'
+        + '<div class="rpt-cmp-bar"><i style="width:' + pct + '%;background:var(--accent)"></i></div>'
+        + '<div class="rpt-cmp-val">' + yuan(d.cost) + ' <span class="rpt-cmp-share">(' + share + '%)</span></div></div>';
+    }).join('') || '<div class="rpt-ana-empty">该团期暂无使用数据</div>';
+    const tail = dist[1] ? ('其次 ' + dist[1].scenario + '（' + yuan(dist[1].cost) + '）') : '其余场景占比较小';
+    if (hint) hint.innerHTML = '<span class="rpt-hint-label">分析</span> ' + _rptEscapeHtml(a.name) + ' 使用成本 <b class="money">' + yuan(total) + '</b>，最大头是 <b>' + _rptEscapeHtml(dist[0] ? dist[0].scenario : '-') + '</b>（' + yuan(dist[0] ? dist[0].cost : 0) + '，' + (total ? Math.round((dist[0] ? dist[0].cost : 0) / total * 100) : 0) + '%）；' + tail + '。报损金额不计入场景分布。';
+
+  } else if (_rptAnaMode === 'scenario') {
+    const scenes = [...new Set(_rptAgg.flatMap(a => a.items.map(i => i.scenario)))].filter(Boolean).sort();
+    if (!_rptAnaSc || !scenes.includes(_rptAnaSc)) _rptAnaSc = scenes[0] || '';
+    if (ctrl) ctrl.innerHTML = '<label class="rpt-ana-label">选择场景</label><select id="rpt-ana-sc-sel">' + scenes.map(s => '<option ' + (s === _rptAnaSc ? 'selected' : '') + '>' + _rptEscapeHtml(s) + '</option>').join('') + '</select>';
+    const rows = _rptAgg.map(a => {
+      const its = a.items.filter(i => i.scenario === _rptAnaSc);
+      return { name: a.name, cost: its.reduce((s, i) => s + (Number(i.cost) || 0), 0) };
+    }).filter(r => r.cost > 0).sort((x, y) => y.cost - x.cost);
+    const avg = rows.length ? rows.reduce((s, r) => s + r.cost, 0) / rows.length : 0;
+    const mx = Math.max(...rows.map(r => r.cost), avg) || 1;
+    chart.innerHTML = rows.map(r => {
+      const pct = Math.round(r.cost / mx * 100);
+      const over = r.cost > avg * 1.3;
+      return '<div class="rpt-cmp-row"><div class="rpt-cmp-label">' + _rptEscapeHtml(r.name) + '</div>'
+        + '<div class="rpt-cmp-bar"><i style="width:' + pct + '%;background:' + (over ? 'var(--danger)' : 'var(--accent)') + '"></i>'
+        + '<span class="rpt-avgline" style="left:' + Math.round(avg / mx * 100) + '%"></span></div>'
+        + '<div class="rpt-cmp-val ' + (over ? 'money' : '') + '">' + yuan(r.cost) + (over ? ' 超均值' : '') + '</div></div>';
+    }).join('') || '<div class="rpt-ana-empty">该场景暂无领用数据</div>';
+    if (rows.length) {
+      const hi = rows[0], lo = rows[rows.length - 1];
+      if (hint) hint.innerHTML = '<span class="rpt-hint-label">分析</span> 「' + _rptEscapeHtml(_rptAnaSc) + '」场景平均使用成本 <b>' + yuan(avg) + '</b>（' + rows.length + ' 个团期有领用）。<b style="' + (hi.cost > avg * 1.3 ? 'color:var(--danger)' : '') + '">' + _rptEscapeHtml(hi.name) + '</b> 最高 ' + yuan(hi.cost) + '，较均值高 ' + (avg ? Math.round((hi.cost / avg - 1) * 100) : 0) + '%；' + _rptEscapeHtml(lo.name) + ' 最低 ' + yuan(lo.cost) + '。虚线为均值，超均值 30% 标红。';
+    } else if (hint) hint.innerHTML = '';
+    const scSel = document.getElementById('rpt-ana-sc-sel');
+    if (scSel) scSel.onchange = e => { _rptAnaSc = e.target.value; _rptRenderAnalysis(); };
+
+  } else {
+    const items = [...new Set(_rptAgg.flatMap(a => a.items.map(i => i.item)))].filter(Boolean).sort();
+    if (!_rptAnaItem || !items.includes(_rptAnaItem)) _rptAnaItem = items[0] || '';
+    if (ctrl) ctrl.innerHTML = '<label class="rpt-ana-label">选择物品</label><select id="rpt-ana-item-sel">' + items.map(s => '<option ' + (s === _rptAnaItem ? 'selected' : '') + '>' + _rptEscapeHtml(s) + '</option>').join('') + '</select>';
+    const rows = _rptAgg.map(a => {
+      const its = a.items.filter(i => i.item === _rptAnaItem);
+      return { name: a.name, qty: its.reduce((s, i) => s + (Number(i.qty) || 0), 0), cost: its.reduce((s, i) => s + (Number(i.cost) || 0), 0) };
+    }).filter(r => r.qty > 0).sort((x, y) => y.qty - x.qty);
+    const avgQty = rows.length ? rows.reduce((s, r) => s + r.qty, 0) / rows.length : 0;
+    const avgCost = rows.length ? rows.reduce((s, r) => s + r.cost, 0) / rows.length : 0;
+    const mx = Math.max(...rows.map(r => r.qty), avgQty) || 1;
+    chart.innerHTML = rows.map(r => {
+      const pct = Math.round(r.qty / mx * 100);
+      const over = r.qty > avgQty * 1.3;
+      return '<div class="rpt-cmp-row"><div class="rpt-cmp-label">' + _rptEscapeHtml(r.name) + '</div>'
+        + '<div class="rpt-cmp-bar"><i style="width:' + pct + '%;background:' + (over ? 'var(--danger)' : 'var(--accent)') + '"></i>'
+        + '<span class="rpt-avgline" style="left:' + Math.round(avgQty / mx * 100) + '%"></span></div>'
+        + '<div class="rpt-cmp-val ' + (over ? 'money' : '') + '">' + r.qty + ' 件 / ' + yuan(r.cost) + (over ? ' 超均值' : '') + '</div></div>';
+    }).join('') || '<div class="rpt-ana-empty">该物品暂无领用数据</div>';
+    if (rows.length) {
+      const hi = rows[0], lo = rows[rows.length - 1];
+      if (hint) hint.innerHTML = '<span class="rpt-hint-label">分析</span> 「' + _rptEscapeHtml(_rptAnaItem) + '」平均领用 <b>' + Math.round(avgQty) + '</b> 件/团期（约 ' + yuan(avgCost) + '）。<b style="' + (hi.qty > avgQty * 1.3 ? 'color:var(--danger)' : '') + '">' + _rptEscapeHtml(hi.name) + '</b> 领用 ' + hi.qty + ' 件，超均值 ' + (avgQty ? Math.round((hi.qty / avgQty - 1) * 100) : 0) + '%，建议核查该团领用量；' + _rptEscapeHtml(lo.name) + ' 最低 ' + lo.qty + ' 件。';
+    } else if (hint) hint.innerHTML = '';
+    const itSel = document.getElementById('rpt-ana-item-sel');
+    if (itSel) itSel.onchange = e => { _rptAnaItem = e.target.value; _rptRenderAnalysis(); };
+  }
 }
