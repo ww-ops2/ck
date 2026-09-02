@@ -2522,9 +2522,11 @@ input[type="number"]::-webkit-inner-spin-button {
 
 /* ===== v5.75 出入库明细：月份矩阵（双向冻结 + 明暗底色 + 期末琥珀） ===== */
 
-/* 1. 双向滚动容器 */
+/* 1. 双向滚动容器（撑满视口剩余高度，min-height 兜底避免短屏挤压） */
 .ms-table-wrap {
-  max-height: 460px;
+  height: calc(100vh - 250px);
+  min-height: 360px;
+  max-height: calc(100vh - 200px);
   overflow: auto;
   border-top: 1px solid var(--border-light);
   background: #fff;
@@ -2682,8 +2684,9 @@ table.ms-mx tbody tr.ms-total-row td.sticky-end { background: #fdf1d0; }
 }
 
 /* Responsive */
-@media (max-width: 1400px) { .ms-table-wrap { max-height: 400px; } }
-@media (max-width: 1100px) { .ms-table-wrap { max-height: 340px; } }
+@media (max-width: 1400px) { .ms-table-wrap { height: calc(100vh - 240px); } }
+@media (max-width: 1100px) { .ms-table-wrap { height: calc(100vh - 230px); min-height: 320px; } }
+@media (max-height: 700px) { .ms-table-wrap { height: calc(100vh - 220px); min-height: 260px; } }
 @media (max-width: 1200px) {
   .ms-kpi-grid { grid-template-columns: repeat(3, 1fr); }
 }
