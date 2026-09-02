@@ -364,20 +364,39 @@ function _msUpdateKPI(stockInRecords, stockOutRecords) {
 function _msRenderDetailTable() {
   const thead = document.getElementById('ms-detail-thead');
   const tbody = document.getElementById('ms-detail-tbody');
+  const colgroup = document.getElementById('ms-detail-colgroup');
   if (!thead || !tbody) return;
 
-  const months = _msSelectedMonths;
-  const baseCol = 5; // 编号/名称/品牌型号/单位/期初
-  const totalCol = baseCol + months.length * 3 + 1;
+  // 列宽常量：与 CSS 中 .sticky-l 的 left 值严格对应（90/130/130/60/75）
+  const W = { code: 90, name: 130, brand: 130, unit: 60, begin: 75, month: 62, end: 90 };
 
-  // ---- 表头（两层）----
-  let h1 = '<tr><th rowspan="2">物品编号</th><th rowspan="2">物品名称</th><th rowspan="2">品牌/型号</th><th rowspan="2">单位</th><th rowspan="2">期初库存</th>';
-  let h2 = '<tr>';
-  months.forEach(mk => {
-    h1 += `<th colspan="3" class="ms-month-group">${_msMonthLabel(mk)}</th>`;
-    h2 += '<th class="ms-sub-in">入库</th><th class="ms-sub-out">出库</th><th class="ms-sub-other">其他</th>';
+  const months = _msSelectedMonths;
+  const totalCol = 5 + months.length * 3 + 1;
+
+  // ---- colgroup：固定列宽（table-layout:fixed 依赖它）----
+  if (colgroup) {
+    let cols =
+      `<col style="width:${W.code}px"><col style="width:${W.name}px"><col style="width:${W.brand}px">` +
+      `<col style="width:${W.unit}px"><col style="width:${W.begin}px">`;
+    months.forEach(() => { cols += `<col style="width:${W.month}px">`.repeat(3); });
+    cols += `<col style="width:${W.end}px">`;
+    colgroup.innerHTML = cols;
+  }
+
+  // ---- 表头（两层，基础列 rowspan=2 实现左侧冻结）----
+  let h1 = '<tr>' +
+    '<th rowspan="2" class="sticky-l c-code">物品编号</th>' +
+    '<th rowspan="2" class="sticky-l c-name">物品名称</th>' +
+    '<th rowspan="2" class="sticky-l c-brand">品牌/型号</th>' +
+    '<th rowspan="2" class="sticky-l c-unit">单位</th>' +
+    '<th rowspan="2" class="sticky-l c-begin">期初库存</th>';
+  let h2 = '<tr class="ms-mx-sub">';
+  months.forEach((mk, i) => {
+    const s = i % 4;
+    h1 += `<th colspan="3" class="mh-${s}">${_msMonthLabel(mk)}</th>`;
+    h2 += `<th class="shade-${s} c-in">入库</th><th class="shade-${s} c-out">出库</th><th class="shade-${s} c-other">其他</th>`;
   });
-  h1 += '<th rowspan="2">期末库存</th></tr>';
+  h1 += '<th rowspan="2" class="sticky-end">期末库存</th></tr>';
   h2 += '</tr>';
   thead.innerHTML = h1 + h2;
 
@@ -385,72 +404,76 @@ function _msRenderDetailTable() {
   const catFilter = document.getElementById('ms-filter-category')?.value || '';
   let data = _msDetailData.slice();
   if (catFilter) data = data.filter(it => it.category === catFilter);
-  data.sort((a, b) => a.category.localeCompare(b.category) || a.code.localeCompare(b.code));
+  data.sort((a, b) => a.category.localeCompare(b.category, 'zh') || a.code.localeCompare(b.code));
 
   if (data.length === 0) {
     tbody.innerHTML = `<tr><td colspan="${totalCol}" class="empty-state">暂无数据</td></tr>`;
     return;
   }
 
-  // 单元格渲染辅助
-  const _in = v => `<td class="ms-m-cell ms-m-in ${v ? '' : 'ms-zero'}">${v ? '+' + v : '·'}</td>`;
-  const _out = v => `<td class="ms-m-cell ms-m-out ${v ? '' : 'ms-zero'}">${v ? '-' + v : '·'}</td>`;
-  const _other = (m) => {
-    if (!m || (!m.np && !m.loss && !m.adj)) return '<td class="ms-m-cell ms-m-other ms-zero">·</td>';
-    const net = m.np - m.loss + m.adj;
-    const parts = [];
-    if (m.np) parts.push('非采购入库 +' + m.np);
-    if (m.loss) parts.push('报损 -' + m.loss);
-    if (m.adj) parts.push('调整 ' + (m.adj > 0 ? '+' : '') + m.adj);
-    return `<td class="ms-m-cell ms-m-other" title="${parts.join(' / ')}">${net > 0 ? '+' : ''}${net}</td>`;
+  // 单元格渲染辅助（s = 月份明暗索引）
+  const _cell = (v, kind, s) => {
+    if (kind === 'other') {
+      const o = v || { np: 0, loss: 0, adj: 0 };
+      if (!o.np && !o.loss && !o.adj) return `<td class="ms-m-cell ms-m-other shade-${s} ms-zero">·</td>`;
+      const net = o.np - o.loss + o.adj;
+      const parts = [];
+      if (o.np) parts.push('非采购入库 +' + o.np);
+      if (o.loss) parts.push('报损 −' + o.loss);
+      if (o.adj) parts.push('调整 ' + (o.adj > 0 ? '+' : '') + o.adj);
+      return `<td class="ms-m-cell ms-m-other shade-${s}" title="${parts.join(' / ')}">${net > 0 ? '+' : ''}${net}</td>`;
+    }
+    const cls = kind === 'in' ? 'ms-m-in' : 'ms-m-out';
+    const sign = kind === 'in' ? '+' : '−';
+    return v
+      ? `<td class="ms-m-cell ${cls} shade-${s}">${sign}${v}</td>`
+      : `<td class="ms-m-cell ${cls} shade-${s} ms-zero">·</td>`;
   };
 
   let html = '';
   let lastCat = '';
   data.forEach(it => {
-    // 品类小计行
+    // 分类分组行（跨 5 列冻结 + 分类小计）
     if (it.category !== lastCat) {
       lastCat = it.category;
       const catItems = data.filter(d => d.category === it.category);
-      let row = `<tr class="ms-category-row">
-        <td colspan="4" style="font-weight:700;color:var(--accent);">
-          <span style="margin-right:6px;">📁</span>${it.category}
-          <span style="font-weight:400;font-size:12px;color:var(--text-muted);margin-left:8px;">(${catItems.length} 种物品)</span>
-        </td>
-        <td style="font-weight:600;">${catItems.reduce((s, d) => s + d.beginStock, 0)}</td>`;
-      months.forEach(mk => {
+      let row = `<tr class="ms-cat-row">
+        <td colspan="5" class="sticky-l c-cat">📁 ${it.category}<span style="font-weight:400;font-size:11px;color:var(--text-muted);margin-left:8px;">(${catItems.length} 种)</span></td>`;
+      months.forEach((mk, i) => {
+        const s = i % 4;
         let ci = 0, co = 0, cn = 0, cl = 0, ca = 0;
         catItems.forEach(d => { const m = d.monthly[mk]; if (m) { ci += m.in; co += m.out; cn += m.np; cl += m.loss; ca += m.adj; } });
-        row += _in(ci) + _out(co) + _other({ np: cn, loss: cl, adj: ca });
+        row += _cell(ci, 'in', s) + _cell(co, 'out', s) + _cell({ np: cn, loss: cl, adj: ca }, 'other', s);
       });
-      row += `<td style="font-weight:600;">${catItems.reduce((s, d) => s + d.endStock, 0)}</td></tr>`;
+      row += `<td class="sticky-end">${catItems.reduce((sum, d) => sum + d.endStock, 0)}</td></tr>`;
       html += row;
     }
 
     // 物品行
-    let row = `<tr>
-      <td style="font-family:monospace;font-size:12px;color:var(--text-muted);">${it.code}</td>
-      <td style="font-weight:600;">${it.name}</td>
-      <td>${it.brand}${it.model !== '-' ? ' / ' + it.model : ''}</td>
-      <td>${it.unit}</td>
-      <td>${it.beginStock}</td>`;
-    months.forEach(mk => {
-      const m = it.monthly[mk];
-      row += _in(m ? m.in : 0) + _out(m ? m.out : 0) + _other(m);
+    let row = `<tr class="ms-item-row">
+      <td class="sticky-l c-code ms-code">${it.code}</td>
+      <td class="sticky-l c-name ms-name" title="${it.name}">${it.name}</td>
+      <td class="sticky-l c-brand ms-brand" title="${it.brand} ${it.model}">${it.brand}${it.model && it.model !== '-' ? ' / ' + it.model : ''}</td>
+      <td class="sticky-l c-unit">${it.unit}</td>
+      <td class="sticky-l c-begin">${it.beginStock}</td>`;
+    months.forEach((mk, i) => {
+      const s = i % 4;
+      const m = it.monthly[mk] || { in: 0, out: 0, np: 0, loss: 0, adj: 0 };
+      row += _cell(m.in, 'in', s) + _cell(m.out, 'out', s) + _cell(m, 'other', s);
     });
-    row += `<td style="font-weight:600;">${it.endStock}</td></tr>`;
+    row += `<td class="sticky-end ms-end-val">${it.endStock}</td></tr>`;
     html += row;
   });
 
   // 合计行
-  let row = `<tr class="ms-total-row"><td colspan="4" style="font-weight:700;">合计</td>
-    <td style="font-weight:700;">${data.reduce((s, d) => s + d.beginStock, 0)}</td>`;
-  months.forEach(mk => {
+  let row = `<tr class="ms-total-row"><td colspan="5" class="sticky-l c-cat">合计</td>`;
+  months.forEach((mk, i) => {
+    const s = i % 4;
     let ti = 0, to = 0, tn = 0, tl = 0, ta = 0;
     data.forEach(d => { const m = d.monthly[mk]; if (m) { ti += m.in; to += m.out; tn += m.np; tl += m.loss; ta += m.adj; } });
-    row += _in(ti) + _out(to) + _other({ np: tn, loss: tl, adj: ta });
+    row += _cell(ti, 'in', s) + _cell(to, 'out', s) + _cell({ np: tn, loss: tl, adj: ta }, 'other', s);
   });
-  row += `<td style="font-weight:700;">${data.reduce((s, d) => s + d.endStock, 0)}</td></tr>`;
+  row += `<td class="sticky-end ms-end-val">${data.reduce((sum, d) => sum + d.endStock, 0)}</td></tr>`;
   html += row;
 
   tbody.innerHTML = html;
