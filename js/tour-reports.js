@@ -15,6 +15,8 @@ let _rptAnaMode = 'scene';  // 分析模式：scene | scenario | item
 let _rptAnaSc = '';         // 分析②选中的场景
 let _rptAnaItem = '';       // 分析③选中的物品
 let _rptAnaSegBound = false;// 分析分段按钮是否已绑定
+let _rptCloudLoading = false; // 防止云端拉取重入
+let _rptCloudDone = false;    // 本次会话是否已做过一次云端拉取（避免每次切换都拉）
 
 /**
  * 根据物品名称查找最近采购单价
@@ -206,7 +208,7 @@ function _initTourNameManage() {
 /**
  * 加载团期报表（由 navigation.js 的 loadModuleData 调用）
  */
-function loadReports() {
+function _rptRender() {
   const monthInput = document.getElementById('report-month');
   const scenarioFilter = document.getElementById('report-scenario-filter');
   if (!monthInput || !monthInput.value) return;
@@ -368,6 +370,45 @@ function loadReports() {
   const firstIdx = _rptAgg.findIndex(a => (a.useCost > 0 || a.lossAmt > 0));
   if (firstIdx >= 0) _rptSelectTour(firstIdx);
   else _rptRenderAnalysis();
+}
+
+/**
+ * 报表入口：先以本地缓存即时渲染（首帧不空白），再做一次「仅本模块所需」的
+ * 云端拉取覆盖，解决「打开后先空、要等很久才出数据」的问题。
+ * 说明：报表此前只依赖 _appCache，而首屏 syncFromSupabase 有 6 秒竞速超时；
+ * 若 Supabase 在国内偏慢，模块会在缓存未就绪时打开 → 空白，直到 30 秒自动同步才补。
+ * 这里改为与仪表盘一致的「缓存即时渲染 + 云端覆盖」自愈范式，且只拉 7 张表，
+ * 远轻于全量 12 张表同步，首屏更快。_rptCloudDone 保证一次会话只拉一次，
+ * 之后由自动同步（MODULE_TABLE_PLAN['reports']）保活。
+ */
+function loadReports() {
+  _rptRender();
+  _rptEnsureCloud();
+}
+
+function _rptEnsureCloud() {
+  if (typeof isSupabaseReady !== 'function' || !isSupabaseReady()) return;
+  if (_rptCloudLoading || _rptCloudDone) return;
+  _rptCloudLoading = true;
+  const bar = document.getElementById('rpt-tour-bar');
+  if (bar && !_rptAgg.length) bar.innerHTML = '<div class="rpt-rank-empty">数据同步中…</div>';
+  Promise.all([
+    refreshData('inventory'),
+    refreshData('purchaseOrders'),
+    refreshData('stockOutRecords'),
+    refreshData('requisitions'),
+    refreshData('lossRecords'),
+    refreshData('tourNames'),
+    refreshData('consumptionStandards')
+  ]).then(function () {
+    _rptCloudDone = true;
+    _rptRender();
+  }).catch(function (e) {
+    console.warn('[Reports] 云端拉取失败，沿用本地缓存：', e && e.message);
+    _rptRender();
+  }).finally(function () {
+    _rptCloudLoading = false;
+  });
 }
 
 // ============== 报损财务分析 ==============
