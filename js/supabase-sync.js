@@ -417,7 +417,7 @@ function waitForSupabaseSync() {
 // ============================================================
 var MODULE_TABLE_PLAN = {
   'stock-in': ['nonPurchaseStockIns', 'lossRecords', 'stockInRecords', 'tourNames'],
-  'reports': ['lossRecords', 'stockOutRecords', 'requisitions', 'tourNames'],
+  'reports': ['inventory', 'purchaseOrders', 'consumptionStandards', 'lossRecords', 'stockOutRecords', 'requisitions', 'tourNames'],
   'requisition': ['requisitions', 'tourNames'],
   // v5.73 出入库明细矩阵：六张口径表全量覆盖（库存/入库/出库/非采购/报损/调整）
   'monthly-summary': ['inventory', 'stockInRecords', 'stockOutRecords', 'nonPurchaseStockIns', 'lossRecords', 'inventoryAdjustments']
