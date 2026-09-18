@@ -133,26 +133,53 @@ async function _getCategoryIdByName(name) {
  * 单价采用移动加权平均，保证金额链路连贯
  * @returns {Promise<number|null>} 库存物品 id（供 stock_in_items 回写外键）
  */
+/**
+ * 入库建档时确保库存物品编码唯一：
+ * - 若传入编码在库存中不存在 → 直接沿用（保留 PO 保存时已裁定好的唯一编码）。
+ * - 若已存在（撞号）→ 改用数据库序列生成全新唯一编码，绝不让新物品覆盖旧物品。
+ */
+async function ensureUniqueItemCode(desired) {
+  const sb = getSupabase();
+  if (desired) {
+    try {
+      const { data } = await sb.from('inventory_items').select('code').eq('code', desired).limit(1);
+      if (!data || data.length === 0) return desired;
+    } catch (e) { /* 查询失败则降级到序列发号 */ }
+  }
+  try {
+    return await getNextCode('item_code', 'SKU', 5);
+  } catch (e) {
+    // 极端兜底：时间戳相关唯一串，避免阻断入库流程
+    return 'SKU' + String(Date.now()).slice(-5);
+  }
+}
+
 async function _syncInventoryOnStockIn(item, stockInData) {
   const sb = getSupabase();
   const actualQty = Number(item.actual_quantity) || 0;
   const price = Number(item.price) || 0;
   const catId = await _getCategoryIdByName(item.category || item.category_name);
 
-  let invItems = [];
+  let inv = null;
+  // 1) 编码匹配：仅当编码与名称同时一致才算命中（防撞号覆盖）
   if (item.code) {
-    invItems = await _sbQuery(
+    const byCode = await _sbQuery(
       sb.from('inventory_items').select('*').eq('code', item.code).limit(1)
     );
+    if (byCode.length && (!item.name ||
+        String(byCode[0].name).trim().toLowerCase() === String(item.name).trim().toLowerCase())) {
+      inv = byCode[0];
+    }
   }
-  if (invItems.length === 0 && item.name) {
-    invItems = await _sbQuery(
+  // 2) 名称匹配（身份以名称为准，避免编码撞号误判为已有物品）
+  if (!inv && item.name) {
+    const byName = await _sbQuery(
       sb.from('inventory_items').select('*').eq('name', item.name).limit(1)
     );
+    if (byName.length) inv = byName[0];
   }
 
-  if (invItems.length > 0) {
-    const inv = invItems[0];
+  if (inv) {
     const oldStock = Number(inv.stock) || 0;
     const upd = {
       stock: oldStock + actualQty,
@@ -174,9 +201,8 @@ async function _syncInventoryOnStockIn(item, stockInData) {
     return inv.id;
   }
 
-  // 自动创建库存物品
-  // 编号统一：与「库存物品新增」走同一序列 item_code / 同一前缀 SKU，避免撞号
-  const autoCode = item.code || await getNextCode('item_code', 'SKU', 5);
+  // 自动创建库存物品：以全新唯一编码建档，绝不沿用撞号编码
+  const autoCode = await ensureUniqueItemCode(item.code);
   const { data: created, error: cErr } = await sb.from('inventory_items').insert({
     name: item.name,
     code: autoCode,
