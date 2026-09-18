@@ -663,6 +663,10 @@ async function submitPurchaseOrder() {
   
   if (hasError) { hideButtonLoading('submit-purchase-btn'); return; }
 
+  // ★ 新增物品编码唯一化（防撞号）：保存前对所有明细重新裁定编码
+  try { reconcileItemCodes(allItems); }
+  catch (e) { console.warn('[PO] 编码裁定失败，沿用原值:', e.message); }
+
   if (allItems.length === 0) {
     showToast('请至少添加一个物品', 'warning');
     hideButtonLoading('submit-purchase-btn');
@@ -2119,6 +2123,81 @@ function generateItemCode() {
   const code = `SKU${String(counter).padStart(5, '0')}`;
   window._itemCodeCounter++;
   return code;
+}
+
+/**
+ * 采购单保存时，对「新增物品」重新裁定唯一编码，彻底杜绝编号撞车。
+ *
+ * 背景：原 generateItemCodeByCategory 用「内存计数器从 1 开始」，刷新页面即归零，
+ *       新物品会拿到 SK04000001 等已存在编码；入库按编码优先匹配、不校验名称，
+ *       导致数量/单价被记到别人头上、新物品永不建档。
+ *
+ * 规则：
+ *  1) 物品名与库存某物品一致且编码匹配 → 视为【已有物品】，沿用其编码（不重新发号）。
+ *  2) 当前编码唯一（不在库存、不在本批次、不在本次会话已发号中）→ 沿用。
+ *  3) 编码已存在却属于【名称不同】的物品（撞号），或编码为空 → 视为【新增】，重新发号。
+ *  4) 发号基于云端已有编码的最大值 +1（读 _appCache.inventory），命中同类前缀；
+ *     本批次内、以及本次会话内已发过的号均纳入去重，避免连续保存撞号。
+ */
+let _sessionAssignedItemCodes = new Set();
+
+function _lookupCategoryPrefix(categoryName) {
+  if (!categoryName || !categories) return 'SKU';
+  const cat = categories.find(c => c.name === categoryName);
+  return (cat && cat.code) ? cat.code : 'SKU';
+}
+
+function _nextUniqueItemCode(prefix, taken) {
+  const padLen = (prefix === 'SKU') ? 5 : 6;
+  let maxN = 0;
+  const consider = (code) => {
+    if (!code || !code.startsWith(prefix)) return;
+    const s = code.slice(prefix.length);
+    if (!/^\d+$/.test(s)) return;
+    const n = parseInt(s, 10);
+    if (n > maxN) maxN = n;
+  };
+  taken.forEach(consider);
+  let candidate = prefix + String(maxN + 1).padStart(padLen, '0');
+  while (taken.has(candidate)) {
+    maxN++;
+    candidate = prefix + String(maxN + 1).padStart(padLen, '0');
+  }
+  return candidate;
+}
+
+function reconcileItemCodes(items) {
+  const inv = (typeof _appCache !== 'undefined' && _appCache.inventory) ? _appCache.inventory : [];
+  const existingByCode = new Set();
+  const existingByName = new Map();
+  inv.forEach(it => {
+    if (it.code) existingByCode.add(it.code);
+    if (it.name) existingByName.set(String(it.name).trim().toLowerCase(), it.code);
+  });
+  const taken = new Set([...existingByCode, ..._sessionAssignedItemCodes]);
+  items.forEach(item => {
+    const name = (item.name || '').trim();
+    const normName = name.toLowerCase();
+    const realCode = existingByName.get(normName);
+    const curCode = (item.code || '').trim();
+    // 情况1：名称命中已有物品且编码一致 → 已有物品，沿用
+    if (realCode && realCode === curCode) {
+      _sessionAssignedItemCodes.add(curCode);
+      return;
+    }
+    // 情况2：当前编码全局唯一 → 沿用
+    if (curCode && !taken.has(curCode)) {
+      taken.add(curCode);
+      _sessionAssignedItemCodes.add(curCode);
+      return;
+    }
+    // 情况3：撞号或空编码 → 重新发号（基于已有编码最大值+1）
+    const prefix = _lookupCategoryPrefix(item.category);
+    const newCode = _nextUniqueItemCode(prefix, taken);
+    item.code = newCode;
+    taken.add(newCode);
+    _sessionAssignedItemCodes.add(newCode);
+  });
 }
 
 /**
