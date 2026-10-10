@@ -1,0 +1,31 @@
+name: Supabase Keepalive
+
+# 目的：防止 Supabase 免费版项目因「连续 7 天无查询」被自动暂停。
+# 该工作流运行在 GitHub 海外服务器上，不依赖任何人的电脑开机，也绕开国内网络对 Supabase 的访问波动。
+# 注意：GitHub 会在仓库连续 60 天无任何 commit 后自动禁用定时工作流——本项目发版频繁，一般不会触发；
+#       若被禁用，到仓库 Actions 页面点一下 enable 即可。
+
+on:
+  schedule:
+    # UTC 时间每天 01:10 执行（北京时间 09:10），错开整点高峰
+    - cron: '10 1 * * *'
+  workflow_dispatch: # 支持手动触发，便于随时测试
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API (read-only)
+        run: |
+          STATUS=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+            --max-time 60 \
+            -H "apikey: sb_publishable_z06qPVHQAOHZuNiSxHXOyw_IL2-G7Bf" \
+            -H "Authorization: Bearer sb_publishable_z06qPVHQAOHZuNiSxHXOyw_IL2-G7Bf" \
+            "https://vhnvjaghlvoqdgssidjw.supabase.co/rest/v1/inventory_items?select=id&limit=1")
+          echo "HTTP status: $STATUS"
+          cat /tmp/resp.json || true
+          if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 300 ]; then
+            echo "::error::Supabase keepalive ping FAILED (HTTP $STATUS) — 项目可能已被暂停，需人工到控制台恢复"
+            exit 1
+          fi
+          echo "Supabase keepalive OK"
