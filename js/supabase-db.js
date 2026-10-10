@@ -555,9 +555,70 @@ const SupaDB = {
 
   async deleteTourName(id) {
     const sb = getSupabase();
+    // 先取团号名，校验是否仍被单据引用（有数据禁删，保护关联记录）
+    const { data: tn } = await sb.from('tour_names').select('id,name').eq('id', id).limit(1);
+    const name = tn && tn[0] ? tn[0].name : '';
+    if (name) {
+      const linked = await this._countTourNameRefs(sb, name);
+      if (linked > 0) {
+        throw new Error('该团号仍有 ' + linked + ' 笔关联单据，为保护数据不可删除；如不再使用可改名归档');
+      }
+    }
     const { error } = await sb.from('tour_names').delete().eq('id', id);
     if (error) throw new Error('团期名称删除失败: ' + error.message);
-    await writeAuditLog('DELETE', 'tour_names', id);
+    await writeAuditLog('DELETE', 'tour_names', id, '', { name });
+  },
+
+  /**
+   * 统计某团号名在四张业务表中被引用的单据笔数（stock_out / requisition / loss / non_purchase）
+   */
+  async _countTourNameRefs(sb, name) {
+    let n = 0;
+    const tables = ['stock_out_records', 'requisitions', 'loss_records', 'non_purchase_stock_in'];
+    for (const t of tables) {
+      try {
+        const { count } = await sb.from(t).select('id', { count: 'exact', head: true }).eq('tour_name', name);
+        if (count) n += count;
+      } catch (e) { /* 单表缺失不阻塞 */ }
+    }
+    return n;
+  },
+
+  /**
+   * 团号改名（v5.84）：更新 tour_names 主数据，并同步更新四张业务表中的 tour_name 文本快照，
+   * 保证历史单据不断链。同步写审计日志（含同步条数）。
+   */
+  async updateTourName(id, newName) {
+    const sb = getSupabase();
+    newName = String(newName || '').trim();
+    if (!newName) throw new Error('团号名称不能为空');
+
+    // 取旧名
+    const { data: tn } = await sb.from('tour_names').select('id,name,code').eq('id', id).limit(1);
+    const old = tn && tn[0] ? tn[0].name : '';
+    if (!old) throw new Error('团号不存在或已被删除');
+    if (old === newName) return { old, newName, synced: 0 };
+
+    // 新名查重
+    const { data: dup } = await sb.from('tour_names').select('id').eq('name', newName).limit(1);
+    if (dup && dup[0] && dup[0].id !== id) throw new Error('已存在同名团号「' + newName + '」，请换一个名称');
+
+    // 更新主数据
+    const { error: upErr } = await sb.from('tour_names').update({ name: newName }).eq('id', id);
+    if (upErr) throw new Error('团号改名失败: ' + upErr.message);
+
+    // 同步四张业务表的文本快照
+    let synced = 0;
+    const tables = ['stock_out_records', 'requisitions', 'loss_records', 'non_purchase_stock_in'];
+    for (const t of tables) {
+      try {
+        const { data: upd, error: e2 } = await sb.from(t).update({ tour_name: newName }).eq('tour_name', old).select('id');
+        if (!e2 && upd) synced += upd.length;
+      } catch (e) { /* 单表缺失不阻塞 */ }
+    }
+
+    await writeAuditLog('UPDATE', 'tour_names', id, tn[0].code, { from: old, to: newName, synced_records: synced });
+    return { old, newName, synced };
   },
 
   // ---- 库存物品 ----
