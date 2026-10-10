@@ -163,31 +163,21 @@ function _renderTourNameList(keyword, inputId, listId) {
     html += `<div class="tour-name-option" data-value="${_escapeHtml(name)}">${_escapeHtml(name)}</div>`;
   });
 
-  if (keyword && !_tourNames.includes(keyword)) {
-    html += `<div class="tour-name-option add-new" data-value="${_escapeHtml(keyword)}">+ 新增「${_escapeHtml(keyword)}」</div>`;
-  }
-
+  // v5.84：团号统一在「团期使用报表 · 团号管理」中维护，此处只能选择，不可直通新增
   if (!html) {
-    html = '<div class="tour-name-empty">暂无团期，直接输入后点击添加</div>';
+    if (keyword) {
+      html = '<div class="tour-name-empty">没有匹配「' + _escapeHtml(keyword) + '」的团号<br>请到「团期使用报表 → 团号管理」中新增</div>';
+    } else {
+      html = '<div class="tour-name-empty">暂无团号，请到「团期使用报表 → 团号管理」中新增</div>';
+    }
   }
 
   list.innerHTML = html;
 
   // 绑定选项点击事件
   list.querySelectorAll('.tour-name-option').forEach(opt => {
-    opt.addEventListener('click', async function() {
-      const val = this.dataset.value;
-      // 点「+ 新增」时，先落库到团期名称主数据，保持与报表页一致
-      if (this.classList.contains('add-new')) {
-        try {
-          await SupaDB.createTourName(val);
-          await refreshData('tourNames');
-          if (typeof showToast === 'function') showToast('已新增团期名称「' + val + '」', 'success');
-        } catch (e) {
-          if (typeof showToast === 'function') showToast('新增失败：' + (e.message || e), 'error');
-        }
-      }
-      input.value = val;
+    opt.addEventListener('click', function() {
+      input.value = this.dataset.value;
       list.style.display = 'none';
     });
   });
@@ -681,6 +671,13 @@ async function submitRequisition() {
 
   if (!applyDate || !tourDate || !tourName || !scenario || !applicant) {
     showToast('请填写申请日期、团期日期、团期名称、使用场景和申请人', 'warning');
+    return;
+  }
+
+  // v5.84：团号必须来自团号管理主数据（只能下拉选择，不可自由新建）
+  _loadTourNames();
+  if (_tourNames.length && !_tourNames.includes(tourName)) {
+    showToast('团号「' + tourName + '」不存在，请从下拉列表选择；新增团号请到「团期使用报表 → 团号管理」', 'warning');
     return;
   }
 
@@ -1439,6 +1436,13 @@ async function saveRequisitionEdit() {
 
   if (!applyDate || !tourDate || !tourName || !scenario || !applicant) {
     showToast('请填写申请日期、团期日期、团期名称、使用场景和申请人', 'warning');
+    return;
+  }
+
+  // v5.84：团号必须来自团号管理主数据（只能下拉选择，不可自由新建）
+  _loadTourNames();
+  if (_tourNames.length && !_tourNames.includes(tourName)) {
+    showToast('团号「' + tourName + '」不存在，请从下拉列表选择；新增团号请到「团期使用报表 → 团号管理」', 'warning');
     return;
   }
 
