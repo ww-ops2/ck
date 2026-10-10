@@ -4452,3 +4452,23 @@ table.ms-mx tbody tr.ms-total-row td.sticky-end { background: #fdf1d0; }
 .rpt-ana-hint{margin-top:12px;padding:10px 12px;background:var(--bg-elevated);border-radius:8px;font-size:12px;color:var(--text-secondary);line-height:1.6;}
 .rpt-hint-label{display:inline-block;background:var(--accent);color:#fff;border-radius:5px;padding:1px 7px;font-size:11px;font-weight:700;margin-right:6px;}
 .rpt-ana-empty,.rpt-rank-empty{padding:20px;text-align:center;color:var(--text-muted);font-size:12px;}
+
+/* ===== v5.84 团号统一管理（按钮 + 弹窗 + 全部团号卡片栏） ===== */
+.rpt-master-btn{background:#fff7ed;color:#b45309;border:1px solid #fed7aa;font-weight:600;}
+.rpt-master-btn:hover{background:#ffedd5;}
+.rpt-master-content{max-width:720px;}
+.rpt-master-tip{font-size:12px;color:var(--text-secondary);line-height:1.7;background:var(--bg-elevated);border:1px dashed var(--border);border-radius:8px;padding:9px 12px;margin-bottom:12px;}
+.rpt-master-add{display:flex;gap:8px;margin-bottom:12px;}
+.rpt-master-add input{flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;}
+.rpt-master-scroll{max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:8px;}
+.rpt-master-scroll table{margin:0;}
+.rpt-op-link{border:none;background:none;cursor:pointer;font-size:12.5px;padding:2px 8px;color:var(--accent);}
+.rpt-op-link:hover{text-decoration:underline;}
+.rpt-op-link.del{color:var(--danger);}
+.rpt-op-link:disabled{color:var(--text-muted);opacity:.5;cursor:not-allowed;text-decoration:none;}
+.rpt-pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600;}
+.rpt-pill-ok{background:rgba(45,134,89,.12);color:#2d8659;}
+.rpt-pill-none{background:var(--bg-elevated);color:var(--text-muted);}
+.rpt-tour-card.nodata .rpt-tour-cost{color:var(--text-muted);font-weight:500;font-size:12px;}
+.rpt-tour-tag{position:absolute;top:8px;right:8px;font-size:10px;padding:1px 6px;border-radius:999px;background:var(--bg-elevated);color:var(--text-muted);}
+.rpt-tour-card{position:relative;}
