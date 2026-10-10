@@ -275,16 +275,38 @@ async function showApp() {
   if (typeof initNavigation === 'function') initNavigation();
 
   // 等待 Supabase 数据同步完成（最多 6 秒），参考 V3 数据看板模式
+  // v5.82：同步即使超时也不放弃——完成的那一刻自动重渲染当前模块，
+  // 根治「数据库恢复/冷启动慢 → 6秒竞速放弃 → 页面一直空白」的问题
   if (typeof syncFromSupabase === 'function') {
+    let syncTimedOut = false;
+    const syncPromise = Promise.resolve().then(function() { return syncFromSupabase(); })
+      .then(function() {
+        console.log('[Auth] Supabase 数据同步完成');
+      })
+      .catch(function(e) {
+        console.warn('[Auth] Supabase 同步失败，使用本地缓存:', e && e.message);
+      });
     try {
       await Promise.race([
-        syncFromSupabase(),
+        syncPromise,
         new Promise(function(_, reject) { setTimeout(function() { reject(new Error('Sync timeout 6s')); }, 6000); })
       ]);
-      console.log('[Auth] Supabase 数据同步完成');
     } catch(e) {
-      console.warn('[Auth] Supabase 同步超时或失败，使用本地缓存:', e.message);
+      syncTimedOut = true;
+      console.warn('[Auth] Supabase 同步超 6 秒（冷启动/网络慢），先用本地缓存渲染，同步完成后自动刷新当前模块');
     }
+    // 若 6 秒内没同步完：等它真正完成后再重渲染当前模块（此时缓存已被云端数据覆盖）
+    syncPromise.then(function() {
+      if (syncTimedOut) {
+        try {
+          if (typeof loadModuleData === 'function' && typeof getCurrentModule === 'function') {
+            loadModuleData(getCurrentModule());
+          } else if (typeof loadDashboard === 'function') {
+            loadDashboard();
+          }
+        } catch(e) { console.warn('[Auth] 同步后重渲染失败:', e); }
+      }
+    });
   }
 
   if (typeof loadDashboard === 'function') loadDashboard();
