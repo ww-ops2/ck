@@ -402,13 +402,58 @@ function _rptEnsureCloud() {
     refreshData('consumptionStandards')
   ]).then(function () {
     _rptCloudDone = true;
+    _rptAutoSelectLatestMonth();
     _rptRender();
   }).catch(function (e) {
     console.warn('[Reports] 云端拉取失败，沿用本地缓存：', e && e.message);
+    _rptAutoSelectLatestMonth();
     _rptRender();
   }).finally(function () {
     _rptCloudLoading = false;
   });
+}
+
+/**
+ * v5.83：首次进入报表时，若所选月份（默认当月）没有任何出库/领用/报损数据，
+ * 自动切到「最近有数据的月份」并提示，避免长假后打开显示空白、误以为数据丢失。
+ * 仅会话首次生效一次；用户后续手动选空月份（回看）不受影响。
+ */
+var _rptAutoMonthChecked = false;
+function _rptAutoSelectLatestMonth() {
+  if (_rptAutoMonthChecked) return;
+  _rptAutoMonthChecked = true;
+  const monthInput = document.getElementById('report-month');
+  if (!monthInput || !monthInput.value) return;
+  const so = (_appCache && _appCache.stockOutRecords) ? _appCache.stockOutRecords : [];
+  const req = (_appCache && _appCache.requisitions) ? _appCache.requisitions : [];
+  const loss = (_appCache && _appCache.lossRecords) ? _appCache.lossRecords : [];
+  if (!so.length && !req.length && !loss.length) return; // 系统整体无数据，保持当月
+  const months = [];
+  const pushMonth = function (v) {
+    if (!v) return;
+    const m = String(v).slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(m)) months.push(m);
+  };
+  so.forEach(function (r) { pushMonth(r.stockout_date || r.created_at); });
+  req.forEach(function (r) {
+    if (r.status !== 'cancelled' && r.status !== 'withdrawn' && r.status !== 'outbound_completed') {
+      pushMonth(r.apply_date || r.created_at);
+    }
+  });
+  loss.forEach(function (r) { pushMonth(r.created_at); });
+  if (!months.length) return;
+  const selected = monthInput.value;
+  if (months.indexOf(selected) !== -1) return; // 所选月份本身有数据，不动
+  const latest = months.sort()[months.length - 1];
+  // 只在「所选月份比最新数据月还新」（典型：长假后看当月）时才自动回退；
+  // 用户故意回看更早的空月份则不打扰
+  if (selected > latest) {
+    monthInput.value = latest;
+    if (typeof showToast === 'function') {
+      const parts = latest.split('-');
+      showToast('所选月份暂无数据，已切换到最近有数据的 ' + parts[0] + ' 年 ' + Number(parts[1]) + ' 月', 'info');
+    }
+  }
 }
 
 // ============== 报损财务分析 ==============
