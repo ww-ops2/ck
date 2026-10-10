@@ -15,7 +15,7 @@
   //    确保“长时间开着页面”也能自动升级到最新版（收藏夹点开场景同样覆盖）。
   // 3) localStorage 兜底（离线时按上次记录的版本判断）。
   (function() {
-    var APP_VERSION = '5.83';
+    var APP_VERSION = '5.84';
     var reloading = false;
     function forceReload() {
       if (reloading) return;
@@ -50,8 +50,8 @@
     } catch (e) {}
   })();
   </script>
-  <link rel="stylesheet" href="css/style.css?v=5.83">
-  <link rel="stylesheet" href="css/redesign.css?v=5.83">
+  <link rel="stylesheet" href="css/style.css?v=5.84">
+  <link rel="stylesheet" href="css/redesign.css?v=5.84">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
@@ -819,6 +819,7 @@
               <div class="rpt-stat"><span class="rpt-stat-label">涉及场景</span><span class="rpt-stat-value" id="rpt-kpi-scenario-count">0</span></div>
               <span id="rpt-kpi-loss-tours" style="display:none;">0</span>
               <div class="rpt-statbar-filters">
+                <button class="btn btn-sm rpt-master-btn" id="rpt-master-btn">⚙ 团号管理</button>
                 <input type="month" id="report-month" value="">
                 <select id="report-scenario-filter">
                   <option value="">全部场景</option>
@@ -830,21 +831,13 @@
             </div>
           </div>
 
-          <!-- 团期使用明细（D-1v2：顶部卡片选择 + 固定明细） -->
+          <!-- 团期使用明细（v5.84：卡片栏显示全部团号 + 团号管理弹窗统一维护） -->
           <div class="panel" style="margin-bottom:16px;">
             <div class="panel-header">
               <div class="panel-title">团期使用明细</div>
-              <div class="panel-actions">
-                <button class="btn btn-sm btn-accent" id="add-tour-btn">新增团期</button>
-              </div>
-            </div>
-            <div id="add-tour-form" class="tour-add-form" style="display:none;">
-              <input type="text" id="new-tour-name" placeholder="输入团期名称，如：2026-08-15 华东五市">
-              <button class="btn btn-sm btn-accent" id="add-tour-confirm">保存</button>
-              <button class="btn btn-sm" id="add-tour-cancel">取消</button>
             </div>
             <div class="rpt-tour-bar-wrap">
-              <div class="rpt-tour-bar-title">团期选择（按净成本降序）</div>
+              <div class="rpt-tour-bar-title">团期选择（全部团号 · 按最近出库降序 · 默认选中最新有数据团期）</div>
               <div class="rpt-tour-bar" id="rpt-tour-bar"></div>
             </div>
             <div class="rpt-detail-area">
@@ -1075,6 +1068,56 @@
 
       </div>
     </main>
+  </div>
+
+  <!-- ===== 模态框：团号管理（v5.84 统一维护入口） ===== -->
+  <div id="rpt-master-modal" class="modal">
+    <div class="modal-content modal-lg rpt-master-content">
+      <div class="modal-header">
+        <h2>团号管理</h2>
+        <button class="modal-close" id="rpt-master-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="rpt-master-tip">团号统一在此维护（新增 / 改名 / 删除），领用单等录入处只能下拉选择。有数据的团号不可删除、可改名；改名会同步更新全部关联单据上的团号文本。</div>
+        <div class="rpt-master-add">
+          <input type="text" id="rpt-master-new-name" placeholder="输入新团号，如：YJMH-遇见美好号*新疆-20261101">
+          <button class="btn btn-accent" id="rpt-master-add-btn">新增团号</button>
+        </div>
+        <div class="rpt-master-scroll">
+          <table class="data-table" id="rpt-master-table">
+            <thead>
+              <tr>
+                <th>团号</th>
+                <th style="width:90px;text-align:right;">关联单据</th>
+                <th style="width:110px;text-align:right;">累计净额</th>
+                <th style="width:80px;">状态</th>
+                <th style="width:130px;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="rpt-master-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 模态框：团号改名（v5.84，叠在团号管理弹窗之上） ===== -->
+  <div id="rpt-rename-modal" class="modal">
+    <div class="modal-content" style="max-width:460px;">
+      <div class="modal-header">
+        <h2>修改团号名称</h2>
+        <button class="modal-close" id="rpt-rename-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="rpt-rename-desc" style="font-size:13px;color:var(--text-secondary);margin-bottom:10px;"></p>
+        <input type="text" id="rpt-rename-input" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;margin-bottom:12px;" placeholder="输入新的团号名称">
+        <div class="rpt-master-tip">改名将<b>同步更新全部关联单据</b>（出库记录 / 领用单 / 报损记录 / 非采购入库）上的团号文本，历史数据不断链。此操作会记录审计日志。</div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+          <button class="btn" id="rpt-rename-cancel">取消</button>
+          <button class="btn btn-accent" id="rpt-rename-confirm">确认改名</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ===== 模态框：采购单详情/编辑 ===== -->
@@ -1833,24 +1876,24 @@
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="js/supabase-db.js?v=5.83"></script>
-  <script src="js/supabase-sync.js?v=5.83"></script>
-  <script src="js/migrate-data.js?v=5.83"></script>
-  <script src="js/toast.js?v=5.83"></script>
-  <script src="js/login-characters.js?v=5.83"></script>
-  <script src="js/auth-fix.js?v=5.83"></script>
-  <script src="js/navigation.js?v=5.83"></script>
-  <script src="js/purchase.js?v=5.83"></script>
-  <script src="js/stock-in.js?v=5.83"></script>
-  <script src="js/requisition.js?v=5.83"></script>
-  <script src="js/monthly-summary.js?v=5.83"></script>
-  <script src="js/tour-reports.js?v=5.83"></script>
-  <script src="js/business-flow.js?v=5.83"></script>
-  <script src="js/app.js?v=5.83"></script>
-  <script src="js/inventory-hybrid.js?v=5.83"></script>
-  <script src="js/admin-bindings.js?v=5.83"></script>
+  <script src="js/supabase-db.js?v=5.84"></script>
+  <script src="js/supabase-sync.js?v=5.84"></script>
+  <script src="js/migrate-data.js?v=5.84"></script>
+  <script src="js/toast.js?v=5.84"></script>
+  <script src="js/login-characters.js?v=5.84"></script>
+  <script src="js/auth-fix.js?v=5.84"></script>
+  <script src="js/navigation.js?v=5.84"></script>
+  <script src="js/purchase.js?v=5.84"></script>
+  <script src="js/stock-in.js?v=5.84"></script>
+  <script src="js/requisition.js?v=5.84"></script>
+  <script src="js/monthly-summary.js?v=5.84"></script>
+  <script src="js/tour-reports.js?v=5.84"></script>
+  <script src="js/business-flow.js?v=5.84"></script>
+  <script src="js/app.js?v=5.84"></script>
+  <script src="js/inventory-hybrid.js?v=5.84"></script>
+  <script src="js/admin-bindings.js?v=5.84"></script>
 
-  <script src="js/user-admin.js?v=5.83"></script>
+  <script src="js/user-admin.js?v=5.84"></script>
 
   <!-- ===== 模态框：非采购入库（退库回收） ===== -->
   <div id="modal-nonpurchase" class="modal">
