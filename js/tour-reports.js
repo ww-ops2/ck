@@ -119,8 +119,8 @@ function initTourReports() {
     exportBtn.addEventListener('click', exportTourReport);
   }
 
-  // 团期名称主数据维护（新增）
-  _initTourNameManage();
+  // 团号统一管理（v5.84：新增/改名/删除收口到弹窗）
+  _initTourMaster();
 
   // D-1 维度对比分析分段按钮（静态元素，仅绑定一次）
   _rptBindAnaSeg();
@@ -136,73 +136,200 @@ function initTourReports() {
 }
 
 /**
- * 团期名称新增管理：展开内联表单 → 落库 tour_names → 刷新缓存与列表
+ * v5.84 团号管理弹窗：团号新增 / 改名 / 删除的统一入口。
+ * 规则：新增对所有角色开放（与原行为一致）；改名与删除仅管理员；
+ *       有关联单据的团号删除按钮置灰（后端 deleteTourName 也会二次拦截）。
  */
-function _initTourNameManage() {
-  const addBtn = document.getElementById('add-tour-btn');
-  const form = document.getElementById('add-tour-form');
-  const input = document.getElementById('new-tour-name');
-  const confirmBtn = document.getElementById('add-tour-confirm');
-  const cancelBtn = document.getElementById('add-tour-cancel');
-  if (!addBtn || !form || !input) return;
+function _initTourMaster() {
+  const openBtn = document.getElementById('rpt-master-btn');
+  const modal = document.getElementById('rpt-master-modal');
+  if (!openBtn || !modal) return;
 
-  addBtn.addEventListener('click', function () {
-    const open = form.style.display !== 'none';
-    form.style.display = open ? 'none' : 'block';
-    if (!open) { input.value = ''; input.focus(); }
+  const closeFn = function () { modal.classList.remove('show'); };
+  openBtn.addEventListener('click', function () {
+    _rptRenderMasterTable();
+    modal.classList.add('show');
   });
+  const closeBtn = document.getElementById('rpt-master-close');
+  if (closeBtn) closeBtn.addEventListener('click', closeFn);
+  modal.addEventListener('click', function (e) { if (e.target === modal) closeFn(); });
 
-  if (cancelBtn) {
-    cancelBtn.addEventListener('click', function () {
-      form.style.display = 'none';
-      input.value = '';
-    });
-  }
-
-  if (confirmBtn) {
-    const originalText = confirmBtn.textContent || '保存';
-    confirmBtn.addEventListener('click', async function () {
-      const name = input.value.trim();
+  // 新增
+  const addBtn = document.getElementById('rpt-master-add-btn');
+  const inp = document.getElementById('rpt-master-new-name');
+  if (addBtn && inp) {
+    addBtn.addEventListener('click', async function () {
+      const name = inp.value.trim();
       if (!name) {
-        if (typeof showToast === 'function') showToast('请输入团期名称', 'warning');
+        if (typeof showToast === 'function') showToast('请输入团号名称', 'warning');
         return;
       }
-      // 先置为 loading，给用户即时反馈
-      confirmBtn.disabled = true;
-      confirmBtn.innerHTML = '<span class="btn-spinner"></span>保存中…';
+      const originalText = addBtn.textContent || '新增团号';
+      addBtn.disabled = true;
+      addBtn.innerHTML = '<span class="btn-spinner"></span>保存中…';
       try {
-        // 去重校验：直接读库，避免 _appCache 未加载导致漏判；同时做空白/大小写归一化二次校验
+        // 去重校验：直接读库，避免缓存未加载导致漏判
         const currentNames = await SupaDB.getTourNames();
         const normalize = (s) => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
-        const exists = (currentNames || []).some(t => normalize(t.name) === normalize(name));
-        if (exists) {
-          if (typeof showToast === 'function') showToast('该团期名称已存在，请勿重复添加', 'warning');
+        if ((currentNames || []).some(t => normalize(t.name) === normalize(name))) {
+          if (typeof showToast === 'function') showToast('该团号已存在，请勿重复添加', 'warning');
           return;
         }
         await SupaDB.createTourName(name);
         await refreshData('tourNames');
-        form.style.display = 'none';
-        input.value = '';
-        if (typeof showToast === 'function') showToast('团期名称「' + name + '」已新增', 'success');
+        inp.value = '';
+        if (typeof showToast === 'function') showToast('团号「' + name + '」已新增', 'success');
+        _rptRenderMasterTable();
         if (typeof loadReports === 'function') loadReports();
       } catch (e) {
         const msg = String(e.message || e || '');
-        // 409/唯一约束冲突 → 明确提示重复
         if (msg.indexOf('409') !== -1 || /unique|duplicate|已经存在|已存在|重复/i.test(msg)) {
-          if (typeof showToast === 'function') showToast('该团期名称已存在，请勿重复添加', 'warning');
+          if (typeof showToast === 'function') showToast('该团号已存在，请勿重复添加', 'warning');
         } else {
           if (typeof showToast === 'function') showToast('新增失败：' + msg, 'error');
         }
       } finally {
-        confirmBtn.disabled = false;
-        confirmBtn.textContent = originalText;
+        addBtn.disabled = false;
+        addBtn.textContent = originalText;
       }
     });
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') addBtn.click(); });
   }
 
-  input.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && confirmBtn) confirmBtn.click();
+  // 改名子弹窗
+  const renameModal = document.getElementById('rpt-rename-modal');
+  if (renameModal) {
+    const rClose = document.getElementById('rpt-rename-close');
+    const rCancel = document.getElementById('rpt-rename-cancel');
+    if (rClose) rClose.addEventListener('click', function () { renameModal.classList.remove('show'); });
+    if (rCancel) rCancel.addEventListener('click', function () { renameModal.classList.remove('show'); });
+    renameModal.addEventListener('click', function (e) { if (e.target === renameModal) renameModal.classList.remove('show'); });
+    const rConfirm = document.getElementById('rpt-rename-confirm');
+    if (rConfirm) rConfirm.addEventListener('click', _rptConfirmRenameTourName);
+  }
+}
+
+/**
+ * 渲染团号管理表格（弹窗内）
+ */
+function _rptRenderMasterTable() {
+  const tbody = document.getElementById('rpt-master-tbody');
+  if (!tbody) return;
+  _rptBuildLifetimeAgg();
+  const isAdmin = (typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'admin');
+  const sorted = [..._rptLifetime].sort(function (a, b) {
+    return (b.last || '').localeCompare(a.last || '') || a.name.localeCompare(b.name);
   });
+  if (!sorted.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">暂无团号，请在上方新增</td></tr>';
+    return;
+  }
+  tbody.innerHTML = sorted.map(function (a) {
+    const hasData = a.docs > 0;
+    const status = hasData ? '<span class="rpt-pill rpt-pill-ok">有数据</span>' : '<span class="rpt-pill rpt-pill-none">无数据</span>';
+    const canManage = isAdmin && a.masterId;
+    const renameBtn = canManage
+      ? '<button class="rpt-op-link" data-act="rename" data-id="' + a.masterId + '" data-name="' + _rptEscapeHtml(a.name) + '">改名</button>'
+      : '';
+    const delBtn = canManage
+      ? (hasData
+        ? '<button class="rpt-op-link del" disabled title="已有关联单据，为保护数据不可删除；如不再使用可改名归档">删除</button>'
+        : '<button class="rpt-op-link del" data-act="del" data-id="' + a.masterId + '" data-name="' + _rptEscapeHtml(a.name) + '">删除</button>')
+      : '';
+    return '<tr>'
+      + '<td>' + _rptEscapeHtml(a.name) + '</td>'
+      + '<td style="text-align:right;">' + a.docs + '</td>'
+      + '<td style="text-align:right;" class="money">' + (hasData ? '¥' + Math.round(a.net).toLocaleString('zh-CN') : '—') + '</td>'
+      + '<td>' + status + '</td>'
+      + '<td>' + renameBtn + delBtn + '</td>'
+      + '</tr>';
+  }).join('');
+  tbody.querySelectorAll('.rpt-op-link[data-act]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      if (b.dataset.act === 'rename') _rptAskRenameTourName(Number(b.dataset.id), b.dataset.name);
+      else if (b.dataset.act === 'del') _rptAskDeleteTourName(Number(b.dataset.id), b.dataset.name);
+    });
+  });
+}
+
+/**
+ * 打开改名子弹窗
+ */
+function _rptAskRenameTourName(id, name) {
+  const renameModal = document.getElementById('rpt-rename-modal');
+  if (!renameModal) return;
+  const desc = document.getElementById('rpt-rename-desc');
+  const input = document.getElementById('rpt-rename-input');
+  if (desc) desc.textContent = '将「' + name + '」改名为：';
+  if (input) input.value = name;
+  renameModal.dataset.tourId = String(id);
+  renameModal.dataset.tourOldName = name;
+  renameModal.classList.add('show');
+  if (input) setTimeout(function () { input.focus(); input.select(); }, 50);
+}
+
+/**
+ * 确认改名：更新主数据 + 同步四张业务表的 tour_name 快照 + 刷新相关缓存
+ */
+async function _rptConfirmRenameTourName() {
+  const renameModal = document.getElementById('rpt-rename-modal');
+  const input = document.getElementById('rpt-rename-input');
+  const confirmBtn = document.getElementById('rpt-rename-confirm');
+  if (!renameModal || !input) return;
+  const id = Number(renameModal.dataset.tourId);
+  const oldName = renameModal.dataset.tourOldName || '';
+  const newName = input.value.trim();
+  if (!id || !newName) {
+    if (typeof showToast === 'function') showToast('团号名称不能为空', 'warning');
+    return;
+  }
+  if (newName === oldName) { renameModal.classList.remove('show'); return; }
+  const originalText = confirmBtn.textContent || '确认改名';
+  confirmBtn.disabled = true;
+  confirmBtn.innerHTML = '<span class="btn-spinner"></span>改名中…';
+  try {
+    const result = await SupaDB.updateTourName(id, newName);
+    // 刷新主数据 + 所有被同步的业务表缓存
+    await Promise.all([
+      refreshData('tourNames'),
+      refreshData('stockOutRecords'),
+      refreshData('requisitions'),
+      refreshData('lossRecords'),
+      refreshData('nonPurchaseStockIns')
+    ]).catch(function () {});
+    // 若当前选中的就是被改名的团号，跟随新名
+    if (_rptSelectedTourName === oldName) _rptSelectedTourName = newName;
+    renameModal.classList.remove('show');
+    if (typeof showToast === 'function') {
+      showToast('已改名「' + oldName + '」→「' + newName + '」，同步更新 ' + (result.synced || 0) + ' 笔关联单据', 'success');
+    }
+    _rptRenderMasterTable();
+    if (typeof loadReports === 'function') loadReports();
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('改名失败：' + (e.message || e), 'error');
+  } finally {
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = originalText;
+  }
+}
+
+/**
+ * 删除无数据团号（二次确认；后端仍会校验关联）
+ */
+function _rptAskDeleteTourName(id, name) {
+  if (!id) return;
+  showConfirm('确定删除无数据团号「' + name + '」？\n该团号没有任何关联单据，删除不影响历史数据。', async function () {
+    try {
+      await SupaDB.deleteTourName(id);
+      await refreshData('tourNames');
+      if (typeof showToast === 'function') showToast('团号「' + name + '」已删除', 'success');
+      if (_rptSelectedTourName === name) _rptSelectedTourName = null;
+      _rptRenderMasterTable();
+      if (typeof loadReports === 'function') loadReports();
+    } catch (e) {
+      if (typeof showToast === 'function') showToast('删除失败：' + (e.message || e), 'error');
+    }
+  }, { danger: true });
 }
 
 /**
@@ -363,13 +490,12 @@ function _rptRender() {
   // 本月报损明细行（物品级）：用于团期卡片统计与明细表混排
   const lossRows = _rptBuildLossRows('', monthInput.value);
 
-  // 渲染 D-1：成本排行 + 选中团期明细 + 维度对比分析
+  // v5.84：团期维度聚合（月份筛选口径，供维度分析用）
   _rptAgg = _rptBuildTourAgg(detailRows, lossRows);
-  _rptRankSelIdx = -1;
+  // v5.84：卡片栏改为「全部团号」视图（全量累计口径，不随月份筛选变化）
+  _rptBuildLifetimeAgg();
   _rptRenderTourBar();
-  const firstIdx = _rptAgg.findIndex(a => (a.useCost > 0 || a.lossAmt > 0));
-  if (firstIdx >= 0) _rptSelectTour(firstIdx);
-  else _rptRenderAnalysis();
+  _rptSelectTourAuto();
 }
 
 /**
@@ -1073,60 +1199,121 @@ function _rptBuildTourAgg(detailRows, lossRows) {
   });
 }
 
+/**
+ * v5.84 全量团号聚合（全部月份累计口径，供卡片栏与团号管理弹窗使用）
+ * 数据源：tour_names 主数据（全集）+ 出库/报损/待出库领用单（累计数与最近日期）
+ */
+var _rptLifetime = []; // [{ name, docs, net, last, masterId }]
+
+function _rptBuildLifetimeAgg() {
+  const priceMap = _rptBuildPriceMap();
+  const so = (_appCache && _appCache.stockOutRecords) ? _appCache.stockOutRecords : [];
+  const req = (_appCache && _appCache.requisitions) ? _appCache.requisitions : [];
+  const loss = (_appCache && _appCache.lossRecords) ? _appCache.lossRecords : [];
+  const map = new Map();
+  const ensure = function (n, masterId) {
+    const k = String(n || '').trim();
+    if (!k) return null;
+    if (!map.has(k)) map.set(k, { name: k, docs: 0, net: 0, last: '', masterId: masterId || null });
+    const e = map.get(k);
+    if (masterId && !e.masterId) e.masterId = masterId;
+    return e;
+  };
+  // 主数据全集（保证无数据团号也出卡片）
+  ((_appCache && _appCache.tourNames) || []).forEach(t => ensure(t.name, t.id));
+  const itemsCost = function (items) {
+    return (items || []).reduce(function (s, it) {
+      return s + (Number(it.quantity || 0) * _rptResolvePrice(it.name, priceMap));
+    }, 0);
+  };
+  const touch = function (e, date) {
+    const d = String(date || '').slice(0, 10);
+    if (d && d > e.last) e.last = d;
+  };
+  so.forEach(function (r) {
+    const e = ensure(r.tour_name); if (!e) return;
+    e.docs++; e.net += itemsCost(r.items); touch(e, r.stockout_date || r.created_at);
+  });
+  loss.forEach(function (r) {
+    const e = ensure(r.tour_name); if (!e) return;
+    e.docs++; e.net += (Number(r.loss_amount) || 0); touch(e, r.created_at);
+  });
+  req.forEach(function (r) {
+    if (r.status === 'cancelled' || r.status === 'withdrawn' || r.status === 'outbound_completed') return;
+    const e = ensure(r.tour_name); if (!e) return;
+    e.docs++; e.net += itemsCost(r.items); touch(e, r.apply_date || r.created_at);
+  });
+  _rptLifetime = Array.from(map.values());
+}
+
+/**
+ * v5.84 卡片栏：显示全部团号（含暂无数据的），按最近单据日期降序
+ */
 function _rptRenderTourBar() {
   const el = document.getElementById('rpt-tour-bar');
   if (!el) return;
-  if (!_rptAgg.length) {
-    el.innerHTML = '<div class="rpt-rank-empty">本月暂无团期使用 / 报损数据</div>';
+  if (!_rptLifetime.length) {
+    el.innerHTML = '<div class="rpt-rank-empty">暂无团号 · 点击上方「⚙ 团号管理」新增</div>';
     return;
   }
-  const sorted = [..._rptAgg].sort((a, b) => b.net - a.net);
-  const maxNet = Math.max(...sorted.map(a => a.net), 1);
-  const isAdmin = (typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'admin');
-  el.innerHTML = sorted.map(a => {
-    const idx = _rptAgg.indexOf(a);
-    const totPct = maxNet ? Math.round(a.net / maxNet * 100) : 0;
-    const uPct = a.net ? Math.round(a.useCost / a.net * 100) : 0;
-    const active = idx === _rptRankSelIdx ? 'rpt-tour-active' : '';
-    const delBtn = (isAdmin && a.masterId && !a.associated)
-      ? '<button class="rpt-tour-del" data-id="' + a.masterId + '" data-name="' + _rptEscapeHtml(a.name) + '" title="删除团期名称">删除</button>'
-      : '';
-    return '<div class="rpt-tour-card ' + active + '" data-idx="' + idx + '">'
+  const sorted = [..._rptLifetime].sort(function (a, b) {
+    return (b.last || '').localeCompare(a.last || '') || a.name.localeCompare(b.name);
+  });
+  el.innerHTML = sorted.map(function (a) {
+    const hasData = a.docs > 0;
+    const active = a.name === _rptSelectedTourName ? 'rpt-tour-active' : '';
+    const nodata = hasData ? '' : ' nodata';
+    const tag = hasData ? '' : '<span class="rpt-tour-tag">暂无数据</span>';
+    const cost = hasData ? '¥' + Math.round(a.net).toLocaleString('zh-CN') : '—';
+    const meta = hasData ? (a.docs + ' 笔单据 · 最近 ' + a.last) : '预建团号';
+    return '<div class="rpt-tour-card ' + active + nodata + '" data-name="' + _rptEscapeHtml(a.name) + '">'
+      + tag
       + '<div class="rpt-tour-name">' + _rptEscapeHtml(a.name) + '</div>'
-      + '<div class="rpt-tour-cost money">¥' + Math.round(a.net).toLocaleString('zh-CN') + '</div>'
-      + (delBtn ? delBtn : '')
-      + '<div class="rpt-tour-mini"><i style="width:' + (totPct * uPct / 100) + '%;background:var(--accent)"></i><i style="width:' + (totPct * (100 - uPct) / 100) + '%;background:var(--danger)"></i></div>'
+      + '<div class="rpt-tour-cost">' + cost + '</div>'
+      + '<div class="rpt-tour-meta" style="font-size:11px;color:var(--text-muted);margin-top:2px;">' + meta + '</div>'
       + '</div>';
   }).join('');
-
-  el.querySelectorAll('.rpt-tour-card').forEach(d => {
-    d.addEventListener('click', e => {
-      if (e.target.closest('.rpt-tour-del')) return;
-      _rptSelectTour(+d.dataset.idx);
-    });
-  });
-  el.querySelectorAll('.rpt-tour-del').forEach(b => {
-    b.addEventListener('click', e => {
-      e.stopPropagation();
-      _rptDeleteTourName(Number(b.dataset.id), b.dataset.name, b);
-    });
+  el.querySelectorAll('.rpt-tour-card').forEach(function (d) {
+    d.addEventListener('click', function () { _rptSelectTourByName(d.dataset.name); });
   });
 }
 
-function _rptSelectTour(idx) {
-  if (idx < 0 || idx >= _rptAgg.length) return;
-  _rptRankSelIdx = idx;
-  const a = _rptAgg[idx];
-  _rptSelectedTourName = a.name;
-  document.querySelectorAll('#rpt-tour-bar .rpt-tour-card').forEach(d => d.classList.toggle('rpt-tour-active', (+d.dataset.idx) === idx));
+/**
+ * v5.84 自动选中：已选团号仍存在则保持；否则默认选「最新有数据」的团号
+ */
+function _rptSelectTourAuto() {
+  if (!_rptLifetime.length) {
+    _rptSelectedTourName = null;
+    _rptRenderAnalysis();
+    return;
+  }
+  if (_rptSelectedTourName && _rptLifetime.some(a => a.name === _rptSelectedTourName)) {
+    _rptSelectTourByName(_rptSelectedTourName);
+    return;
+  }
+  const withData = _rptLifetime.filter(a => a.docs > 0).sort(function (a, b) {
+    return (b.last || '').localeCompare(a.last || '');
+  });
+  _rptSelectTourByName(withData.length ? withData[0].name : _rptLifetime[0].name);
+}
+
+/**
+ * v5.84 按名称选中团期（卡片栏点击 / 自动选中共用）
+ */
+function _rptSelectTourByName(name) {
+  if (!name) return;
+  _rptSelectedTourName = name;
+  document.querySelectorAll('#rpt-tour-bar .rpt-tour-card').forEach(function (d) {
+    d.classList.toggle('rpt-tour-active', d.dataset.name === name);
+  });
   const nameEl = document.getElementById('report-detail-tour-name');
-  if (nameEl) nameEl.textContent = a.name;
-  _rptRenderDetailMonthFilter(a.name);
+  if (nameEl) nameEl.textContent = name;
+  _rptRenderDetailMonthFilter(name);
   const g = document.getElementById('report-month');
   const gm = g ? g.value : '';
   const sf = document.getElementById('report-scenario-filter');
   const sc = sf ? sf.value : '';
-  const rows = _rptBuildTourDetailRows(a.name, gm, sc);
+  const rows = _rptBuildTourDetailRows(name, gm, sc);
   _rptRenderTourDetail(rows);
   _rptRenderAnalysis();
 }
@@ -1153,13 +1340,14 @@ function _rptRenderAnalysis() {
   const yuan = (v) => '¥' + Number(v || 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 });
 
   if (_rptAnaMode === 'scene') {
-    if (_rptRankSelIdx < 0 || !_rptAgg[_rptRankSelIdx]) {
+    // v5.84：按选中团号名称匹配（卡片栏已是全量团号视图，不再依赖排行索引）
+    const a = _rptAgg.find(x => x.name === _rptSelectedTourName);
+    if (!a) {
       if (ctrl) ctrl.innerHTML = '';
-      chart.innerHTML = '<div class="rpt-ana-empty">请先在上方排行选择团期</div>';
+      chart.innerHTML = '<div class="rpt-ana-empty">' + (_rptSelectedTourName ? '该团期本月暂无使用数据' : '请先在上方选择团期') + '</div>';
       if (hint) hint.innerHTML = '';
       return;
     }
-    const a = _rptAgg[_rptRankSelIdx];
     if (ctrl) ctrl.innerHTML = '<span class="rpt-ana-ctx">当前团期：</span><b>' + _rptEscapeHtml(a.name) + '</b>'
       + '<span class="rpt-badge rpt-b-use">使用 ' + yuan(a.useCost) + '</span>'
       + '<span class="rpt-badge rpt-b-loss">报损 ' + yuan(a.lossAmt) + '</span>';
