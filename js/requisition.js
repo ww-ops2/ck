@@ -16,6 +16,9 @@ let _tourNames = [];
 // 当前正在确认出库的领用单ID
 let _currentStockOutReqId = null;
 
+// 当前正在红冲出库的领用单ID
+let _currentReverseReqId = null;
+
 /**
  * 按当前登录角色显隐「新建领用单」按钮。
  * 必须在登录后（currentUser 就绪）调用，否则 DOMContentLoaded 阶段
@@ -98,6 +101,12 @@ function initRequisitionModule() {
   const finalConfirmBtn = document.getElementById('stockout-final-confirm-btn');
   if (finalConfirmBtn) {
     finalConfirmBtn.addEventListener('click', _finalConfirmStockOut);
+  }
+
+  // 红冲出库确认按钮（v5.85）
+  const reverseConfirmBtn = document.getElementById('reverse-stockout-confirm-btn');
+  if (reverseConfirmBtn) {
+    reverseConfirmBtn.addEventListener('click', _submitReverseStockOut);
   }
 
   // 出库状态筛选
@@ -832,6 +841,10 @@ function loadRequisitions() {
     }
     if (canConfirm) {
       actionBtns += ` <button class="btn btn-sm" onclick="confirmStockOut(${req.id})" style="background:var(--success);border-color:var(--success);color:#fff;">确认出库</button>`;
+    }
+    // v5.85 已出库单可红冲（仅仓库/管理员，按商品勾选部分冲红）
+    if (req.status === 'outbound_completed' && hasPermission('confirm_stockout')) {
+      actionBtns += ` <button class="btn btn-sm" onclick="openReversalModal(${req.id})" style="background:var(--danger);border-color:var(--danger);color:#fff;">红冲</button>`;
     }
     if (isOwnerPending) {
       actionBtns += ` <button class="btn btn-sm" onclick="editRequisition(${req.id})" style="background:var(--accent);border-color:var(--accent);color:#fff;">修改</button>`;
@@ -1671,6 +1684,7 @@ function loadStockOutRecords() {
       items: r.items,
       total_quantity: r.total_quantity,
       status: 'completed',
+      record_status: r.status || 'completed',
       canConfirm: false
     });
   });
@@ -1712,18 +1726,32 @@ function loadStockOutRecords() {
         </tr>
       `;
     } else {
+      const isReversal = r.record_status === 'reversal';
+      const badge = isReversal
+        ? '<span class="status-badge" style="background:var(--danger);color:#fff;">红冲</span>'
+        : '<span class="status-badge success">已出库</span>';
+      const codeCell = isReversal
+        ? `<td style="color:var(--danger);font-weight:600;">${r.code}</td>`
+        : `<td>${r.code}</td>`;
+      const qtyCell = isReversal
+        ? `<td style="color:var(--danger);font-weight:600;">${r.items.length} 种 / ${r.total_quantity} 件</td>`
+        : `<td>${r.items.length} 种 / ${r.total_quantity} 件</td>`;
+      // 红冲按钮：仅原始已出库单、持出库权限，红冲单本身不可再冲红
+      const reverseBtn = (!isReversal && hasPermission('confirm_stockout'))
+        ? ` <button class="btn btn-sm" onclick="openReversalModal(${r.requisition_id})" style="background:var(--danger);border-color:var(--danger);color:#fff;">红冲</button>`
+        : '';
       return `
-        <tr>
-          <td>${r.code}</td>
+        <tr${isReversal ? ' style="background:#fff5f5;"' : ''}>
+          ${codeCell}
           <td>${r.requisition_code}</td>
           <td>${r.tour_date || '-'}</td>
           <td>${_escapeHtml(r.tour_name || '-')}</td>
           <td>${_normalizeScenario(r.scenario)}</td>
           <td>${r.date}</td>
-          <td>${r.items.length} 种 / ${r.total_quantity} 件</td>
-          <td><span class="status-badge success">已出库</span></td>
+          ${qtyCell}
+          <td>${badge}</td>
           <td>
-            <button class="btn btn-sm" onclick="viewStockOutDetail('${r.code}')">查看详情</button>
+            <button class="btn btn-sm" onclick="viewStockOutDetail('${r.code}')">查看详情</button>${reverseBtn}
           </td>
         </tr>
       `;
@@ -1738,12 +1766,35 @@ function viewStockOutDetail(recordCode) {
   let records = _appCache.stockOutRecords ? _appCache.stockOutRecords : [];
   const record = records.find(r => r.code === recordCode);
   if (!record) { showToast('未找到该出库记录', 'error'); return; }
+  const isReversal = record.status === 'reversal';
 
   const body = document.getElementById('requisition-detail-body');
   if (!body) return;
 
   let itemsHtml = '';
-  if (record.items && record.items.length > 0) {
+  if (isReversal && record.items && record.items.length > 0) {
+    itemsHtml = `
+      <div class="detail-section-title">红冲明细</div>
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr><th>序号</th><th>物品编号</th><th>物品名称</th><th>分类</th><th>冲红数量</th><th>单位</th></tr>
+          </thead>
+          <tbody>
+            ${record.items.map((item, i) => `
+              <tr>
+                <td>${i + 1}</td>
+                <td style="font-family:monospace;font-size:12px;color:var(--text-muted);">${_escapeHtml(item.code)}</td>
+                <td style="font-weight:600;">${_escapeHtml(item.name)}</td>
+                <td>${_escapeHtml(item.category || '-')}</td>
+                <td style="font-weight:600;color:var(--danger);">${Math.abs(Number(item.quantity) || 0)}</td>
+                <td>${_escapeHtml(item.unit)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } else if (record.items && record.items.length > 0) {
     itemsHtml = `
       <div class="detail-section-title">出库明细</div>
       <div class="table-scroll">
@@ -1817,16 +1868,201 @@ function viewStockOutDetail(recordCode) {
       </div>
       <div class="detail-info-item">
         <span class="detail-info-label">物品总数</span>
-        <span class="detail-info-value">${record.items.length} 种 / ${record.total_quantity} 件</span>
+        <span class="detail-info-value">${record.items.length} 种 / ${isReversal ? Math.abs(Number(record.total_quantity) || 0) : record.total_quantity} 件</span>
       </div>
     </div>
+    ${isReversal ? '<div style="margin:12px 0;padding:10px 12px;background:#fdecea;border:1px solid #f3b4b4;border-radius:8px;color:#a32d2d;font-size:13px;">这是一张<strong>红冲出库单</strong>（红字冲销），用于冲减上方关联领用单的出库数量，库存已相应回写。</div>' : ''}
     ${itemsHtml}
   `;
 
   const titleEl = document.querySelector('#modal-requisition-detail .modal-header h2');
-  if (titleEl) titleEl.textContent = '出库单详情';
+  if (titleEl) titleEl.textContent = isReversal ? '红冲单详情' : '出库单详情';
 
   openModal('modal-requisition-detail');
+}
+
+/**
+ * 统计某领用单各商品已被冲红的数量（红冲单 quantity 为负，取绝对值累加）
+ */
+function _getReversedQtyMap(reqId) {
+  const map = {};
+  const recs = _appCache.stockOutRecords || [];
+  recs.forEach(r => {
+    if (String(r.requisition_id) !== String(reqId)) return;
+    if ((r.status || 'completed') !== 'reversal') return;
+    (r.items || []).forEach(it => {
+      const k = String(it.item_id);
+      map[k] = (map[k] || 0) + Math.abs(Number(it.quantity) || 0);
+    });
+  });
+  return map;
+}
+
+/**
+ * 打开红冲出库弹窗（按商品勾选部分冲红）
+ */
+function openReversalModal(reqId) {
+  const reqList = _appCache.requisitions || [];
+  const req = reqList.find(r => String(r.id) === String(reqId));
+  if (!req) return;
+
+  if (!hasPermission('confirm_stockout')) {
+    showToast('只有仓库管理员可以红冲出库', 'warning');
+    return;
+  }
+  if (req.status !== 'outbound_completed') {
+    showToast('仅「已出库」的领用单可冲红', 'warning');
+    return;
+  }
+
+  // 原始出库记录（已出库领用单对应唯一一条 completed 记录）
+  const soRecs = _appCache.stockOutRecords || [];
+  const origRec = soRecs.find(r => String(r.requisition_id) === String(reqId) && (r.status || 'completed') === 'completed');
+  if (!origRec) {
+    showToast('未找到该领用单的出库记录，无法冲红', 'error');
+    return;
+  }
+
+  const reversedMap = _getReversedQtyMap(reqId);
+  _currentReverseReqId = reqId;
+
+  const infoDiv = document.getElementById('reverse-stockout-info');
+  if (infoDiv) {
+    infoDiv.innerHTML = `
+      <div class="detail-info-item"><span class="detail-info-label">领用单号</span><span class="detail-info-value">${req.code}</span></div>
+      <div class="detail-info-item"><span class="detail-info-label">原出库单号</span><span class="detail-info-value">${origRec.code}</span></div>
+      <div class="detail-info-item"><span class="detail-info-label">团期名称</span><span class="detail-info-value">${_escapeHtml(req.tour_name || '-')}</span></div>
+      <div class="detail-info-item"><span class="detail-info-label">使用场景</span><span class="detail-info-value">${_normalizeScenario(req.scenario)}</span></div>
+    `;
+  }
+
+  const tbody = document.getElementById('reverse-stockout-tbody');
+  if (tbody) {
+    const items = origRec.items || [];
+    if (items.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-state">原出库单无明细</td></tr>';
+    } else {
+      tbody.innerHTML = items.map(it => {
+        const k = String(it.item_id);
+        const actual = Number(it.quantity) || 0;
+        const reversed = reversedMap[k] || 0;
+        const reversible = actual - reversed;
+        const disabled = reversible <= 0;
+        return `
+        <tr data-item-id="${it.item_id}"${disabled ? ' style="opacity:.45;"' : ''}>
+          <td style="text-align:center;"><input type="checkbox" class="reverse-check" data-item-id="${it.item_id}"${disabled ? ' disabled' : ''}></td>
+          <td style="font-weight:600;">${_escapeHtml(it.name)}</td>
+          <td style="font-family:monospace;font-size:12px;color:var(--text-muted);">${_escapeHtml(it.code || '-')}</td>
+          <td>${actual}</td>
+          <td style="color:var(--danger);">${reversed > 0 ? reversed : '-'}</td>
+          <td style="font-weight:600;color:${reversible > 0 ? 'var(--success)' : 'var(--text-muted)'};">${reversible}</td>
+          <td><input type="number" class="reverse-qty" data-item-id="${it.item_id}" value="${reversible}" min="1" max="${reversible}"${disabled ? ' disabled' : ''} style="width:70px;"></td>
+          <td>${_escapeHtml(it.unit || '-')}</td>
+        </tr>`;
+      }).join('');
+    }
+  }
+
+  const reasonInput = document.getElementById('reverse-stockout-reason');
+  if (reasonInput) reasonInput.value = '';
+
+  openModal('modal-reverse-stockout');
+}
+
+/**
+ * 本地降级红冲（云端约束未放宽时可用）：回写缓存库存 + 追加本地红冲单
+ */
+function _reverseStockOutLocalFallback(req, selected) {
+  const inventory = _appCache.inventory ? _appCache.inventory.slice() : [];
+  selected.forEach(s => {
+    const inv = inventory.find(it => String(it.id) === String(s.item_id));
+    if (inv) inv.stock = (Number(inv.stock) || 0) + s.qty;
+  });
+  _appCache.inventory = inventory;
+
+  const soList = _appCache.stockOutRecords ? _appCache.stockOutRecords.slice() : [];
+  const origRec = soList.find(r => String(r.requisition_id) === String(req.id) && (r.status || 'completed') === 'completed');
+  const totalQty = selected.reduce((sum, i) => sum + i.qty, 0);
+  const rvItems = selected.map((s, i) => {
+    const orig = origRec && origRec.items ? origRec.items.find(o => String(o.item_id) === String(s.item_id)) : null;
+    return {
+      item_id: s.item_id, name: orig ? orig.name : '', code: orig ? orig.code : '',
+      category: orig ? orig.category : '', unit: orig ? orig.unit : '',
+      quantity: -s.qty, requested_quantity: 0, brand: orig ? orig.brand : '', model: orig ? orig.model : '', sort_order: i
+    };
+  });
+  soList.push({
+    id: Date.now(), code: 'RV' + Date.now().toString().slice(-8),
+    requisition_id: req.id, requisition_code: req.code,
+    tour_date: req.tour_date || '', tour_name: req.tour_name || '', scenario: req.scenario,
+    stockout_date: new Date().toISOString().slice(0, 10),
+    total_quantity: -totalQty, status: 'reversal',
+    confirmed_by: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.name : '',
+    confirmed_at: new Date().toISOString(),
+    items: rvItems
+  });
+  _appCache.stockOutRecords = soList;
+}
+
+/**
+ * 提交红冲出库
+ */
+async function _submitReverseStockOut() {
+  if (!_currentReverseReqId) return;
+  const reqId = _currentReverseReqId;
+  const reqList = _appCache.requisitions || [];
+  const req = reqList.find(r => String(r.id) === String(reqId));
+  if (!req) return;
+
+  // 收集勾选的商品及数量
+  const checks = document.querySelectorAll('#reverse-stockout-tbody .reverse-check');
+  const selected = [];
+  let invalid = false;
+  checks.forEach(chk => {
+    if (!chk.checked) return;
+    const itemId = chk.dataset.itemId;
+    const qtyInput = document.querySelector(`#reverse-stockout-tbody .reverse-qty[data-item-id="${itemId}"]`);
+    const qty = parseInt(qtyInput && qtyInput.value, 10) || 0;
+    const max = parseInt(qtyInput && qtyInput.max, 10) || 0;
+    if (qty <= 0 || qty > max) { invalid = true; return; }
+    selected.push({ item_id: itemId, qty: qty });
+  });
+
+  if (invalid) { showToast('冲红数量必须大于 0 且不超过"可冲红"数量', 'warning'); return; }
+  if (selected.length === 0) { showToast('请勾选要冲红的商品', 'warning'); return; }
+
+  const reason = (document.getElementById('reverse-stockout-reason') || {}).value || '';
+  const totalQty = selected.reduce((s, i) => s + i.qty, 0);
+
+  showConfirm(`确定要红冲领用单 ${req.code} 中勾选的 ${selected.length} 种商品（共 ${totalQty} 件）吗？\n将回写库存并生成一张红冲出库单，原领用单状态不变。`, async function() {
+    const btn = document.getElementById('reverse-stockout-confirm-btn');
+    showButtonLoading(btn, '冲红中...');
+    try {
+      const rv = await SupaDB.reverseStockOut(reqId, selected, reason);
+      await safeRefresh('stockOutRecords');
+      await safeRefresh('inventory');
+      await safeRefresh('requisitions');
+      showToast(`红冲成功，红冲单号：${rv && rv.code ? rv.code : ''}，库存已回写`, 'success');
+    } catch (e) {
+      if (window.__SCHEMA_OUTDATED) {
+        _reverseStockOutLocalFallback(req, selected);
+        showToast('红冲成功（本地模式，请执行数据库迁移以同步云端）', 'warning');
+      } else {
+        showToast('红冲失败：' + (e && e.message ? e.message : e), 'error');
+        hideButtonLoading(btn);
+        return;
+      }
+    } finally {
+      hideButtonLoading(btn);
+    }
+    closeModal();
+    _currentReverseReqId = null;
+    loadRequisitions();
+    loadStockOutRecords();
+    updateKPICards();
+    loadDashboard();
+    if (typeof refreshAllBusinessKPI === 'function') refreshAllBusinessKPI();
+  }, { danger: true, icon: '⚠️', confirmText: '确认冲红' });
 }
 
 /**
