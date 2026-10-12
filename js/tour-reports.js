@@ -361,7 +361,7 @@ function _rptRender() {
     const d = new Date(r.apply_date || r.created_at);
     return d >= startDate && d <= endDate &&
       r.status !== 'cancelled' && r.status !== 'withdrawn' &&
-      r.status !== 'outbound_completed'; // 已出库的不重复计算
+      r.status !== 'outbound_completed' && r.status !== 'partially_outbounded'; // 已出库/部分出库的不重复计算（使用量只取实际出库单）
   });
 
   // 场景过滤
@@ -562,7 +562,7 @@ function _rptAutoSelectLatestMonth() {
   };
   so.forEach(function (r) { pushMonth(r.stockout_date || r.created_at); });
   req.forEach(function (r) {
-    if (r.status !== 'cancelled' && r.status !== 'withdrawn' && r.status !== 'outbound_completed') {
+    if (r.status !== 'cancelled' && r.status !== 'withdrawn' && r.status !== 'outbound_completed' && r.status !== 'partially_outbounded') {
       pushMonth(r.apply_date || r.created_at);
     }
   });
@@ -715,7 +715,7 @@ rows.push({
 
   requisitions.forEach(req => {
     if ((req.tour_name || '').trim() !== tourName) return;
-    if (req.status === 'cancelled' || req.status === 'withdrawn' || req.status === 'outbound_completed') return;
+    if (req.status === 'cancelled' || req.status === 'withdrawn' || req.status === 'outbound_completed' || req.status === 'partially_outbounded') return;
     if (!matchesMonth(req.apply_date || req.created_at)) return;
     const scenario = _rptNormalizeScenario(req.scenario);
     if (scenarioVal && scenarioVal !== scenario) return;
@@ -1238,7 +1238,7 @@ function _rptBuildLifetimeAgg() {
     e.docs++; e.net += (Number(r.loss_amount) || 0); touch(e, r.created_at);
   });
   req.forEach(function (r) {
-    if (r.status === 'cancelled' || r.status === 'withdrawn' || r.status === 'outbound_completed') return;
+    if (r.status === 'cancelled' || r.status === 'withdrawn' || r.status === 'outbound_completed' || r.status === 'partially_outbounded') return;
     const e = ensure(r.tour_name); if (!e) return;
     e.docs++; e.net += itemsCost(r.items); touch(e, r.apply_date || r.created_at);
   });
