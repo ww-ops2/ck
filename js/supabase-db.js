@@ -1602,7 +1602,7 @@ const SupaDB = {
     if (!sb) throw new Error('Supabase 未连接');
     const req = await this.getRequisition(reqId);
     if (!req) throw new Error('领用单不存在');
-    if (req.status !== 'outbound_completed') throw new Error('仅「已出库」的领用单可冲红');
+    if (!['outbound_completed', 'partially_outbounded'].includes(req.status)) throw new Error('仅「已出库」或「部分出库」的领用单可冲红');
 
     // 1. 原始出库记录（每个已出库领用单仅一条 completed 记录）
     const origRecs = await _sbQuery(
