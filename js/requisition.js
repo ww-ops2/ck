@@ -842,8 +842,8 @@ function loadRequisitions() {
     if (canConfirm) {
       actionBtns += ` <button class="btn btn-sm" onclick="confirmStockOut(${req.id})" style="background:var(--success);border-color:var(--success);color:#fff;">确认出库</button>`;
     }
-    // v5.85 已出库单可红冲（仅仓库/管理员，按商品勾选部分冲红）
-    if (req.status === 'outbound_completed' && hasPermission('confirm_stockout')) {
+    // v5.85 已出库单可红冲（仅仓库/管理员，按商品勾选部分冲红）；v5.88 部分出库单也可红冲
+    if ((req.status === 'outbound_completed' || req.status === 'partially_outbounded') && hasPermission('confirm_stockout')) {
       actionBtns += ` <button class="btn btn-sm" onclick="openReversalModal(${req.id})" style="background:var(--danger);border-color:var(--danger);color:#fff;">红冲</button>`;
     }
     if (isOwnerPending) {
@@ -1032,6 +1032,10 @@ function confirmStockOut(reqId) {
   }
   if (req.status === 'outbound_completed') {
     showToast('该领用单已完成出库', 'warning');
+    return;
+  }
+  if (req.status === 'partially_outbounded') {
+    showToast('该领用单为部分出库状态，剩余差额出库能力上线前请勿重复确认出库', 'warning');
     return;
   }
 
@@ -1605,9 +1609,9 @@ async function deleteRequisition(reqId) {
     return;
   }
 
-  // v5.43 删除门禁：已出库的领用单保留出库审计，不可删除
-  if (req.status === 'outbound_completed') {
-    showToast('已出库的领用单不可删除（需保留出库审计）', 'warning');
+  // v5.43 删除门禁：已出库的领用单保留出库审计，不可删除；v5.88 部分出库同理
+  if (req.status === 'outbound_completed' || req.status === 'partially_outbounded') {
+    showToast('已出库/部分出库的领用单不可删除（需保留出库审计）', 'warning');
     return;
   }
 
@@ -1910,38 +1914,54 @@ async function openReversalModal(reqId) {
     showToast('只有仓库管理员可以红冲出库', 'warning');
     return;
   }
-  if (req.status !== 'outbound_completed') {
-    showToast('仅「已出库」的领用单可冲红', 'warning');
+  const _SHIPPED_STATUSES = ['outbound_completed', 'partially_outbounded'];
+  if (!_SHIPPED_STATUSES.includes(req.status)) {
+    showToast('仅「已出库」或「部分出库」的领用单可冲红', 'warning');
     return;
   }
 
-  // 原始出库记录（已出库领用单对应唯一一条 completed 记录）
+  // v5.88 聚合该领用单下【全部】completed 出库记录（如 RQ00009 有 SO00011+SO00012 两条）
   const soRecs = _appCache.stockOutRecords || [];
-  const origRec = soRecs.find(r => String(r.requisition_id) === String(reqId) && (r.status || 'completed') === 'completed');
-  if (!origRec) {
+  const completedRecs = soRecs.filter(r => String(r.requisition_id) === String(reqId) && (r.status || 'completed') === 'completed');
+  if (completedRecs.length === 0) {
     showToast('未找到该领用单的出库记录，无法冲红', 'error');
     return;
   }
 
   // v5.86 自愈：缓存明细为空（如缓存陈旧/被覆盖）时，按单号实时拉云端补齐
-  if (!origRec.items || origRec.items.length === 0) {
-    try {
-      if (typeof SupaDB !== 'undefined' && SupaDB.getStockOutRecord) {
-        const fresh = await SupaDB.getStockOutRecord(origRec.code);
-        if (fresh && Array.isArray(fresh.stock_out_items) && fresh.stock_out_items.length > 0) {
-          origRec.items = fresh.stock_out_items.slice()
-            .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-            .map(item => ({
-              id: item.id, item_id: item.inventory_item_id, name: item.name,
-              code: item.code, category: item.category, unit: item.unit,
-              quantity: Number(item.quantity), requested_quantity: Number(item.requested_quantity),
-              brand: item.brand, model: item.model
-            }));
-          origRec.status = fresh.status || origRec.status;
+  for (const rec of completedRecs) {
+    if (!rec.items || rec.items.length === 0) {
+      try {
+        if (typeof SupaDB !== 'undefined' && SupaDB.getStockOutRecord) {
+          const fresh = await SupaDB.getStockOutRecord(rec.code);
+          if (fresh && Array.isArray(fresh.stock_out_items) && fresh.stock_out_items.length > 0) {
+            rec.items = fresh.stock_out_items.slice()
+              .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+              .map(item => ({
+                id: item.id, item_id: item.inventory_item_id, name: item.name,
+                code: item.code, category: item.category, unit: item.unit,
+                quantity: Number(item.quantity), requested_quantity: Number(item.requested_quantity),
+                brand: item.brand, model: item.model
+              }));
+            rec.status = fresh.status || rec.status;
+          }
         }
-      }
-    } catch (e) { console.warn('[Reversal] 明细自愈拉取失败:', e.message); }
+      } catch (e) { console.warn('[Reversal] 明细自愈拉取失败:', e.message); }
+    }
   }
+
+  // 按 item_id 聚合实际出库量（跨多条 SO 合并）
+  const mergedMap = {};
+  for (const rec of completedRecs) {
+    (rec.items || []).forEach(it => {
+      const k = String(it.item_id);
+      if (!mergedMap[k]) {
+        mergedMap[k] = { item_id: it.item_id, name: it.name, code: it.code, unit: it.unit, quantity: 0 };
+      }
+      mergedMap[k].quantity += Number(it.quantity) || 0;
+    });
+  }
+  const mergedItems = Object.values(mergedMap).filter(it => it.quantity > 0);
 
   const reversedMap = _getReversedQtyMap(reqId);
   _currentReverseReqId = reqId;
@@ -1950,7 +1970,7 @@ async function openReversalModal(reqId) {
   if (infoDiv) {
     infoDiv.innerHTML = `
       <div class="detail-info-item"><span class="detail-info-label">领用单号</span><span class="detail-info-value">${req.code}</span></div>
-      <div class="detail-info-item"><span class="detail-info-label">原出库单号</span><span class="detail-info-value">${origRec.code}</span></div>
+      <div class="detail-info-item"><span class="detail-info-label">出库单号</span><span class="detail-info-value">${completedRecs.map(r => _escapeHtml(r.code)).join('、')}</span></div>
       <div class="detail-info-item"><span class="detail-info-label">团期名称</span><span class="detail-info-value">${_escapeHtml(req.tour_name || '-')}</span></div>
       <div class="detail-info-item"><span class="detail-info-label">使用场景</span><span class="detail-info-value">${_normalizeScenario(req.scenario)}</span></div>
     `;
@@ -1958,7 +1978,7 @@ async function openReversalModal(reqId) {
 
   const tbody = document.getElementById('reverse-stockout-tbody');
   if (tbody) {
-    const items = origRec.items || [];
+    const items = mergedItems;
     if (items.length === 0) {
       tbody.innerHTML = '<tr><td colspan="8" class="empty-state">原出库单无明细</td></tr>';
     } else {
@@ -2094,6 +2114,7 @@ function getReqStatusText(status) {
     'pending_outbound': '待出库',
     'approved': '已审核',
     'outbound_completed': '已出库',
+    'partially_outbounded': '部分出库',
     'rejected': '已驳回',
     'cancelled': '已撤回',
     'withdrawn': '已撤回'
@@ -2110,6 +2131,7 @@ function getReqStatusClass(status) {
     'pending_outbound': 'warning',
     'approved': 'primary',
     'outbound_completed': 'success',
+    'partially_outbounded': 'warning',
     'rejected': 'danger',
     'cancelled': 'muted',
     'withdrawn': 'muted'
