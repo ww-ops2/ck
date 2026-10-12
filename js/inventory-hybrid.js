@@ -538,12 +538,13 @@ function toggleInvItemHistory(row) {
       if (itemCode && (soItem.item_code === itemCode || soItem.code === itemCode)) match = true;
       if (!match && itemName && soItem.name === itemName) match = true;
       if (match) {
+        var isRev = so.status === 'reversal';
         timeline.push({
           date: so.stockout_date || (so.created_at ? so.created_at.slice(0, 10) : '-'),
-          type: 'out', code: so.code || '-',
+          type: isRev ? 'reverse' : 'out', code: so.code || '-',
           qty: soItem.actual_quantity || soItem.quantity || 0, unit: soItem.unit || '-',
           by: so.confirmed_by || so.created_by || '-',
-          note: (function(){try{var reqCode = so.requisition_code || '-'; return '领用单 '+reqCode;}catch(e){return '';}})()
+          note: (function(){try{var reqCode = so.requisition_code || '-'; return (isRev ? '红冲 ' : '') + '领用单 '+reqCode;}catch(e){return '';}})()
         });
       }
     });
@@ -580,7 +581,7 @@ function toggleInvItemHistory(row) {
   timeline.sort(function(a, b) { return (b.date || '').localeCompare(a.date || ''); });
 
   var totalIn = timeline.filter(function(r){return r.type==='in';}).reduce(function(s,r){return s+r.qty;},0);
-  var totalOut = timeline.filter(function(r){return r.type==='out';}).reduce(function(s,r){return s+r.qty;},0);
+  var totalOut = timeline.filter(function(r){return r.type==='out'||r.type==='reverse';}).reduce(function(s,r){return s+r.qty;},0);
   var totalLoss = timeline.filter(function(r){return r.type==='loss';}).reduce(function(s,r){return s+r.qty;},0);
   if (loadingEl) loadingEl.textContent = '共 ' + timeline.length + ' 条 · 入库 ' + totalIn + ' · 出库 ' + totalOut + (totalLoss ? ' · 报损 ' + totalLoss : '');
 
@@ -599,7 +600,9 @@ function toggleInvItemHistory(row) {
       ? '<span style="color:var(--success);font-weight:600">入库</span>'
       : (r.type === 'loss'
         ? '<span style="color:#856404;font-weight:600">报损</span>'
-        : '<span style="color:var(--danger);font-weight:600">出库</span>');
+        : (r.type === 'reverse'
+          ? '<span style="color:#b91c1c;font-weight:600">红冲</span>'
+          : '<span style="color:var(--danger);font-weight:600">出库</span>'));
     var qtyColor = r.type === 'in' ? 'var(--success)' : (r.type === 'loss' ? '#856404' : 'var(--danger)');
     tableHtml += '<tr style="border-bottom:1px solid #ede8e2;">';
     tableHtml += '<td style="padding:5px 8px;">' + r.date + '</td>';
