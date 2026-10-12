@@ -1588,6 +1588,118 @@ const SupaDB = {
     return insertedRecord;
   },
 
+  // ---- 出库冲红（红字冲销，v5.85 新增）----
+  /**
+   * 按商品行部分冲红：生成一张 status='reversal'、数量为负的红冲出库单，
+   * 关联原领用单（requisition_id），并回写库存。原领用单 / 原出库单状态均不变。
+   * 报表按 quantity 累加，负数红冲单自动对冲，无需改动报表。
+   * @param {number} reqId 原领用单 id
+   * @param {Array<{item_id:number|string, qty:number}>} reversalItems 勾选的商品及本次冲红数量
+   * @param {string} reason 冲红原因（写审计）
+   */
+  async reverseStockOut(reqId, reversalItems, reason) {
+    const sb = getSupabase();
+    if (!sb) throw new Error('Supabase 未连接');
+    const req = await this.getRequisition(reqId);
+    if (!req) throw new Error('领用单不存在');
+    if (req.status !== 'outbound_completed') throw new Error('仅「已出库」的领用单可冲红');
+
+    // 1. 原始出库记录（每个已出库领用单仅一条 completed 记录）
+    const origRecs = await _sbQuery(
+      sb.from('stock_out_records').select('*, stock_out_items(*)')
+        .eq('requisition_id', reqId).eq('status', 'completed')
+        .order('created_at', { ascending: false })
+    );
+    if (!origRecs || origRecs.length === 0) throw new Error('未找到可冲红的出库记录');
+    const origRec = origRecs[0];
+    const origItems = origRec.stock_out_items || [];
+
+    // 2. 统计该单已被冲红的数量（历史红冲单累加，按 inventory_item_id）
+    const prevReversals = await _sbQuery(
+      sb.from('stock_out_records').select('id, stock_out_items(inventory_item_id, quantity)')
+        .eq('requisition_id', reqId).eq('status', 'reversal')
+    );
+    const reversedMap = {};
+    (prevReversals || []).forEach(r => (r.stock_out_items || []).forEach(it => {
+      const k = String(it.inventory_item_id);
+      reversedMap[k] = (reversedMap[k] || 0) + Math.abs(Number(it.quantity) || 0);
+    }));
+
+    // 3. 原始明细按 inventory_item_id 索引
+    const origMap = {};
+    origItems.forEach(it => { origMap[String(it.inventory_item_id)] = it; });
+
+    // 4. 校验并补全本次冲红明细
+    const valid = [];
+    (reversalItems || []).forEach(sel => {
+      const qty = Number(sel.qty) || 0;
+      if (qty <= 0) return;
+      const k = String(sel.item_id);
+      const orig = origMap[k];
+      if (!orig) throw new Error('选中商品不在原出库单中，无法冲红');
+      const reversible = (Number(orig.quantity) || 0) - (reversedMap[k] || 0);
+      if (qty > reversible) {
+        throw new Error(`「${orig.name}」可冲红数量不足：剩余可冲红 ${reversible}，本次填写 ${qty}`);
+      }
+      valid.push({
+        item_id: orig.inventory_item_id, qty: qty,
+        name: orig.name, code: orig.code || '', category: orig.category || '',
+        unit: orig.unit || '', brand: orig.brand || '', model: orig.model || ''
+      });
+    });
+    if (valid.length === 0) throw new Error('请勾选要冲红的商品并填写冲红数量');
+
+    // 5. 回写库存（加回冲红数量，加权均价不变）
+    for (const it of valid) {
+      const inv = await _sbQuery(
+        sb.from('inventory_items').select('stock').eq('id', it.item_id).single()
+      );
+      const cur = Number(inv && inv.stock) || 0;
+      const { error: updErr } = await sb.from('inventory_items')
+        .update({ stock: cur + it.qty }).eq('id', it.item_id);
+      if (updErr) throw new Error('库存回写失败: ' + updErr.message);
+    }
+
+    // 6. 生成红冲出库单（负数量，关联原领用单）
+    const u = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : null;
+    const rvCode = await getNextCode('reversal', 'RV', 5);
+    const totalQty = valid.reduce((s, i) => s + i.qty, 0);
+    const { data: rvRec, error: rvErr } = await sb.from('stock_out_records').insert({
+      code: rvCode,
+      requisition_id: req.id,
+      requisition_code: req.code,
+      tour_date: origRec.tour_date,
+      tour_name: origRec.tour_name,
+      scenario: origRec.scenario,
+      stockout_date: new Date().toISOString().slice(0, 10),
+      total_quantity: -totalQty,
+      status: 'reversal',
+      confirmed_by: u ? u.name : '',
+      confirmed_at: new Date().toISOString(),
+      created_by_name: u ? u.name : ''
+    }).select().single();
+    if (rvErr) throw new Error('红冲单创建失败: ' + rvErr.message);
+
+    for (let i = 0; i < valid.length; i++) {
+      const it = valid[i];
+      await _sbQuery(sb.from('stock_out_items').insert({
+        stock_out_record_id: rvRec.id,
+        inventory_item_id: it.item_id,
+        name: it.name, code: it.code, category: it.category, unit: it.unit,
+        quantity: -it.qty,
+        requested_quantity: 0,
+        brand: it.brand, model: it.model,
+        sort_order: i
+      }));
+    }
+
+    await writeAuditLog('STOCK_OUT_REVERSE', 'stock_out_records', rvRec.id, rvCode, {
+      requisition_code: req.code, reason: reason || '', by: u ? u.name : '',
+      items: valid.map(i => ({ name: i.name, qty: i.qty }))
+    });
+    return rvRec;
+  },
+
   // ---- 出库记录 ----
   async getStockOutRecords() {
     const sb = getSupabase();
