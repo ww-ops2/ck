@@ -344,6 +344,12 @@ function loadTrendChart(period) {
     outArr.push(outQ);
   }
 
+  // 防御：Chart.js 未加载成功时跳过绘图，避免整个仪表盘崩溃
+  if (typeof Chart === 'undefined') {
+    console.warn('[Dashboard] Chart.js 未加载（可能为网络原因），跳过趋势图渲染');
+    return;
+  }
+
   trendChart = new Chart(ctx, {
     type: 'line',
     data: {
@@ -410,6 +416,12 @@ function loadCategoryChart() {
   const labels = Object.keys(map);
   const data = Object.values(map);
   const palette = ['#378ADD', '#0F6E56', '#BA7517', '#A32D2D', '#534AB7', '#5F5E5A'];
+
+  // 防御：Chart.js 未加载成功时跳过绘图
+  if (typeof Chart === 'undefined') {
+    console.warn('[Dashboard] Chart.js 未加载（可能为网络原因），跳过分类占比图渲染');
+    return;
+  }
 
   categoryChart = new Chart(ctx, {
     type: 'doughnut',
