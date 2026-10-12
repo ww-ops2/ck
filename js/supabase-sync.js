@@ -36,6 +36,71 @@ window._appCache = {
 let _isInitialLoading = false;
 
 // ============================================================
+// v5.86 共享归一化函数：把 Supabase 原始行（明细在 *_items 键下）
+// 转成缓存标准形（明细在 items 键下）。
+// 初版 sync / refreshData 局部刷新 / 仪表盘 _dashMerge 三处共用，
+// 杜绝「云端覆盖把 items 冲丢」——v5.85 红冲弹窗无明细、
+// 采购列表 order.items.length 崩溃均源于此。
+// ============================================================
+function _normSortBySortOrder(arr) {
+  return (arr || []).slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+}
+
+function _normalizePurchaseOrders(rows) {
+  return (rows || []).map(po => ({
+    ...po,
+    suppliers: typeof po.suppliers === 'string' ? JSON.parse(po.suppliers || '[]') : (po.suppliers || []),
+    items: _normSortBySortOrder(po.purchase_order_items).map(item => ({
+      id: item.id, supplier: item.supplier, category: item.category_name,
+      code: item.item_code, name: item.name, brand: item.brand, model: item.model,
+      quantity: Number(item.quantity), unit: item.unit,
+      price: Number(item.price), amount: Number(item.amount),
+      // v5.70：保留「不入库」标记，避免下次刷新时该字段被丢导致收件箱再次出现
+      is_skipped: !!item.is_skipped
+    }))
+  }));
+}
+
+function _normalizeStockInRecords(rows) {
+  return (rows || []).map(rec => ({
+    ...rec,
+    items: _normSortBySortOrder(rec.stock_in_items).map(item => ({
+      // 与 stock_out/requisition 缓存保持一致：item_id = inventory_item_id
+      // 旧版只用 inventory_item_id 字段，导致月度汇总等模块按 id 匹配漏数据（v5.69 修复）
+      id: item.id, item_id: item.inventory_item_id,
+      supplier: item.supplier, category: item.category_name, category_name: item.category_name,
+      code: item.item_code, name: item.name, brand: item.brand, model: item.model,
+      quantity: Number(item.quantity), actual_quantity: Number(item.actual_quantity),
+      unit: item.unit, price: Number(item.price), amount: Number(item.amount),
+      inventory_item_id: item.inventory_item_id
+    }))
+  }));
+}
+
+function _normalizeRequisitions(rows) {
+  return (rows || []).map(req => ({
+    ...req,
+    items: _normSortBySortOrder(req.requisition_items).map(item => ({
+      id: item.id, item_id: item.inventory_item_id, name: item.name,
+      code: item.code, category: item.category, unit: item.unit,
+      quantity: Number(item.quantity), brand: item.brand, model: item.model
+    }))
+  }));
+}
+
+function _normalizeStockOutRecords(rows) {
+  return (rows || []).map(rec => ({
+    ...rec,
+    items: _normSortBySortOrder(rec.stock_out_items).map(item => ({
+      id: item.id, item_id: item.inventory_item_id, name: item.name,
+      code: item.code, category: item.category, unit: item.unit,
+      quantity: Number(item.quantity), requested_quantity: Number(item.requested_quantity),
+      brand: item.brand, model: item.model
+    }))
+  }));
+}
+
+// ============================================================
 // syncFromSupabase — 从 Supabase 拉取全部数据到内存
 // ============================================================
 async function syncFromSupabase(options) {
@@ -117,60 +182,22 @@ async function syncFromSupabase(options) {
 
     // ---- 采购单 ----
     if (purchaseOrdersResult.data) {
-      _appCache.purchaseOrders = purchaseOrdersResult.data.map(po => ({
-        ...po,
-        suppliers: typeof po.suppliers === 'string' ? JSON.parse(po.suppliers || '[]') : (po.suppliers || []),
-        items: (po.purchase_order_items || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(item => ({
-          id: item.id, supplier: item.supplier, category: item.category_name,
-          code: item.item_code, name: item.name, brand: item.brand, model: item.model,
-          quantity: Number(item.quantity), unit: item.unit,
-          price: Number(item.price), amount: Number(item.amount),
-          // v5.70：保留「不入库」标记，避免下次刷新时该字段被丢导致收件箱再次出现
-          is_skipped: !!item.is_skipped
-        }))
-      }));
+      _appCache.purchaseOrders = _normalizePurchaseOrders(purchaseOrdersResult.data);
     }
 
     // ---- 入库记录 ----
     if (stockInResult.data) {
-      _appCache.stockInRecords = stockInResult.data.map(rec => ({
-        ...rec,
-        items: (rec.stock_in_items || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(item => ({
-          // 与 stock_out/requisition 缓存保持一致：item_id = inventory_item_id
-          // 旧版只用 inventory_item_id 字段，导致月度汇总等模块按 id 匹配漏数据（v5.69 修复）
-          id: item.id, item_id: item.inventory_item_id,
-          supplier: item.supplier, category: item.category_name, category_name: item.category_name,
-          code: item.item_code, name: item.name, brand: item.brand, model: item.model,
-          quantity: Number(item.quantity), actual_quantity: Number(item.actual_quantity),
-          unit: item.unit, price: Number(item.price), amount: Number(item.amount),
-          inventory_item_id: item.inventory_item_id
-        }))
-      }));
+      _appCache.stockInRecords = _normalizeStockInRecords(stockInResult.data);
     }
 
     // ---- 领用单 ----
     if (requisitionsResult.data) {
-      _appCache.requisitions = requisitionsResult.data.map(req => ({
-        ...req,
-        items: (req.requisition_items || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(item => ({
-          id: item.id, item_id: item.inventory_item_id, name: item.name,
-          code: item.code, category: item.category, unit: item.unit,
-          quantity: Number(item.quantity), brand: item.brand, model: item.model
-        }))
-      }));
+      _appCache.requisitions = _normalizeRequisitions(requisitionsResult.data);
     }
 
     // ---- 出库记录 ----
     if (stockOutResult.data) {
-      _appCache.stockOutRecords = stockOutResult.data.map(rec => ({
-        ...rec,
-        items: (rec.stock_out_items || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(item => ({
-          id: item.id, item_id: item.inventory_item_id, name: item.name,
-          code: item.code, category: item.category, unit: item.unit,
-          quantity: Number(item.quantity), requested_quantity: Number(item.requested_quantity),
-          brand: item.brand, model: item.model
-        }))
-      }));
+      _appCache.stockOutRecords = _normalizeStockOutRecords(stockOutResult.data);
     }
 
     // ---- 库存调整 ----
@@ -285,18 +312,7 @@ async function refreshData(dataType) {
           .select('*, purchase_order_items(*)')
           .order('created_at', { ascending: false });
         if (data) {
-          _appCache.purchaseOrders = data.map(po => ({
-            ...po,
-            suppliers: typeof po.suppliers === 'string' ? JSON.parse(po.suppliers || '[]') : (po.suppliers || []),
-            items: (po.purchase_order_items || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(item => ({
-              id: item.id, supplier: item.supplier, category: item.category_name,
-              code: item.item_code, name: item.name, brand: item.brand, model: item.model,
-              quantity: Number(item.quantity), unit: item.unit,
-              price: Number(item.price), amount: Number(item.amount),
-              // v5.70：保留「不入库」标记
-              is_skipped: !!item.is_skipped
-            }))
-          }));
+          _appCache.purchaseOrders = _normalizePurchaseOrders(data);
         }
         break;
       }
@@ -313,14 +329,7 @@ async function refreshData(dataType) {
           .select('*, requisition_items(*)')
           .order('created_at', { ascending: false });
         if (data) {
-          _appCache.requisitions = data.map(req => ({
-            ...req,
-            items: (req.requisition_items || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(item => ({
-              id: item.id, item_id: item.inventory_item_id, name: item.name,
-              code: item.code, category: item.category, unit: item.unit,
-              quantity: Number(item.quantity), brand: item.brand, model: item.model
-            }))
-          }));
+          _appCache.requisitions = _normalizeRequisitions(data);
         }
         break;
       }
@@ -329,19 +338,7 @@ async function refreshData(dataType) {
           .select('*, stock_in_items(*)')
           .order('created_at', { ascending: false });
         if (data) {
-          _appCache.stockInRecords = data.map(rec => ({
-            ...rec,
-            items: (rec.stock_in_items || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(item => ({
-              // 与 stock_out/requisition 缓存保持一致：item_id = inventory_item_id
-              // 旧版只用 inventory_item_id 字段，导致月度汇总等模块按 id 匹配漏数据（v5.69 修复）
-              id: item.id, item_id: item.inventory_item_id,
-              supplier: item.supplier, category: item.category_name, category_name: item.category_name,
-              code: item.item_code, name: item.name, brand: item.brand, model: item.model,
-              quantity: Number(item.quantity), actual_quantity: Number(item.actual_quantity),
-              unit: item.unit, price: Number(item.price), amount: Number(item.amount),
-              inventory_item_id: item.inventory_item_id
-            }))
-          }));
+          _appCache.stockInRecords = _normalizeStockInRecords(data);
         }
         break;
       }
@@ -350,15 +347,7 @@ async function refreshData(dataType) {
           .select('*, stock_out_items(*)')
           .order('created_at', { ascending: false });
         if (data) {
-          _appCache.stockOutRecords = data.map(rec => ({
-            ...rec,
-            items: (rec.stock_out_items || []).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map(item => ({
-              id: item.id, item_id: item.inventory_item_id, name: item.name,
-              code: item.code, category: item.category, unit: item.unit,
-              quantity: Number(item.quantity), requested_quantity: Number(item.requested_quantity),
-              brand: item.brand, model: item.model
-            }))
-          }));
+          _appCache.stockOutRecords = _normalizeStockOutRecords(data);
         }
         break;
       }
