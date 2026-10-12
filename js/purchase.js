@@ -1069,8 +1069,8 @@ function loadPurchaseOrders() {
         <td>${order.code}</td>
         <td>${order.purchase_date}</td>
         <td>${order.purchaser}</td>
-        <td>${order.items.length} 种</td>
-        <td>¥${order.total_amount.toFixed(2)}</td>
+        <td>${(order.items || []).length} 种</td>
+        <td>¥${(Number(order.total_amount) || 0).toFixed(2)}</td>
         <td><span class="status-badge ${statusClass}">${statusText}</span>${order.is_locked ? ' <span class="status-badge danger" style="font-size:10px;padding:1px 6px;">🔒 已锁定</span>' : ''}</td>
         <td>${actionButtons}</td>
       </tr>
