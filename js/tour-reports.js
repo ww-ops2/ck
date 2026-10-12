@@ -764,7 +764,7 @@ function _rptRenderDetailMonthFilter(tourName) {
   const globalMonthInput = document.getElementById('report-month');
   const globalMonth = globalMonthInput ? globalMonthInput.value : '';
 
-  let html = '<option value="">当前所选月份</option>';
+  let html = '<option value="">全部月份</option>';
   months.forEach(m => {
     const label = m === globalMonth ? `${m}（当前）` : m;
     html += `<option value="${_rptEscapeHtml(m)}">${_rptEscapeHtml(label)}</option>`;
@@ -927,10 +927,9 @@ function selectTourByName(name) {
   // 渲染月份筛选下拉
   _rptRenderDetailMonthFilter(name);
 
-  // 默认显示当前全局月份的数据
-  const globalMonthInput = document.getElementById('report-month');
-  const globalMonth = globalMonthInput ? globalMonthInput.value : '';
-  const rows = _rptBuildTourDetailRows(name, globalMonth);
+  // v5.89：团期明细默认显示整个团期完整明细（不受全局月份过滤影响），
+  // 顶部详情月份下拉仅作为可选细化，默认"全部月份"
+  const rows = _rptBuildTourDetailRows(name, '');
   _rptRenderTourDetail(rows);
 }
 
@@ -1309,11 +1308,10 @@ function _rptSelectTourByName(name) {
   const nameEl = document.getElementById('report-detail-tour-name');
   if (nameEl) nameEl.textContent = name;
   _rptRenderDetailMonthFilter(name);
-  const g = document.getElementById('report-month');
-  const gm = g ? g.value : '';
+  // v5.89：团期明细默认展示整个团期完整明细（月份留空 = 不过滤），顶部下拉仅作可选细化
   const sf = document.getElementById('report-scenario-filter');
   const sc = sf ? sf.value : '';
-  const rows = _rptBuildTourDetailRows(name, gm, sc);
+  const rows = _rptBuildTourDetailRows(name, '', sc);
   _rptRenderTourDetail(rows);
   _rptRenderAnalysis();
 }
