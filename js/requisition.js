@@ -1901,7 +1901,7 @@ function _getReversedQtyMap(reqId) {
 /**
  * 打开红冲出库弹窗（按商品勾选部分冲红）
  */
-function openReversalModal(reqId) {
+async function openReversalModal(reqId) {
   const reqList = _appCache.requisitions || [];
   const req = reqList.find(r => String(r.id) === String(reqId));
   if (!req) return;
@@ -1921,6 +1921,26 @@ function openReversalModal(reqId) {
   if (!origRec) {
     showToast('未找到该领用单的出库记录，无法冲红', 'error');
     return;
+  }
+
+  // v5.86 自愈：缓存明细为空（如缓存陈旧/被覆盖）时，按单号实时拉云端补齐
+  if (!origRec.items || origRec.items.length === 0) {
+    try {
+      if (typeof SupaDB !== 'undefined' && SupaDB.getStockOutRecord) {
+        const fresh = await SupaDB.getStockOutRecord(origRec.code);
+        if (fresh && Array.isArray(fresh.stock_out_items) && fresh.stock_out_items.length > 0) {
+          origRec.items = fresh.stock_out_items.slice()
+            .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+            .map(item => ({
+              id: item.id, item_id: item.inventory_item_id, name: item.name,
+              code: item.code, category: item.category, unit: item.unit,
+              quantity: Number(item.quantity), requested_quantity: Number(item.requested_quantity),
+              brand: item.brand, model: item.model
+            }));
+          origRec.status = fresh.status || origRec.status;
+        }
+      }
+    } catch (e) { console.warn('[Reversal] 明细自愈拉取失败:', e.message); }
   }
 
   const reversedMap = _getReversedQtyMap(reqId);
