@@ -159,11 +159,15 @@ function _dashCollect() {
 
 function _dashMerge(cloud) {
   if (!_appCache) return;
+  // v5.86：SupaDB.get* 返回原始行（明细在 *_items 键下），必须先归一化成
+  // 缓存标准形（items 键）再覆盖，否则采购/领用/出库列表与红冲弹窗全丢明细
+  // （v5.85 红冲"原出库单无明细"、purchase.js order.items.length 崩溃的根因）。
+  // getInventory/getLossRecords/getNonPurchaseStockIns 无嵌套明细，可直接用。
   if (cloud.inventory) _appCache.inventory = cloud.inventory;
-  if (cloud.purchaseOrders) _appCache.purchaseOrders = cloud.purchaseOrders;
-  if (cloud.stockIn) _appCache.stockInRecords = cloud.stockIn;
-  if (cloud.stockOut) _appCache.stockOutRecords = cloud.stockOut;
-  if (cloud.requisitions) _appCache.requisitions = cloud.requisitions;
+  if (cloud.purchaseOrders) _appCache.purchaseOrders = (typeof _normalizePurchaseOrders === 'function') ? _normalizePurchaseOrders(cloud.purchaseOrders) : cloud.purchaseOrders;
+  if (cloud.stockIn) _appCache.stockInRecords = (typeof _normalizeStockInRecords === 'function') ? _normalizeStockInRecords(cloud.stockIn) : cloud.stockIn;
+  if (cloud.stockOut) _appCache.stockOutRecords = (typeof _normalizeStockOutRecords === 'function') ? _normalizeStockOutRecords(cloud.stockOut) : cloud.stockOut;
+  if (cloud.requisitions) _appCache.requisitions = (typeof _normalizeRequisitions === 'function') ? _normalizeRequisitions(cloud.requisitions) : cloud.requisitions;
   if (cloud.lossRecords) _appCache.lossRecords = cloud.lossRecords;
   if (cloud.nonPurchase) _appCache.nonPurchaseStockIns = cloud.nonPurchase;
 }
