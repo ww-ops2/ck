@@ -129,7 +129,8 @@ function loadMonthlySummary() {
   // ---- 2. 校正选中月份（保留仍存在的；空则取默认=最新有数据月）----
   _msSelectedMonths = _msSelectedMonths.filter(mk => _msAllMonths.indexOf(mk) >= 0);
   if (_msSelectedMonths.length === 0) {
-    _msSelectedMonths = [_msAllMonths[_msAllMonths.length - 1]];
+    // v5.89：默认展示全部月份，避免非当前月的数据（如往期出库）被整列隐藏导致"看不到"
+    _msSelectedMonths = _msAllMonths.slice();
   }
   _msSelectedMonths.sort();
 
