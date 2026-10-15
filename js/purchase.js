@@ -705,12 +705,15 @@ async function submitPurchaseOrder() {
       } else {
         saved = await SupaDB.createPurchaseOrder(purchaseOrder);
       }
-      // 更新内存缓存
+      // 更新内存缓存（v5.91：SupaDB 返回原始行，明细在 purchase_order_items 键下，
+      // 必须先过共享归一化函数补 items，否则编辑按钮 order.items.forEach 直接崩）
+      const savedNorm = (typeof _normalizePurchaseOrders === 'function')
+        ? _normalizePurchaseOrders([saved])[0] : saved;
       if (typeof _appCache !== 'undefined') {
         if (!Array.isArray(_appCache.purchaseOrders)) _appCache.purchaseOrders = [];
-        const idx = _appCache.purchaseOrders.findIndex(o => o.id === saved.id);
-        if (idx >= 0) _appCache.purchaseOrders[idx] = saved;
-        else _appCache.purchaseOrders.unshift(saved);
+        const idx = _appCache.purchaseOrders.findIndex(o => o.id === savedNorm.id);
+        if (idx >= 0) _appCache.purchaseOrders[idx] = savedNorm;
+        else _appCache.purchaseOrders.unshift(savedNorm);
       }
 
       closeModal();
@@ -1304,7 +1307,7 @@ function editPurchaseOrder(orderId) {
 
   // 按供应商分组物品
   const supplierMap = {};
-  order.items.forEach(item => {
+  (order.items || []).forEach(item => {
     const supplier = item.supplier || '默认供应商';
     if (!supplierMap[supplier]) supplierMap[supplier] = [];
     supplierMap[supplier].push(item);
@@ -2055,9 +2058,11 @@ async function executeImport() {
           }))
         };
         const created = await SupaDB.createPurchaseOrder(poData);
+        const createdNorm = (typeof _normalizePurchaseOrders === 'function')
+          ? _normalizePurchaseOrders([created])[0] : created;
         if (typeof _appCache !== 'undefined') {
           if (!Array.isArray(_appCache.purchaseOrders)) _appCache.purchaseOrders = [];
-          _appCache.purchaseOrders.unshift(created);
+          _appCache.purchaseOrders.unshift(createdNorm);
         }
         _ok++;
       }
