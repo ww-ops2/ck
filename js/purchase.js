@@ -134,8 +134,8 @@ function addSupplierGroup() {
   groupDiv.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
       <div style="flex:1;">
-        <label style="font-size:11px;color:var(--text-muted);margin-bottom:4px;display:block;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">供应商名称 *</label>
-        <input type="text" class="supplier-name-input" placeholder="请输入供应商名称" required 
+        <label style="font-size:11px;color:var(--text-muted);margin-bottom:4px;display:block;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">供应商名称（选填）</label>
+        <input type="text" class="supplier-name-input" placeholder="请输入供应商名称（可不填）"
           style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);color:var(--text-primary);font-size:13px;">
       </div>
       <button type="button" onclick="removeSupplierGroup('${groupId}')" title="删除此供应商及所有商品" 
@@ -613,15 +613,10 @@ async function submitPurchaseOrder() {
 
   // 收集所有数据
   const allItems = [];
-  let hasError = false;
-  
+
   supplierGroups.forEach(group => {
+    // v5.92：供应商名称改为选填，不填按空字符串落库（下游展示均有兜底：'-' / '默认供应商'）
     const supplierName = group.querySelector('.supplier-name-input').value.trim();
-    if (!supplierName) {
-      showToast('请填写所有供应商名称', 'warning');
-      hasError = true;
-      return;
-    }
     
     const tbody = group.querySelector('.items-tbody');
     const rows = tbody.querySelectorAll('tr');
@@ -661,8 +656,6 @@ async function submitPurchaseOrder() {
     });
   });
   
-  if (hasError) { hideButtonLoading('submit-purchase-btn'); return; }
-
   // ★ 新增物品编码唯一化（防撞号）：保存前对所有明细重新裁定编码
   try { reconcileItemCodes(allItems); }
   catch (e) { console.warn('[PO] 编码裁定失败，沿用原值:', e.message); }
