@@ -115,7 +115,8 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .own.wh{background:var(--success-bg);color:var(--success)}.own.wh::before{background:var(--success)}
 
 /* 按钮 */
-.btn{padding:8px 15px;border-radius:var(--sketch-sm);border:1.5px solid var(--border);background:var(--bg-card);color:var(--text-primary);cursor:pointer;font-size:12.5px;font-weight:600;font-family:var(--font);box-shadow:1px 2px 0 rgba(45,38,32,.04)}
+.btn{padding:8px 15px;border-radius:var(--sketch-sm);border:1.5px solid var(--border);background:var(--bg-card);color:var(--text-primary);cursor:pointer;font-size:12.5px;font-weight:600;font-family:var(--font);box-shadow:1px 2px 0 rgba(45,38,32,.04);display:inline-flex;align-items:center;gap:6px}
+.btn svg.ic{width:14px;height:14px;flex:0 0 auto;opacity:.85}
 .btn:hover{border-color:var(--border-hover)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
 .btn.primary:hover{background:var(--accent-dark)}
@@ -133,7 +134,13 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .cat-card .nm{font-size:14px;font-weight:800;margin-bottom:3px}
 .cat-card .meta{font-size:11px;color:var(--text-muted)}
 .cat-card .cnt{position:absolute;right:16px;top:16px;font-size:22px;font-weight:800;color:var(--border-hover)}
-.cat-card.live .ic{background:var(--accent-glow)}.cat-card.tour .ic{background:var(--info-bg)}.cat-card.admin .ic{background:var(--purple-bg)}.cat-card.wh .ic{background:var(--success-bg)}
+.cat-card .ic svg{width:17px;height:17px}
+.cat-card.live .ic{background:var(--accent-glow);color:var(--accent)}
+.cat-card.tour .ic{background:var(--info-bg);color:var(--info)}
+.cat-card.admin .ic{background:var(--purple-bg);color:var(--purple)}
+.cat-card.wh .ic{background:var(--success-bg);color:var(--success)}
+.empty-ic{display:block;width:40px;height:40px;margin:0 auto}
+.empty-ic svg{width:100%;height:100%;display:block}
 .cat-add{border:1.5px dashed var(--border-hover);border-radius:var(--sketch-sm);background:transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);min-height:132px;gap:8px}
 .cat-add .plus{font-size:30px;line-height:1;color:var(--border-hover)}
 
@@ -162,7 +169,12 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .own-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
 .own-card.live::before{background:var(--accent)}.own-card.tour::before{background:var(--info)}.own-card.admin::before{background:var(--purple)}.own-card.wh::before{background:var(--success)}
 .oc-head{display:flex;align-items:center;gap:9px;margin-bottom:13px}
-.oc-ic{font-size:19px}
+.oc-ic{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;flex:0 0 auto}
+.oc-ic svg{width:17px;height:17px}
+.own-card.live .oc-ic{background:var(--accent-glow);color:var(--accent)}
+.own-card.tour .oc-ic{background:rgba(37,99,235,.1);color:var(--info)}
+.own-card.admin .oc-ic{background:rgba(124,58,237,.1);color:var(--purple)}
+.own-card.wh .oc-ic{background:var(--success-bg);color:var(--success)}
 .oc-name{font-size:14.5px;font-weight:800}
 .oc-tag{margin-left:auto;font-size:10px;padding:2px 8px;border-radius:var(--sketch-sm);background:var(--accent-glow);color:var(--accent);font-weight:700}
 .oc-tag.ok{background:var(--success-bg);color:var(--success)}
@@ -180,6 +192,9 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 /* 出入库明细-归属切换 */
 .ownswitch{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding-bottom:12px;border-bottom:1.5px solid var(--border-light)}
 .ownswitch .os{background:var(--bg-card);border:1.5px solid var(--border);border-radius:var(--sketch-sm);padding:7px 15px;font-size:12.5px;cursor:pointer;color:var(--text-secondary);font-family:var(--font);font-weight:600;transition:.15s}
+.ownswitch .os{display:inline-flex;align-items:center;gap:5px}
+.ownswitch .os svg{width:13px;height:13px;flex:0 0 auto;opacity:.8}
+.ownswitch .os.on svg{opacity:1}
 .ownswitch .os:hover{border-color:var(--border-hover);color:var(--text-primary)}
 .ownswitch .os.on{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:2px 2px 0 rgba(154,43,16,.2)}
 
@@ -211,8 +226,8 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .hidden{display:none}
 </style>
 <!-- 数据层：本地 supabase-js + 主体隔离数据访问层（复用列车，自动按 subject=hq 过滤） -->
-<script src="js/vendor/supabase.min.js?v=6.1"></script>
-<script src="js/supabase-db.js?v=6.1"></script>
+<script src="js/vendor/supabase.min.js?v=6.2"></script>
+<script src="js/supabase-db.js?v=6.2"></script>
 </head>
 <body>
 <div class="app">
@@ -275,7 +290,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
         <div class="ph"><div class="pt"><span class="bar"></span>四大用途归属 · 概览</div><div class="pa"><span style="font-size:11.5px;color:var(--text-muted)">数据截至 <b id="dashTime">--</b> · 每 30 秒自动同步，切回页面即时刷新</span></div></div>
         <div class="own-overview" id="ownOverview">
           <div class="own-card live">
-            <div class="oc-head"><span class="oc-ic">🎁</span><span class="oc-name">直播礼品</span><span class="oc-tag">进行中</span></div>
+            <div class="oc-head"><span class="oc-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8.5" width="18" height="4" rx="1.2"/><path d="M12 8.5V21"/><path d="M19 12.5v6.5a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6.5"/><path d="M7.6 8.5a2.3 2.3 0 1 1 0-4.6C10.6 3.9 12 8.5 12 8.5s1.4-4.6 4.4-4.6a2.3 2.3 0 1 1 0 4.6"/></svg></span><span class="oc-name">直播礼品</span><span class="oc-tag">进行中</span></div>
             <div class="oc-grid">
               <div><span>物品</span><b>16 <i>种</i></b></div>
               <div><span>库存</span><b>420 <i>件</i></b></div>
@@ -289,7 +304,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
             </div>
           </div>
           <div class="own-card tour">
-            <div class="oc-head"><span class="oc-ic">🚌</span><span class="oc-name">出团物料</span><span class="oc-tag">进行中</span></div>
+            <div class="oc-head"><span class="oc-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17V6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5V17"/><path d="M4 11h16"/><path d="M2.5 17h19"/><circle cx="7.5" cy="17.5" r="1.3"/><circle cx="16.5" cy="17.5" r="1.3"/></svg></span><span class="oc-name">出团物料</span><span class="oc-tag">进行中</span></div>
             <div class="oc-grid">
               <div><span>物品</span><b>14 <i>种</i></b></div>
               <div><span>库存</span><b>560 <i>件</i></b></div>
@@ -303,7 +318,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
             </div>
           </div>
           <div class="own-card admin">
-            <div class="oc-head"><span class="oc-ic">📎</span><span class="oc-name">行政物料</span><span class="oc-tag ok">平稳</span></div>
+            <div class="oc-head"><span class="oc-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.6.8l.9 1.2H19a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span><span class="oc-name">行政物料</span><span class="oc-tag ok">平稳</span></div>
             <div class="oc-grid">
               <div><span>物品</span><b>10 <i>种</i></b></div>
               <div><span>库存</span><b>180 <i>件</i></b></div>
@@ -317,7 +332,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
             </div>
           </div>
           <div class="own-card wh">
-            <div class="oc-head"><span class="oc-ic">🏠</span><span class="oc-name">总部仓库</span><span class="oc-tag ok">平稳</span></div>
+            <div class="oc-head"><span class="oc-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V9.2L12 4l9 5.2V21"/><path d="M7 21v-7h10v7"/><path d="M2.5 21h19"/></svg></span><span class="oc-name">总部仓库</span><span class="oc-tag ok">平稳</span></div>
             <div class="oc-grid">
               <div><span>物品</span><b>8 <i>种</i></b></div>
               <div><span>库存</span><b>126 <i>件</i></b></div>
@@ -362,7 +377,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
         <div class="panel">
           <div class="ph"><div class="pt"><span class="bar"></span>物品列表 </div>
             <div class="pa"><button class="btn primary">+ 新增物品</button></div></div>
-          <div class="filterbar"> 用途归属：<select class="sel"><option>全部归属</option><option>🎁 直播礼品</option><option>🚌 出团物料</option><option>📎 行政物料</option><option>🏠 总部仓库</option></select></div>
+          <div class="filterbar"> 用途归属：<select class="sel"><option>全部归属</option><option>直播礼品</option><option>出团物料</option><option>行政物料</option><option>总部仓库</option></select></div>
           <div class="tw"><table>
             <thead><tr><th>编码</th><th>名称</th><th>品牌/规格</th><th>单位</th><th class="num">单价</th><th class="num">库存</th><th class="num">锁定</th><th>用途归属</th><th>状态</th><th>操作</th></tr></thead>
             <tbody id="inv-body">
@@ -381,10 +396,10 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
           <div class="ph"><div class="pt"><span class="bar"></span>用途归属管理 </div>
             <div class="pa"><button class="btn primary">+ 新增归属</button></div></div>
           <div class="cat-grid" id="cat-grid">
-            <div class="cat-card live"><div class="cnt">16</div><div class="ic">🎁</div><div class="nm">直播礼品</div><div class="meta">中奖锁定 · 邮寄出库</div></div>
-            <div class="cat-card tour"><div class="cnt">14</div><div class="ic">🚌</div><div class="nm">出团物料</div><div class="meta">领用出库 · 团期核销</div></div>
-            <div class="cat-card admin"><div class="cnt">10</div><div class="ic">📎</div><div class="nm">行政物料</div><div class="meta">行政申领 · 归还</div></div>
-            <div class="cat-card wh"><div class="cnt">8</div><div class="ic">🏠</div><div class="nm">总部仓库</div><div class="meta">调入调出 · 盘点</div></div>
+            <div class="cat-card live"><div class="cnt">0</div><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8.5" width="18" height="4" rx="1.2"/><path d="M12 8.5V21"/><path d="M19 12.5v6.5a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6.5"/><path d="M7.6 8.5a2.3 2.3 0 1 1 0-4.6C10.6 3.9 12 8.5 12 8.5s1.4-4.6 4.4-4.6a2.3 2.3 0 1 1 0 4.6"/></svg></div><div class="nm">直播礼品</div><div class="meta">中奖锁定 · 邮寄出库</div></div>
+            <div class="cat-card tour"><div class="cnt">0</div><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17V6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5V17"/><path d="M4 11h16"/><path d="M2.5 17h19"/><circle cx="7.5" cy="17.5" r="1.3"/><circle cx="16.5" cy="17.5" r="1.3"/></svg></div><div class="nm">出团物料</div><div class="meta">领用出库 · 团期核销</div></div>
+            <div class="cat-card admin"><div class="cnt">0</div><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.6.8l.9 1.2H19a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div><div class="nm">行政物料</div><div class="meta">行政申领 · 归还</div></div>
+            <div class="cat-card wh"><div class="cnt">0</div><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V9.2L12 4l9 5.2V21"/><path d="M7 21v-7h10v7"/><path d="M2.5 21h19"/></svg></div><div class="nm">总部仓库</div><div class="meta">调入调出 · 盘点</div></div>
             <div class="cat-add"><div class="plus">＋</div><div>新增归属分类</div></div>
           </div>
         </div>
@@ -399,7 +414,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
           <div class="kpi y"><div class="k">待处理</div><div class="v yel">3 <small>单</small></div></div>
         </div>
         <div class="panel">
-          <div class="ph"><div class="pt"><span class="bar"></span>采购单列表</div><div class="pa"><button class="btn">📄 导入Excel</button><button class="btn primary">+ 新建采购单</button></div></div>
+          <div class="ph"><div class="pt"><span class="bar"></span>采购单列表</div><div class="pa"><button class="btn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h4"/></svg>导入Excel</button><button class="btn primary">+ 新建采购单</button></div></div>
           <div class="filterbar"> 用途归属：<select class="sel"><option>全部归属</option><option>直播礼品</option><option>出团物料</option><option>行政物料</option><option>总部仓库</option></select></div>
           <div class="tw"><table>
             <thead><tr><th>采购单号</th><th>日期</th><th>采购人</th><th>物品数</th><th class="num">总金额</th><th>用途归属</th><th>状态</th><th>操作</th></tr></thead>
@@ -465,8 +480,8 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
         <div class="panel">
           <div class="ph"><div class="pt"><span class="bar"></span>出库列表</div>
             <div class="pa">
-              <button class="btn">📤 领用出库</button>
-              <button class="btn primary">📮 邮寄出库 </button>
+              <button class="btn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v13"/></svg>领用出库</button>
+              <button class="btn primary"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2.5L10.5 13.5"/><path d="M21.5 2.5l-6.8 19-4.2-8-8-4.2z"/></svg>邮寄出库</button>
             </div></div>
           <div class="filterbar"> 归属：<select class="sel"><option>全部</option><option>直播礼品</option><option>出团物料</option></select> 类型：<select class="sel"><option>全部类型</option><option>领用出库</option><option>邮寄出库</option></select></div>
           <div class="tw"><table>
@@ -486,10 +501,10 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
           <div class="ph"><div class="pt"><span class="bar"></span>出入库明细</div><div class="pa"><select class="sel"><option>2026年11月</option></select><button class="btn">导出</button></div></div>
           <div class="ownswitch" id="monthOwnSwitch">
             <button class="os on" data-own="all">全部归属</button>
-            <button class="os" data-own="live">🎁 直播礼品</button>
-            <button class="os" data-own="tour">🚌 出团物料</button>
-            <button class="os" data-own="admin">📎 行政物料</button>
-            <button class="os" data-own="wh">🏠 总部仓库</button>
+            <button class="os" data-own="live"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8.5" width="18" height="4" rx="1.2"/><path d="M12 8.5V21"/><path d="M19 12.5v6.5a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6.5"/><path d="M7.6 8.5a2.3 2.3 0 1 1 0-4.6C10.6 3.9 12 8.5 12 8.5s1.4-4.6 4.4-4.6a2.3 2.3 0 1 1 0 4.6"/></svg>直播礼品</button>
+            <button class="os" data-own="tour"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17V6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5V17"/><path d="M4 11h16"/><path d="M2.5 17h19"/><circle cx="7.5" cy="17.5" r="1.3"/><circle cx="16.5" cy="17.5" r="1.3"/></svg>出团物料</button>
+            <button class="os" data-own="admin"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.6.8l.9 1.2H19a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>行政物料</button>
+            <button class="os" data-own="wh"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V9.2L12 4l9 5.2V21"/><path d="M7 21v-7h10v7"/><path d="M2.5 21h19"/></svg>总部仓库</button>
           </div>
           <div class="tw"><table class="mx" id="monthTable">
             <thead><tr><th>编号</th><th>名称</th><th>用途归属</th><th class="num">期初</th><th class="num">11月入库</th><th class="num">11月出库</th><th class="num">期末</th></tr></thead>
@@ -671,6 +686,6 @@ function toggleTour(headEl){
 }
 </script>
 <!-- 真实数据驱动：从 SupaDB 拉取 hq 主体数据并填充全部模块（空库显示引导，不造假） -->
-<script src="js/hq-app.js?v=6.1"></script>
+<script src="js/hq-app.js?v=6.2"></script>
 </body>
 </html>
