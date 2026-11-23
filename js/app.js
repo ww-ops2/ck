@@ -3,12 +3,13 @@
  */
 
 // 模拟数据（实际项目中应从Supabase获取）
+// ⚠️ v5.94 多主体架构：items 演示数据已清空。
+// 历史遗留：这里曾预置 3 条演示物品（不锈钢托盘/一次性拖鞋/矿泉水，合计750），
+// 云端返回空列表时会被当离线兜底显示。列车主体一直有真实数据所以从不暴露，
+// 但总部主体是空库 → 云端正确返回空 → 前端却错误填入这 3 条假数据，误导用户。
+// 现在数据必须全部来自 Supabase，空库就是真空库，故演示数据清空（单点修复，所有兜底点一起失效）。
 const mockData = {
-  items: [
-    { id: 1, code: 'XH000001', name: '不锈钢托盘', category: '循环使用类', stock: 50, unit: '个', safety_stock: 10 },
-    { id: 2, code: 'HM000001', name: '一次性拖鞋', category: '消耗类', stock: 200, unit: '双', safety_stock: 50 },
-    { id: 3, code: 'HM000002', name: '矿泉水', category: '消耗类', stock: 500, unit: '瓶', safety_stock: 100 }
-  ],
+  items: [],
   purchaseOrders: [],
   stockInRecords: [],
   requisitions: [],
