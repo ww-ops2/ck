@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>遇见美好总部 · 库存管理系统</title>
+<style>
+/* ===== 完全照搬列车系统的暖色手绘设计语言 ===== */
+:root{
+  --bg-base:#f6f3ee; --bg-primary:#fdfcfa; --bg-secondary:#efeae4; --bg-card:#ffffff;
+  --bg-card-hover:#faf7f4; --bg-elevated:#efeae4;
+  --border:#d4cdc4; --border-light:#e8e2da; --border-hover:#a8a098;
+  --text-primary:#2d2620; --text-secondary:#5e554c; --text-muted:#a09890;
+  --accent:#c23616; --accent-light:#d94a2a; --accent-dark:#9e2b10; --accent-glow:rgba(194,54,22,.08);
+  --success:#2d8659; --success-bg:rgba(45,134,89,.07);
+  --danger:#c0392b; --danger-bg:rgba(192,57,43,.06);
+  --warning:#c77f0a; --warning-bg:rgba(199,127,10,.07);
+  --info:#2980b9; --info-bg:rgba(41,128,185,.07);
+  --purple:#7c3aed; --purple-bg:rgba(124,58,237,.08);
+  --sketch-r1:255px 15px 225px 15px/15px 225px 15px 255px;
+  --sketch-r2:15px 225px 15px 255px/255px 15px 225px 15px;
+  --sketch-r3:225px 15px 255px 15px/15px 255px 15px 225px;
+  --sketch-r4:15px 255px 15px 225px/225px 15px 255px 15px;
+  --sketch-sm:155px 8px 175px 8px/8px 175px 8px 155px;
+  --shadow-card:3px 4px 0px rgba(45,38,32,.05);
+  --shadow-elevated:5px 7px 0px rgba(45,38,32,.08);
+  --font:'Noto Sans SC',-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg-base);color:var(--text-primary);font-family:var(--font);font-size:14px;line-height:1.5}
+
+/* ===== 布局：侧边栏 + 主内容（照搬列车） ===== */
+.app{display:flex;min-height:100vh}
+.sidebar{width:238px;flex:0 0 238px;background:var(--bg-primary);border-right:1.5px solid var(--border);display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.sidebar-logo{padding:20px 18px 18px;border-bottom:1.5px solid var(--border-light);display:flex;align-items:center;gap:11px}
+.logo-icon{width:36px;height:36px;background:var(--accent);border-radius:var(--sketch-sm);display:flex;align-items:center;justify-content:center;flex:0 0 36px}
+.logo-icon svg{width:24px;height:24px;fill:#fff}
+.logo-text .brand{display:block;font-size:16px;font-weight:800;letter-spacing:.5px;color:var(--text-primary)}
+.logo-text .sub{display:block;font-size:10.5px;color:var(--text-muted);margin-top:2px;letter-spacing:1px}
+.sidebar-nav{flex:1;overflow-y:auto;padding:12px 10px}
+.nav-section{margin-bottom:16px}
+.nav-section-title{font-size:10.5px;color:var(--text-muted);font-weight:700;letter-spacing:1.5px;padding:6px 12px 7px;text-transform:uppercase}
+.nav-item{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:var(--sketch-sm);cursor:pointer;color:var(--text-secondary);font-size:13px;font-weight:500;margin-bottom:2px;transition:.14s;border:1.5px solid transparent}
+.nav-item:hover{background:var(--bg-elevated);color:var(--text-primary)}
+.nav-item.active{background:var(--accent-glow);color:var(--accent);font-weight:700;border-color:var(--border-accent)}
+.nav-icon{width:18px;height:18px;flex:0 0 18px;display:flex}
+.nav-icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.nav-item .badge{margin-left:auto;background:var(--accent);color:#fff;border-radius:10px;font-size:10px;padding:1px 7px;font-weight:700}
+.nav-bottom{padding:12px 20px;font-size:11.5px;color:var(--text-muted);border-top:1.5px solid var(--border-light);display:flex;align-items:center;gap:8px}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--success);box-shadow:0 0 0 3px var(--success-bg)}
+.sidebar-footer{padding:14px 16px;border-top:1.5px solid var(--border);display:flex;align-items:center;gap:10px}
+.user-avatar{width:34px;height:34px;flex:0 0 34px;border-radius:50%;background:var(--bg-elevated);display:flex;align-items:center;justify-content:center}
+.user-avatar svg{width:20px;height:20px;fill:none;stroke:var(--text-secondary);stroke-width:1.8}
+.user-details{flex:1;min-width:0}
+.user-name{font-size:12.5px;font-weight:700}
+.user-role{font-size:10.5px;color:var(--text-muted)}
+.subject-chip{display:inline-block;margin-top:3px;padding:1px 8px;border-radius:10px;font-size:10px;background:var(--purple-bg);color:var(--purple);font-weight:700}
+.btn-logout{background:var(--bg-card);border:1.5px solid var(--border);border-radius:var(--sketch-sm);padding:5px 11px;font-size:11.5px;cursor:pointer;color:var(--text-secondary);font-family:var(--font)}
+
+/* 主内容 */
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{height:62px;background:var(--bg-primary);border-bottom:1.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 26px;position:sticky;top:0;z-index:5}
+.topbar .page-title{font-size:18px;font-weight:800;letter-spacing:-.3px}
+.top-actions{display:flex;align-items:center;gap:10px}
+.search{background:var(--bg-card);border:1.5px solid var(--border);border-radius:var(--sketch-sm);padding:7px 13px;width:210px;font-size:12.5px;color:var(--text-secondary);font-family:var(--font)}
+.icon-btn{width:35px;height:35px;border:1.5px solid var(--border);background:var(--bg-card);border-radius:var(--sketch-sm);display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative}
+.icon-btn svg{width:17px;height:17px;fill:none;stroke:var(--text-secondary);stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.icon-btn .dot{position:absolute;top:4px;right:5px;width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.content{padding:24px 26px 60px;flex:1}
+
+/* 面板 */
+.panel{background:var(--bg-card);border:1.5px solid var(--border);border-radius:var(--sketch-r1);padding:20px 22px;margin-bottom:18px;box-shadow:var(--shadow-card)}
+.panel:nth-of-type(2n){border-radius:var(--sketch-r2)}
+.ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:1.5px solid var(--border-light);gap:12px;flex-wrap:wrap}
+.pt{font-size:15px;font-weight:800;display:flex;align-items:center;gap:8px}
+.pt .bar{width:4px;height:16px;background:var(--accent);border-radius:2px}
+.pa{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+/* KPI */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
+.kpi{background:var(--bg-card);border:1.5px solid var(--border);border-radius:var(--sketch-r1);padding:16px 18px;position:relative;overflow:hidden;box-shadow:var(--shadow-card)}
+.kpi:nth-child(2){border-radius:var(--sketch-r2)}.kpi:nth-child(3){border-radius:var(--sketch-r3)}.kpi:nth-child(4){border-radius:var(--sketch-r4)}
+.kpi::after{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--accent);opacity:.4}
+.kpi.g::after{background:var(--success)}.kpi.b::after{background:var(--info)}.kpi.y::after{background:var(--warning)}.kpi.p::after{background:var(--purple)}
+.kpi .k{font-size:11px;color:var(--text-muted);margin-bottom:7px;font-weight:600}
+.kpi .v{font-size:25px;font-weight:800;letter-spacing:-.5px}
+.kpi .v small{font-size:12px;font-weight:500;color:var(--text-muted);margin-left:3px}
+.kpi .v.red{color:var(--accent)}.kpi .v.grn{color:var(--success)}.kpi .v.yel{color:var(--warning)}.kpi .v.blu{color:var(--info)}.kpi .v.pur{color:var(--purple)}
+.kpi .s{font-size:10.5px;color:var(--text-muted);margin-top:4px}
+
+/* 表格 */
+.tw{overflow-x:auto;border-radius:8px;border:1.5px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{background:var(--bg-elevated);padding:10px 13px;text-align:left;font-weight:700;color:var(--text-secondary);border-bottom:1.5px solid var(--border);white-space:nowrap;font-size:11px;letter-spacing:.4px}
+td{padding:10px 13px;border-bottom:1px solid var(--border-light);color:var(--text-primary);white-space:nowrap}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover{background:var(--bg-card-hover)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.lnk{color:var(--accent);font-weight:600;cursor:pointer}
+
+/* 标签 */
+.tag{display:inline-block;padding:3px 9px;border-radius:var(--sketch-sm);font-size:11px;font-weight:700}
+.tag.g{background:var(--success-bg);color:var(--success)}
+.tag.y{background:var(--warning-bg);color:var(--warning)}
+.tag.r{background:var(--danger-bg);color:var(--danger)}
+.tag.b{background:var(--info-bg);color:var(--info)}
+.tag.p{background:var(--purple-bg);color:var(--purple)}
+.tag.gray{background:var(--bg-elevated);color:var(--text-secondary)}
+/* 归属标签 */
+.own{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:var(--sketch-sm);font-size:11px;font-weight:700}
+.own::before{content:'';width:6px;height:6px;border-radius:50%}
+.own.live{background:rgba(194,54,22,.08);color:var(--accent)}.own.live::before{background:var(--accent)}
+.own.tour{background:var(--info-bg);color:var(--info)}.own.tour::before{background:var(--info)}
+.own.admin{background:var(--purple-bg);color:var(--purple)}.own.admin::before{background:var(--purple)}
+.own.wh{background:var(--success-bg);color:var(--success)}.own.wh::before{background:var(--success)}
+
+/* 按钮 */
+.btn{padding:8px 15px;border-radius:var(--sketch-sm);border:1.5px solid var(--border);background:var(--bg-card);color:var(--text-primary);cursor:pointer;font-size:12.5px;font-weight:600;font-family:var(--font);box-shadow:1px 2px 0 rgba(45,38,32,.04)}
+.btn:hover{border-color:var(--border-hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.btn.primary:hover{background:var(--accent-dark)}
+.btn.sm{padding:5px 11px;font-size:11.5px}
+.btn.ghost{background:transparent;border-style:dashed;color:var(--text-muted)}
+.sel{background:var(--bg-card);border:1.5px solid var(--border);border-radius:var(--sketch-sm);padding:7px 11px;font-size:12.5px;color:var(--text-secondary);font-family:var(--font);cursor:pointer}
+.filterbar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:var(--text-muted)}
+.filterbar .mk{background:var(--accent);color:#fff;border-radius:var(--sketch-sm);font-size:10px;padding:1px 7px;font-weight:700}
+
+/* 归属分类卡片 */
+.cat-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+.cat-card{border:1.5px solid var(--border);border-radius:var(--sketch-r1);padding:18px;background:var(--bg-card);box-shadow:var(--shadow-card);position:relative;min-height:132px}
+.cat-card:nth-child(2){border-radius:var(--sketch-r2)}.cat-card:nth-child(3){border-radius:var(--sketch-r3)}.cat-card:nth-child(4){border-radius:var(--sketch-r4)}
+.cat-card .ic{width:34px;height:34px;border-radius:var(--sketch-sm);display:flex;align-items:center;justify-content:center;font-size:18px;margin-bottom:11px}
+.cat-card .nm{font-size:14px;font-weight:800;margin-bottom:3px}
+.cat-card .meta{font-size:11px;color:var(--text-muted)}
+.cat-card .cnt{position:absolute;right:16px;top:16px;font-size:22px;font-weight:800;color:var(--border-hover)}
+.cat-card.live .ic{background:var(--accent-glow)}.cat-card.tour .ic{background:var(--info-bg)}.cat-card.admin .ic{background:var(--purple-bg)}.cat-card.wh .ic{background:var(--success-bg)}
+.cat-add{border:1.5px dashed var(--border-hover);border-radius:var(--sketch-sm);background:transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);min-height:132px;gap:8px}
+.cat-add .plus{font-size:30px;line-height:1;color:var(--border-hover)}
+
+/* 图表占位 */
+.charts{display:grid;grid-template-columns:1.6fr 1fr;gap:18px}
+.bars{display:flex;align-items:flex-end;gap:10px;height:150px;padding:10px 4px 0}
+.bars .bcol{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end}
+.bars .bcol .bstick{width:60%;border-radius:4px 4px 0 0}
+.bars .bcol .blab{font-size:10px;color:var(--text-muted)}
+.donut{display:flex;align-items:center;gap:18px;justify-content:center;height:150px}
+.donut .ring{width:112px;height:112px;border-radius:50%;background:conic-gradient(var(--accent) 0 35%,var(--info) 35% 60%,var(--purple) 60% 82%,var(--success) 82% 100%);position:relative}
+.donut .ring::after{content:'';position:absolute;inset:24px;background:var(--bg-card);border-radius:50%}
+.donut .lg{font-size:11.5px;color:var(--text-secondary);line-height:1.9}
+.donut .lg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px}
+
+/* 月份矩阵（出入库明细） */
+.mx{font-size:11.5px}
+.mx td,.mx th{padding:8px 10px}
+.mx .in{color:var(--accent);font-weight:700}
+.mx .out{color:var(--success);font-weight:700}
+
+/* 仪表盘4归属概览卡 */
+.own-overview{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.own-card{border:1.5px solid var(--border);border-radius:var(--sketch-r1);padding:16px 17px;background:var(--bg-card);box-shadow:var(--shadow-card);position:relative;overflow:hidden}
+.own-card:nth-child(2){border-radius:var(--sketch-r2)}.own-card:nth-child(3){border-radius:var(--sketch-r3)}.own-card:nth-child(4){border-radius:var(--sketch-r4)}
+.own-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.own-card.live::before{background:var(--accent)}.own-card.tour::before{background:var(--info)}.own-card.admin::before{background:var(--purple)}.own-card.wh::before{background:var(--success)}
+.oc-head{display:flex;align-items:center;gap:9px;margin-bottom:13px}
+.oc-ic{font-size:19px}
+.oc-name{font-size:14.5px;font-weight:800}
+.oc-tag{margin-left:auto;font-size:10px;padding:2px 8px;border-radius:var(--sketch-sm);background:var(--accent-glow);color:var(--accent);font-weight:700}
+.oc-tag.ok{background:var(--success-bg);color:var(--success)}
+.oc-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px 8px;padding-bottom:12px;border-bottom:1px dashed var(--border)}
+.oc-grid>div{display:flex;flex-direction:column;gap:2px}
+.oc-grid span{font-size:10.5px;color:var(--text-muted)}
+.oc-grid b{font-size:19px;font-weight:800;letter-spacing:-.4px}
+.oc-grid b i{font-size:10.5px;font-style:normal;font-weight:500;color:var(--text-muted)}
+.oc-grid b.red{color:var(--accent)}.oc-grid b.blu{color:var(--info)}.oc-grid b.yel{color:var(--warning)}
+.oc-foot{display:flex;gap:12px;flex-wrap:wrap;padding-top:11px}
+.oc-foot .st{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--text-secondary)}
+.oc-foot .st i{width:6px;height:6px;border-radius:50%}
+.oc-foot .st b{color:var(--text-primary);font-size:12px}
+
+/* 出入库明细-归属切换 */
+.ownswitch{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding-bottom:12px;border-bottom:1.5px solid var(--border-light)}
+.ownswitch .os{background:var(--bg-card);border:1.5px solid var(--border);border-radius:var(--sketch-sm);padding:7px 15px;font-size:12.5px;cursor:pointer;color:var(--text-secondary);font-family:var(--font);font-weight:600;transition:.15s}
+.ownswitch .os:hover{border-color:var(--border-hover);color:var(--text-primary)}
+.ownswitch .os.on{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:2px 2px 0 rgba(154,43,16,.2)}
+
+/* 团期使用报表-二级结构 */
+.tr-group{border:1.5px solid var(--border);border-radius:var(--sketch-r1);margin-bottom:13px;overflow:hidden;box-shadow:var(--shadow-card)}
+.tr-group:nth-child(2){border-radius:var(--sketch-r2)}.tr-group:nth-child(3){border-radius:var(--sketch-r3)}
+.tr-head{display:flex;align-items:center;gap:12px;padding:13px 17px;background:var(--bg-card-hover);cursor:pointer;flex-wrap:wrap;transition:.15s}
+.tr-head:hover{background:var(--bg-elevated)}
+.tr-arrow{font-size:12px;color:var(--text-muted);transition:transform .2s;display:inline-block}
+.tr-group.open .tr-arrow{transform:rotate(90deg)}
+.tr-name{font-size:14px;font-weight:800;color:var(--text-primary)}
+.tr-chip{font-size:10px;padding:2px 9px;border-radius:var(--sketch-sm);background:var(--info-bg);color:var(--info);font-weight:700}
+.tr-sum{font-size:11.5px;color:var(--text-muted)}
+.tr-sum b{color:var(--text-primary);font-size:12.5px}
+.tr-sum b.red{color:var(--accent)}
+.tr-head .tag{margin-left:auto}
+.tr-body{display:none;padding:0 17px 15px}
+.tr-group.open .tr-body{display:block}
+.tr-body table{border:1.5px solid var(--border-light);border-radius:6px}
+.tr-body th{background:var(--bg-elevated)}
+.tr-body tr:first-child td{border-top:none}
+
+/* 状态流（在途/锁定） */
+.flow{display:flex;align-items:center;gap:6px;font-size:11px}
+.flow .step{padding:3px 9px;border-radius:var(--sketch-sm);background:var(--bg-elevated);color:var(--text-muted)}
+.flow .step.on{background:var(--accent-glow);color:var(--accent);font-weight:700}
+.flow .arw{color:var(--border-hover)}
+
+.hidden{display:none}
+</style>
+<!-- 数据层：本地 supabase-js + 主体隔离数据访问层（复用列车，自动按 subject=hq 过滤） -->
+<script src="js/vendor/supabase.min.js?v=6.1"></script>
+<script src="js/supabase-db.js?v=6.1"></script>
+</head>
+<body>
+<div class="app">
+  <!-- ============ 侧边栏：完全照搬列车 ============ -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon"><svg viewBox="0 0 50 39"><path d="M16.5 2h21.1L22.1 24.97H1L16.5 2Z"/><path d="M17.4 27.1 11.4 36h22.1L49 13.03H32.7L23.2 27.1H17.4Z"/></svg></div>
+      <div class="logo-text"><span class="brand">遇见美好</span><span class="sub">库存管理系统</span></div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section">
+        <div class="nav-section-title">库存管理</div>
+        <div class="nav-item active" data-mod="dashboard"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 5-9"/></svg></span>仪表盘</div>
+        <div class="nav-item" data-mod="inventory"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg></span>库存概览</div>
+        <div class="nav-item" data-mod="categories"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"/></svg></span>品类管理</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">业务流程</div>
+        <div class="nav-item" data-mod="purchase"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg></span>采购单管理<span class="badge">3</span></div>
+        <div class="nav-item" data-mod="stockin"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>入库管理</div>
+        <div class="nav-item" data-mod="requisition"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>领用单管理<span class="badge">2</span></div>
+        <div class="nav-item" data-mod="stockout"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span>出库管理</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">统计报表</div>
+        <div class="nav-item" data-mod="monthly"><span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>出入库明细</div>
+        <div class="nav-item" data-mod="reports"><span class="nav-icon"><svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span>团期使用报表</div>
+        <div class="nav-item" data-mod="analytics"><span class="nav-icon"><svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>数据分析</div>
+        <div class="nav-item" data-mod="history"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>操作记录</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">系统管理</div>
+        <div class="nav-item" data-mod="adminuser"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></span>账号管理</div>
+        <div class="nav-item" data-mod="adminset"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82M4.6 9a1.65 1.65 0 0 1-.33-1.82"/></svg></span>系统设置</div>
+      </div>
+    </nav>
+    <div class="nav-bottom"><span class="status-dot"></span>系统运行正常</div>
+    <div class="sidebar-footer">
+      <div class="user-avatar"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+      <div class="user-details"><div class="user-name">管理员</div><div class="user-role">admin</div><span class="subject-chip">遇见美好总部</span></div>
+      <button class="btn-logout">退出</button>
+    </div>
+  </aside>
+
+  <!-- ============ 主内容 ============ -->
+  <div class="main">
+    <header class="topbar">
+      <div class="page-title" id="pageTitle">仪表盘</div>
+      <div class="top-actions">
+        <span id="hq-subject-badge" style="font-size:12px;font-weight:700;color:var(--accent);background:var(--accent-glow);padding:5px 12px;border-radius:20px">遇见美好总部</span>
+        <span id="hq-op-badge" style="font-size:12px;color:var(--text-secondary)">—</span>
+        <button id="hq-btn-refresh" type="button" class="btn" style="padding:5px 12px">刷新</button>
+        <button id="hq-btn-exit" type="button" class="btn" style="padding:5px 12px">退出 / 切换主体</button>
+      </div>
+    </header>
+
+    <div class="content">
+      <!-- ===== 仪表盘（按4用途归属定制） ===== -->
+      <section class="mod" id="mod-dashboard">
+        <div class="ph"><div class="pt"><span class="bar"></span>四大用途归属 · 概览</div><div class="pa"><span style="font-size:11.5px;color:var(--text-muted)">数据截至 <b id="dashTime">--</b> · 每 30 秒自动同步，切回页面即时刷新</span></div></div>
+        <div class="own-overview" id="ownOverview">
+          <div class="own-card live">
+            <div class="oc-head"><span class="oc-ic">🎁</span><span class="oc-name">直播礼品</span><span class="oc-tag">进行中</span></div>
+            <div class="oc-grid">
+              <div><span>物品</span><b>16 <i>种</i></b></div>
+              <div><span>库存</span><b>420 <i>件</i></b></div>
+              <div><span>锁定</span><b class="red">30 <i>件</i></b></div>
+              <div><span>库存额</span><b>¥4.4<i>万</i></b></div>
+            </div>
+            <div class="oc-foot">
+              <span class="st"><i style="background:var(--accent)"></i>中奖待邮寄 <b>7</b></span>
+              <span class="st"><i style="background:var(--info)"></i>在途 <b>3</b></span>
+              <span class="st"><i style="background:var(--warning)"></i>待审核 <b>1</b></span>
+            </div>
+          </div>
+          <div class="own-card tour">
+            <div class="oc-head"><span class="oc-ic">🚌</span><span class="oc-name">出团物料</span><span class="oc-tag">进行中</span></div>
+            <div class="oc-grid">
+              <div><span>物品</span><b>14 <i>种</i></b></div>
+              <div><span>库存</span><b>560 <i>件</i></b></div>
+              <div><span>在途</span><b class="blu">2 <i>单</i></b></div>
+              <div><span>库存额</span><b>¥3.1<i>万</i></b></div>
+            </div>
+            <div class="oc-foot">
+              <span class="st"><i style="background:var(--info)"></i>领用在途 <b>2</b></span>
+              <span class="st"><i style="background:var(--purple)"></i>待核销 <b>4</b></span>
+              <span class="st"><i style="background:var(--accent)"></i>待入库 <b>1</b></span>
+            </div>
+          </div>
+          <div class="own-card admin">
+            <div class="oc-head"><span class="oc-ic">📎</span><span class="oc-name">行政物料</span><span class="oc-tag ok">平稳</span></div>
+            <div class="oc-grid">
+              <div><span>物品</span><b>10 <i>种</i></b></div>
+              <div><span>库存</span><b>180 <i>件</i></b></div>
+              <div><span>低库存</span><b class="yel">2 <i>种</i></b></div>
+              <div><span>库存额</span><b>¥1.8<i>万</i></b></div>
+            </div>
+            <div class="oc-foot">
+              <span class="st"><i style="background:var(--warning)"></i>待审核 <b>1</b></span>
+              <span class="st"><i style="background:var(--info)"></i>待归还 <b>2</b></span>
+              <span class="st"><i style="background:var(--success)"></i>今日出库 <b>6</b></span>
+            </div>
+          </div>
+          <div class="own-card wh">
+            <div class="oc-head"><span class="oc-ic">🏠</span><span class="oc-name">总部仓库</span><span class="oc-tag ok">平稳</span></div>
+            <div class="oc-grid">
+              <div><span>物品</span><b>8 <i>种</i></b></div>
+              <div><span>库存</span><b>126 <i>件</i></b></div>
+              <div><span>待调拨</span><b class="yel">3 <i>笔</i></b></div>
+              <div><span>库存额</span><b>¥3.3<i>万</i></b></div>
+            </div>
+            <div class="oc-foot">
+              <span class="st"><i style="background:var(--purple)"></i>待调拨 <b>3</b></span>
+              <span class="st"><i style="background:var(--success)"></i>盘点差异 <b>0</b></span>
+              <span class="st"><i style="background:var(--info)"></i>本月入库 <b>9</b></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="ph" style="margin-top:22px"><div class="pt"><span class="bar"></span>待办事项</div></div>
+        <div class="kpis" id="dash-todo-kpis">
+          <div class="kpi"><div class="k">待入库采购单</div><div class="v red">3 <small>单</small></div><div class="s">直播礼品 1 · 出团物料 1 · 行政 1</div></div>
+          <div class="kpi y"><div class="k">待审核领用</div><div class="v yel">2 <small>单</small></div><div class="s">出团物料 1 · 行政物料 1</div></div>
+          <div class="kpi b"><div class="k">在途未签收</div><div class="v blu">5 <small>笔</small></div><div class="s">邮寄 3 · 领用 2</div></div>
+          <div class="kpi p"><div class="k">中奖待邮寄</div><div class="v pur">7 <small>人</small></div><div class="s">直播礼品归属</div></div>
+        </div>
+        <div class="charts">
+          <div class="panel" style="margin:0">
+            <div class="ph"><div class="pt">近 6 期出入库趋势</div></div>
+            <div class="bars" id="chart-trend" style="min-height:150px;align-items:flex-end"></div>
+          </div>
+          <div class="panel" style="margin:0">
+            <div class="ph"><div class="pt">用途归属占比</div></div>
+            <div class="donut" id="chart-own" style="min-height:150px;align-items:center;justify-content:center"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== 库存概览 ===== -->
+      <section class="mod hidden" id="mod-inventory">
+        <div class="kpis" id="inv-kpis">
+          <div class="kpi"><div class="k">物品总数</div><div class="v">48 <small>种</small></div><div class="s">4 个用途归属</div></div>
+          <div class="kpi g"><div class="k">库存总量</div><div class="v">1,286 <small>件</small></div></div>
+          <div class="kpi y"><div class="k">低库存</div><div class="v yel">6 <small>种</small></div></div>
+          <div class="kpi"><div class="k">锁定库存</div><div class="v red">32 <small>件</small></div></div>
+        </div>
+        <div class="panel">
+          <div class="ph"><div class="pt"><span class="bar"></span>物品列表 </div>
+            <div class="pa"><button class="btn primary">+ 新增物品</button></div></div>
+          <div class="filterbar"> 用途归属：<select class="sel"><option>全部归属</option><option>🎁 直播礼品</option><option>🚌 出团物料</option><option>📎 行政物料</option><option>🏠 总部仓库</option></select></div>
+          <div class="tw"><table>
+            <thead><tr><th>编码</th><th>名称</th><th>品牌/规格</th><th>单位</th><th class="num">单价</th><th class="num">库存</th><th class="num">锁定</th><th>用途归属</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody id="inv-body">
+              <tr><td>ITEM001</td><td>黄桃罐头</td><td>罐头 / 425g</td><td>箱</td><td class="num">¥68</td><td class="num">120</td><td class="num">20</td><td><span class="own tour">出团物料</span></td><td><span class="tag g">正常</span></td><td class="lnk">编辑</td></tr>
+              <tr><td>ITEM002</td><td>定制保温杯</td><td>膳魔师 / 500ml</td><td>个</td><td class="num">¥95</td><td class="num">45</td><td class="num">30</td><td><span class="own live">直播礼品</span></td><td><span class="tag y">低库存</span></td><td class="lnk">编辑</td></tr>
+              <tr><td>ITEM003</td><td>A4复印纸</td><td>得力 / 500张</td><td>包</td><td class="num">¥22</td><td class="num">80</td><td class="num">0</td><td><span class="own admin">行政物料</span></td><td><span class="tag g">正常</span></td><td class="lnk">编辑</td></tr>
+              <tr><td>ITEM004</td><td>矿泉水</td><td>农夫山泉 / 550ml</td><td>箱</td><td class="num">¥36</td><td class="num">200</td><td class="num">0</td><td><span class="own wh">总部仓库</span></td><td><span class="tag g">正常</span></td><td class="lnk">编辑</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <!-- ===== 品类管理 → 用途归属管理===== -->
+      <section class="mod hidden" id="mod-categories">
+        <div class="panel">
+          <div class="ph"><div class="pt"><span class="bar"></span>用途归属管理 </div>
+            <div class="pa"><button class="btn primary">+ 新增归属</button></div></div>
+          <div class="cat-grid" id="cat-grid">
+            <div class="cat-card live"><div class="cnt">16</div><div class="ic">🎁</div><div class="nm">直播礼品</div><div class="meta">中奖锁定 · 邮寄出库</div></div>
+            <div class="cat-card tour"><div class="cnt">14</div><div class="ic">🚌</div><div class="nm">出团物料</div><div class="meta">领用出库 · 团期核销</div></div>
+            <div class="cat-card admin"><div class="cnt">10</div><div class="ic">📎</div><div class="nm">行政物料</div><div class="meta">行政申领 · 归还</div></div>
+            <div class="cat-card wh"><div class="cnt">8</div><div class="ic">🏠</div><div class="nm">总部仓库</div><div class="meta">调入调出 · 盘点</div></div>
+            <div class="cat-add"><div class="plus">＋</div><div>新增归属分类</div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== 采购单管理 ===== -->
+      <section class="mod hidden" id="mod-purchase">
+        <div class="kpis" id="po-kpis">
+          <div class="kpi"><div class="k">采购单数</div><div class="v">12 <small>单</small></div></div>
+          <div class="kpi g"><div class="k">采购总额</div><div class="v">¥8.4<small>万</small></div></div>
+          <div class="kpi b"><div class="k">入库完成</div><div class="v blu">9 <small>单</small></div></div>
+          <div class="kpi y"><div class="k">待处理</div><div class="v yel">3 <small>单</small></div></div>
+        </div>
+        <div class="panel">
+          <div class="ph"><div class="pt"><span class="bar"></span>采购单列表</div><div class="pa"><button class="btn">📄 导入Excel</button><button class="btn primary">+ 新建采购单</button></div></div>
+          <div class="filterbar"> 用途归属：<select class="sel"><option>全部归属</option><option>直播礼品</option><option>出团物料</option><option>行政物料</option><option>总部仓库</option></select></div>
+          <div class="tw"><table>
+            <thead><tr><th>采购单号</th><th>日期</th><th>采购人</th><th>物品数</th><th class="num">总金额</th><th>用途归属</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody id="po-body">
+              <tr><td class="lnk">PO00023</td><td>11-18</td><td>张敏</td><td>3 项</td><td class="num">¥6,240</td><td><span class="own live">直播礼品</span></td><td><span class="tag y">待入库</span></td><td class="lnk">编辑 · 入库</td></tr>
+              <tr><td class="lnk">PO00022</td><td>11-15</td><td>李强</td><td>5 项</td><td class="num">¥12,800</td><td><span class="own tour">出团物料</span></td><td><span class="tag g">已完成</span></td><td class="lnk">查看</td></tr>
+              <tr><td class="lnk">PO00021</td><td>11-12</td><td>王芳</td><td>2 项</td><td class="num">¥1,760</td><td><span class="own admin">行政物料</span></td><td><span class="tag b">部分入库</span></td><td class="lnk">入库</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <!-- ===== 入库管理 ===== -->
+      <section class="mod hidden" id="mod-stockin">
+        <div class="kpis" id="si-kpis">
+          <div class="kpi y"><div class="k">待入库</div><div class="v yel">3 <small>单</small></div></div>
+          <div class="kpi b"><div class="k">部分入库</div><div class="v blu">1 <small>单</small></div></div>
+          <div class="kpi g"><div class="k">本月已入库</div><div class="v">286 <small>件</small></div></div>
+          <div class="kpi p"><div class="k">不入库跳过</div><div class="v pur">2 <small>项</small></div></div>
+        </div>
+        <div class="panel">
+          <div class="ph"><div class="pt"><span class="bar"></span>入库列表</div>
+            <div class="filterbar" style="margin:0"> 归属：<select class="sel"><option>全部</option><option>直播礼品</option><option>出团物料</option></select></div></div>
+          <div class="tw"><table>
+            <thead><tr><th>采购单号</th><th>物品</th><th class="num">订购</th><th class="num">已入库</th><th>用途归属</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody id="si-body">
+              <tr><td>PO00023</td><td>定制保温杯</td><td class="num">50</td><td class="num">0</td><td><span class="own live">直播礼品</span></td><td><span class="tag r">待入库</span></td><td class="lnk">验收入库</td></tr>
+              <tr><td>PO00021</td><td>A4复印纸</td><td class="num">100</td><td class="num">40</td><td><span class="own admin">行政物料</span></td><td><span class="tag b">部分入库</span></td><td class="lnk">继续入库</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <!-- ===== 领用单管理===== -->
+      <section class="mod hidden" id="mod-requisition">
+        <div class="kpis" id="rq-kpis">
+          <div class="kpi y"><div class="k">待审核</div><div class="v yel">2 <small>单</small></div></div>
+          <div class="kpi b"><div class="k">在途中 </div><div class="v blu">2 <small>单</small></div></div>
+          <div class="kpi g"><div class="k">已出库</div><div class="v">18 <small>单</small></div></div>
+          <div class="kpi r"><div class="k">锁定中 </div><div class="v red">30 <small>件</small></div></div>
+        </div>
+        <div class="panel">
+          <div class="ph"><div class="pt"><span class="bar"></span>领用单列表</div><div class="pa"><button class="btn primary">+ 新建领用单</button></div></div>
+          <div class="filterbar"> 归属：<select class="sel"><option>全部</option><option>出团物料</option><option>行政物料</option></select>  状态：<select class="sel"><option>全部状态</option><option>待审核</option><option>在途</option><option>已出库</option></select></div>
+          <div class="tw"><table>
+            <thead><tr><th>领用单号</th><th>日期</th><th>领用人</th><th>团期/用途</th><th>物品数</th><th>用途归属</th><th>流程状态</th><th>操作</th></tr></thead>
+            <tbody id="rq-body">
+              <tr><td>RQ00018</td><td>11-20</td><td>导游-陈</td><td>0918华东团</td><td>6 项</td><td><span class="own tour">出团物料</span></td><td><div class="flow"><span class="step">审核</span><span class="arw">›</span><span class="step on">在途</span><span class="arw">›</span><span class="step">核销</span></div></td><td class="lnk">核销</td></tr>
+              <tr><td>RQ00017</td><td>11-19</td><td>前台-刘</td><td>办公领用</td><td>2 项</td><td><span class="own admin">行政物料</span></td><td><div class="flow"><span class="step on">待审核</span><span class="arw">›</span><span class="step">在途</span><span class="arw">›</span><span class="step">核销</span></div></td><td class="lnk">审核</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <!-- ===== 出库管理===== -->
+      <section class="mod hidden" id="mod-stockout">
+        <div class="kpis" id="so-kpis">
+          <div class="kpi g"><div class="k">本月出库</div><div class="v">142 <small>笔</small></div></div>
+          <div class="kpi b"><div class="k">在途未签收 </div><div class="v blu">5 <small>笔</small></div></div>
+          <div class="kpi y"><div class="k">待邮寄 </div><div class="v yel">7 <small>笔</small></div></div>
+          <div class="kpi"><div class="k">已签收</div><div class="v">130 <small>笔</small></div></div>
+        </div>
+        <div class="panel">
+          <div class="ph"><div class="pt"><span class="bar"></span>出库列表</div>
+            <div class="pa">
+              <button class="btn">📤 领用出库</button>
+              <button class="btn primary">📮 邮寄出库 </button>
+            </div></div>
+          <div class="filterbar"> 归属：<select class="sel"><option>全部</option><option>直播礼品</option><option>出团物料</option></select> 类型：<select class="sel"><option>全部类型</option><option>领用出库</option><option>邮寄出库</option></select></div>
+          <div class="tw"><table>
+            <thead><tr><th>出库单号</th><th>类型</th><th>物品</th><th class="num">数量</th><th>快递单号</th><th>用途归属</th><th>状态</th></tr></thead>
+            <tbody id="so-body">
+              <tr><td>SO00031</td><td><span class="tag p">邮寄出库</span></td><td>定制保温杯</td><td class="num">2</td><td>SF1234567890</td><td><span class="own live">直播礼品</span></td><td><span class="tag b">在途</span></td></tr>
+              <tr><td>SO00030</td><td><span class="tag b">领用出库</span></td><td>矿泉水</td><td class="num">10</td><td>—</td><td><span class="own tour">出团物料</span></td><td><span class="tag g">已签收</span></td></tr>
+              <tr><td>SO00029</td><td><span class="tag p">邮寄出库</span></td><td>文创帆布包</td><td class="num">1</td><td>待填写</td><td><span class="own live">直播礼品</span></td><td><span class="tag y">待邮寄</span></td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <!-- ===== 出入库明细（按用途归属切换查看） ===== -->
+      <section class="mod hidden" id="mod-monthly">
+        <div class="panel">
+          <div class="ph"><div class="pt"><span class="bar"></span>出入库明细</div><div class="pa"><select class="sel"><option>2026年11月</option></select><button class="btn">导出</button></div></div>
+          <div class="ownswitch" id="monthOwnSwitch">
+            <button class="os on" data-own="all">全部归属</button>
+            <button class="os" data-own="live">🎁 直播礼品</button>
+            <button class="os" data-own="tour">🚌 出团物料</button>
+            <button class="os" data-own="admin">📎 行政物料</button>
+            <button class="os" data-own="wh">🏠 总部仓库</button>
+          </div>
+          <div class="tw"><table class="mx" id="monthTable">
+            <thead><tr><th>编号</th><th>名称</th><th>用途归属</th><th class="num">期初</th><th class="num">11月入库</th><th class="num">11月出库</th><th class="num">期末</th></tr></thead>
+            <tbody id="monthBody">
+              <tr data-own="tour"><td>ITEM001</td><td>黄桃罐头</td><td><span class="own tour">出团物料</span></td><td class="num">100</td><td class="num in">+20</td><td class="num out">-18</td><td class="num">122</td></tr>
+              <tr data-own="tour"><td>ITEM005</td><td>矿泉水</td><td><span class="own tour">出团物料</span></td><td class="num">180</td><td class="num in">+60</td><td class="num out">-90</td><td class="num">150</td></tr>
+              <tr data-own="live"><td>ITEM002</td><td>定制保温杯</td><td><span class="own live">直播礼品</span></td><td class="num">60</td><td class="num in">+40</td><td class="num out">-30</td><td class="num">70</td></tr>
+              <tr data-own="live"><td>ITEM006</td><td>文创帆布包</td><td><span class="own live">直播礼品</span></td><td class="num">30</td><td class="num in">+25</td><td class="num out">-12</td><td class="num">43</td></tr>
+              <tr data-own="admin"><td>ITEM003</td><td>A4复印纸</td><td><span class="own admin">行政物料</span></td><td class="num">40</td><td class="num in">+40</td><td class="num out">-8</td><td class="num">72</td></tr>
+              <tr data-own="wh"><td>ITEM004</td><td>一次性餐盒</td><td><span class="own wh">总部仓库</span></td><td class="num">90</td><td class="num in">+50</td><td class="num out">-14</td><td class="num">126</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <!-- ===== 团期使用报表（团期一级 → 物料二级） ===== -->
+      <section class="mod hidden" id="mod-reports">
+        <div class="panel">
+          <div class="ph"><div class="pt"><span class="bar"></span>团期使用报表</div><div class="pa"><input class="sel" type="month" value="2026-11"><button class="btn">查询</button><button class="btn">展开全部</button><button class="btn">导出</button></div></div>
+          <div class="tour-report" id="tourReport">
+
+            <div class="tr-group">
+              <div class="tr-head" onclick="toggleTour(this)">
+                <span class="tr-arrow">▸</span>
+                <span class="tr-name">0918 华东五日游</span>
+                <span class="tr-chip">出团物料</span>
+                <span class="tr-sum">物料 <b>4</b> 种</span>
+                <span class="tr-sum">使用量 <b>186</b></span>
+                <span class="tr-sum">金额 <b class="red">¥8,940</b></span>
+                <span class="tag g">已核销</span>
+              </div>
+              <div class="tr-body">
+                <table><thead><tr><th>物料名称</th><th>规格</th><th>用途归属</th><th class="num">申请量</th><th class="num">实际使用</th><th class="num">单价</th><th class="num">金额</th><th>状态</th></tr></thead>
+                <tbody>
+                  <tr><td>黄桃罐头</td><td>425g/箱</td><td><span class="own tour">出团物料</span></td><td class="num">60</td><td class="num">54</td><td class="num">¥68</td><td class="num">¥3,672</td><td><span class="tag g">已核销</span></td></tr>
+                  <tr><td>矿泉水</td><td>550ml/箱</td><td><span class="own tour">出团物料</span></td><td class="num">150</td><td class="num">120</td><td class="num">¥36</td><td class="num">¥4,320</td><td><span class="tag g">已核销</span></td></tr>
+                  <tr><td>一次性餐盒</td><td>100只/箱</td><td><span class="own wh">总部仓库</span></td><td class="num">10</td><td class="num">8</td><td class="num">¥85</td><td class="num">¥680</td><td><span class="tag g">已核销</span></td></tr>
+                  <tr><td>纸巾</td><td>24包/箱</td><td><span class="own tour">出团物料</span></td><td class="num">6</td><td class="num">4</td><td class="num">¥42</td><td class="num">¥168</td><td><span class="tag g">已核销</span></td></tr>
+                </tbody></table>
+              </div>
+            </div>
+
+            <div class="tr-group">
+              <div class="tr-head" onclick="toggleTour(this)">
+                <span class="tr-arrow">▸</span>
+                <span class="tr-name">1024 川渝七日游</span>
+                <span class="tr-chip">出团物料</span>
+                <span class="tr-sum">物料 <b>3</b> 种</span>
+                <span class="tr-sum">使用量 <b>156</b></span>
+                <span class="tr-sum">金额 <b class="red">¥5,760</b></span>
+                <span class="tag y">待核销</span>
+              </div>
+              <div class="tr-body">
+                <table><thead><tr><th>物料名称</th><th>规格</th><th>用途归属</th><th class="num">申请量</th><th class="num">实际使用</th><th class="num">单价</th><th class="num">金额</th><th>状态</th></tr></thead>
+                <tbody>
+                  <tr><td>矿泉水</td><td>550ml/箱</td><td><span class="own tour">出团物料</span></td><td class="num">140</td><td class="num">120</td><td class="num">¥36</td><td class="num">¥4,320</td><td><span class="tag y">待核销</span></td></tr>
+                  <tr><td>黄桃罐头</td><td>425g/箱</td><td><span class="own tour">出团物料</span></td><td class="num">30</td><td class="num">28</td><td class="num">¥45</td><td class="num">¥1,260</td><td><span class="tag y">待核销</span></td></tr>
+                  <tr><td>纸巾</td><td>24包/箱</td><td><span class="own tour">出团物料</span></td><td class="num">10</td><td class="num">8</td><td class="num">¥22.5</td><td class="num">¥180</td><td><span class="tag y">待核销</span></td></tr>
+                </tbody></table>
+              </div>
+            </div>
+
+            <div class="tr-group">
+              <div class="tr-head" onclick="toggleTour(this)">
+                <span class="tr-arrow">▸</span>
+                <span class="tr-name">1108 云南亲子团</span>
+                <span class="tr-chip">出团物料</span>
+                <span class="tr-sum">物料 <b>2</b> 种</span>
+                <span class="tr-sum">使用量 <b>64</b></span>
+                <span class="tr-sum">金额 <b class="red">¥2,340</b></span>
+                <span class="tag b">出库中</span>
+              </div>
+              <div class="tr-body">
+                <table><thead><tr><th>物料名称</th><th>规格</th><th>用途归属</th><th class="num">申请量</th><th class="num">实际使用</th><th class="num">单价</th><th class="num">金额</th><th>状态</th></tr></thead>
+                <tbody>
+                  <tr><td>文创帆布包</td><td>个</td><td><span class="own live">直播礼品</span></td><td class="num">40</td><td class="num">40</td><td class="num">¥35</td><td class="num">¥1,400</td><td><span class="tag b">在途</span></td></tr>
+                  <tr><td>黄桃罐头</td><td>425g/箱</td><td><span class="own tour">出团物料</span></td><td class="num">24</td><td class="num">24</td><td class="num">¥39</td><td class="num">¥940</td><td><span class="tag b">在途</span></td></tr>
+                </tbody></table>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== 数据分析 ===== -->
+      <section class="mod hidden" id="mod-analytics">
+        <div class="charts">
+          <div class="panel" style="margin:0"><div class="ph"><div class="pt">采购金额趋势</div></div>
+            <div class="bars"><div class="bcol"><div class="bstick" style="height:40%;background:var(--accent)"></div><div class="blab">7月</div></div><div class="bcol"><div class="bstick" style="height:58%;background:var(--accent)"></div><div class="blab">8月</div></div><div class="bcol"><div class="bstick" style="height:70%;background:var(--accent)"></div><div class="blab">9月</div></div><div class="bcol"><div class="bstick" style="height:52%;background:var(--accent)"></div><div class="blab">10月</div></div><div class="bcol"><div class="bstick" style="height:85%;background:var(--accent)"></div><div class="blab">11月</div></div></div>
+          </div>
+          <div class="panel" style="margin:0"><div class="ph"><div class="pt">各归属库存占比 </div></div>
+            <div class="donut"><div class="ring"></div><div class="lg"><div><i style="background:var(--accent)"></i>直播礼品 35%</div><div><i style="background:var(--info)"></i>出团物料 25%</div><div><i style="background:var(--purple)"></i>行政物料 22%</div><div><i style="background:var(--success)"></i>总部仓库 18%</div></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== 操作记录 ===== -->
+      <section class="mod hidden" id="mod-history">
+        <div class="panel">
+          <div class="ph"><div class="pt"><span class="bar"></span>操作记录</div><div class="pa"><select class="sel"><option>全部操作</option></select><input class="search" placeholder="搜索操作人..."></div></div>
+          <div class="tw"><table>
+            <thead><tr><th>时间</th><th>操作人</th><th>操作</th><th>对象</th><th>用途归属</th><th>IP</th></tr></thead>
+            <tbody id="hist-body">
+              <tr><td>11-20 14:32</td><td>管理员</td><td>验收入库</td><td>PO00023</td><td><span class="own live">直播礼品</span></td><td>192.168.1.8</td></tr>
+              <tr><td>11-20 11:05</td><td>张敏</td><td>新建采购单</td><td>PO00023</td><td><span class="own live">直播礼品</span></td><td>192.168.1.12</td></tr>
+              <tr><td>11-19 16:48</td><td>李强</td><td>邮寄出库</td><td>SO00031</td><td><span class="own live">直播礼品</span></td><td>192.168.1.20</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <!-- ===== 账号管理 ===== -->
+      <section class="mod hidden" id="mod-adminuser">
+        <div class="panel">
+          <div class="ph"><div class="pt"><span class="bar"></span>账号管理</div><div class="pa"><button class="btn primary">+ 新增账号</button></div></div>
+          <div class="tw"><table>
+            <thead><tr><th>账号</th><th>姓名</th><th>角色</th><th>可见归属</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr><td>admin</td><td>管理员</td><td><span class="tag r">admin</span></td><td>全部 4 类</td><td><span class="tag g">启用</span></td><td class="lnk">权限</td></tr>
+              <tr><td>livestream</td><td>直播专员</td><td><span class="tag b">staff</span></td><td>直播礼品</td><td><span class="tag g">启用</span></td><td class="lnk">权限</td></tr>
+              <tr><td>warehouse</td><td>仓库</td><td><span class="tag y">warehouse</span></td><td>全部 4 类</td><td><span class="tag g">启用</span></td><td class="lnk">权限</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </section>
+
+      <!-- ===== 系统设置 ===== -->
+      <section class="mod hidden" id="mod-adminset">
+        <div class="panel">
+          <div class="ph"><div class="pt"><span class="bar"></span>系统设置</div></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div>
+              <div class="pt" style="margin-bottom:12px"><span class="bar"></span>基础设置</div>
+              <div class="filterbar" style="justify-content:space-between;border-bottom:1px solid var(--border-light);padding:9px 0">领用需要审核 <input type="checkbox" checked></div>
+              <div class="filterbar" style="justify-content:space-between;border-bottom:1px solid var(--border-light);padding:9px 0">启用低库存预警 <input type="checkbox" checked></div>
+              <div class="filterbar" style="justify-content:space-between;padding:9px 0">出库必须填团期 <input type="checkbox"></div>
+            </div>
+            <div>
+              <div class="pt" style="margin-bottom:12px"><span class="bar"></span>总部定制设置 </div>
+              <div class="filterbar" style="justify-content:space-between;border-bottom:1px solid var(--border-light);padding:9px 0">邮寄出库需快递单号 <input type="checkbox" checked></div>
+              <div class="filterbar" style="justify-content:space-between;border-bottom:1px solid var(--border-light);padding:9px 0">中奖自动锁定库存 <input type="checkbox" checked></div>
+              <div class="filterbar" style="justify-content:space-between;padding:9px 0">团期结束自动提醒核销 <input type="checkbox" checked></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var titles={
+    dashboard:'仪表盘',inventory:'库存概览',categories:'品类管理（用途归属）',
+    purchase:'采购单管理',stockin:'入库管理',requisition:'领用单管理',stockout:'出库管理',
+    monthly:'出入库明细',reports:'团期使用报表',analytics:'数据分析',history:'操作记录',
+    adminuser:'账号管理',adminset:'系统设置'
+  };
+  function switchTo(mod){
+    document.querySelectorAll('.mod').forEach(function(el){el.classList.add('hidden')});
+    var t=document.getElementById('mod-'+mod);
+    if(t) t.classList.remove('hidden');
+    document.querySelectorAll('.nav-item').forEach(function(el){el.classList.toggle('active',el.getAttribute('data-mod')===mod)});
+    document.getElementById('pageTitle').textContent=titles[mod]||'仪表盘';
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+  document.querySelectorAll('.nav-item').forEach(function(el){
+    el.addEventListener('click',function(){switchTo(el.getAttribute('data-mod'))});
+  });
+  // 归属切换、数据渲染、时间刷新、同步均由 hq-app.js 负责（见页尾）
+})();
+
+// 团期报表：一级展开/收起（全局，供 onclick 调用）
+function toggleTour(headEl){
+  var g=headEl.parentElement;
+  if(g) g.classList.toggle('open');
+}
+</script>
+<!-- 真实数据驱动：从 SupaDB 拉取 hq 主体数据并填充全部模块（空库显示引导，不造假） -->
+<script src="js/hq-app.js?v=6.1"></script>
+</body>
+</html>
