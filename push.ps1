@@ -61,6 +61,7 @@ $filesToPush = @(
     "version.json",
     "index.html",
     "hq-workbench.html",
+    "hq-dashboard.html",
     "css/style.css",
     "css/redesign.css",
     "database/schema.sql",
@@ -135,7 +136,7 @@ foreach ($relPath in $filesToPush) {
         $cloudSha = $resp.sha
     } catch {}
 
-    $msg = "v5.98 " + $(if ($cloudSha) { "update" } else { "add" }) + " $relPath"
+    $msg = "v5.99 " + $(if ($cloudSha) { "update" } else { "add" }) + " $relPath"
     $body = @{
         message = $msg
         content = $b64
