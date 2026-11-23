@@ -312,12 +312,9 @@ function handleLogout() {
 }
 
 async function showApp() {
-  // v5.98 方案A：总部主体登录后直接落地到总部工作台；列车主体走原流程一行不变
-  if (typeof getCurrentSubject === 'function' && getCurrentSubject() === 'hq') {
-    try { window.location.replace('hq-workbench.html'); }
-    catch (e) { window.location.href = 'hq-workbench.html'; }
-    return;
-  }
+  // v6.0：总部(hq)与列车(train)统一进列车原系统（13模块全复用）。
+  // 数据靠 subject 隔离；总部定制（4归属概览等）由 hq-custom.js 在 hq 主体时注入，
+  // 列车主体零影响。已弃用独立的 hq-workbench/hq-dashboard 页。
   const lp = document.getElementById('login-page');
   const ac = document.getElementById('app-container');
   if (lp) lp.style.display = 'none';
