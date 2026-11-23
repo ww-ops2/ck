@@ -312,9 +312,13 @@ function handleLogout() {
 }
 
 async function showApp() {
-  // v6.0：总部(hq)与列车(train)统一进列车原系统（13模块全复用）。
-  // 数据靠 subject 隔离；总部定制（4归属概览等）由 hq-custom.js 在 hq 主体时注入，
-  // 列车主体零影响。已弃用独立的 hq-workbench/hq-dashboard 页。
+  // v6.1：总部(hq)登录后进专属定制系统 hq-app.html（设计稿落地、4归属贯穿全模块）。
+  // 列车(train)走原流程一行不变。hq-app.html 是独立页，列车主体零影响。
+  if (typeof getCurrentSubject === 'function' && getCurrentSubject() === 'hq') {
+    try { window.location.replace('hq-app.html'); }
+    catch (e) { window.location.href = 'hq-app.html'; }
+    return;
+  }
   const lp = document.getElementById('login-page');
   const ac = document.getElementById('app-container');
   if (lp) lp.style.display = 'none';
