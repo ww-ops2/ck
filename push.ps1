@@ -60,6 +60,8 @@ $filesToPush = @(
     ".nojekyll",
     "version.json",
     "index.html",
+    "hq-app.html",
+    "js/hq-app.js",
     "hq-workbench.html",
     "hq-dashboard.html",
     "css/style.css",
@@ -137,7 +139,7 @@ foreach ($relPath in $filesToPush) {
         $cloudSha = $resp.sha
     } catch {}
 
-    $msg = "v6.0 " + $(if ($cloudSha) { "update" } else { "add" }) + " $relPath"
+    $msg = "v6.1 " + $(if ($cloudSha) { "update" } else { "add" }) + " $relPath"
     $body = @{
         message = $msg
         content = $b64
