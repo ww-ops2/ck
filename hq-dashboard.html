@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>总部库存总控大屏 · hq</title>
+<script src="js/vendor/supabase.min.js?v=5.99"></script>
+<script src="js/vendor/chart.umd.min.js?v=5.99"></script>
+<script src="js/hq-foundation.js?v=5.99"></script>
+<style>
+  :root{
+    --bg:#0a1020; --panel:#121a2e; --panel2:#16203a; --line:#22304a;
+    --txt:#e6eefc; --muted:#8fa3c0; --faint:#61708f;
+    --red:#ff6b6b; --red2:#ff8a8a;      /* 入库=红（中国口径） */
+    --green:#4ade80; --green2:#7ee8a0;  /* 出库=绿 */
+    --blue:#5ec8ff; --purple:#c084fc; --amber:#fbbf24; --cyan:#22d3ee;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:14px}
+  .screen{max-width:1680px;margin:0 auto;padding:18px 22px 26px}
+  /* header */
+  .sh{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:6px 2px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .sh .title{font-size:21px;font-weight:800;letter-spacing:.5px}
+  .sh .title small{display:block;font-size:11px;font-weight:500;color:var(--faint);letter-spacing:1.2px;margin-top:4px}
+  .sh .tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .sh select,.sh button{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 12px;font-size:12.5px;cursor:pointer}
+  .sh select:hover,.sh button:hover{border-color:#3a5080}
+  .clock{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:6px;box-shadow:0 0 8px var(--green)}
+  /* view tabs */
+  .views{display:flex;gap:8px;margin:16px 0;flex-wrap:wrap}
+  .views button{background:var(--panel);color:var(--muted);border:1px solid var(--line);border-radius:20px;padding:7px 16px;font-size:13px;cursor:pointer;transition:.15s}
+  .views button:hover{color:var(--txt);border-color:#3a5080}
+  .views button.on{background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff;border-color:#3b82f6;font-weight:600}
+  /* kpi */
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:11px}
+  @media(max-width:1200px){.kpis{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:720px){.kpis{grid-template-columns:repeat(2,1fr)}}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 15px;position:relative;overflow:hidden}
+  .kpi:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c,#445)}
+  .kpi .k{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:7px}
+  .kpi .k i{width:7px;height:7px;border-radius:50%;background:var(--c,#8899aa);display:inline-block}
+  .kpi .v{font-size:27px;font-weight:800;margin:8px 0 2px;color:var(--c,var(--txt));font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+  .kpi .v .u{font-size:13px;font-weight:500;color:var(--muted);margin-left:3px}
+  .kpi .s{font-size:11px;color:var(--faint)}
+  .kpi.alert{border-color:#5a2630;background:linear-gradient(135deg,#2a1420,#1a1428)}
+  /* charts grid */
+  .grid{display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:12px;margin-top:12px}
+  @media(max-width:1100px){.grid{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-height:250px}
+  .pt{font-size:13px;font-weight:700;color:var(--txt);display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .pt span{font-size:11px;color:var(--faint);font-weight:400}
+  .cbox{position:relative;height:200px}
+  /* balance */
+  .bal-row{margin-bottom:12px}
+  .bal-row .bl{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:5px}
+  .bal-row .bl b{color:var(--txt);font-variant-numeric:tabular-nums}
+  .bal-track{height:7px;background:#0c1426;border-radius:6px;overflow:hidden}
+  .bal-track i{display:block;height:100%;border-radius:6px}
+  /* ledger */
+  .led{margin-top:12px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+  td.tl,th.tl{text-align:left}
+  tbody tr:hover{background:var(--panel2);cursor:pointer}
+  .neg{color:var(--red)} .pos{color:var(--green)}
+  .flag-err{color:var(--red);font-weight:700}
+  .wrap{overflow-x:auto}
+  /* ticker */
+  .ticker{display:flex;align-items:center;gap:12px;margin-top:12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;overflow:hidden}
+  .ticker .lbl{color:var(--amber);font-weight:700;font-size:12px;white-space:nowrap}
+  .ticker .scroll{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* empty / note */
+  .empty{padding:34px 20px;text-align:center;color:var(--muted);font-size:13px;line-height:1.9}
+  .empty b{color:var(--amber)}
+  .note{color:var(--faint);font-size:11.5px;margin-top:14px;line-height:1.8}
+  .note code{background:var(--panel2);padding:1px 5px;border-radius:4px;color:var(--blue)}
+  /* modal */
+  .mask{display:none;position:fixed;inset:0;background:rgba(4,8,18,.78);z-index:50;align-items:center;justify-content:center;padding:20px}
+  .mask.on{display:flex}
+  .dlg{background:var(--panel2);border:1px solid var(--line);border-radius:14px;max-width:820px;width:100%;max-height:82vh;overflow:auto;padding:20px 22px}
+  .dlg h3{margin:0 0 4px;font-size:16px}
+  .dlg .sub{color:var(--muted);font-size:12px;margin-bottom:14px}
+  .dlg .x{float:right;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1c2942;border:1px solid #33507e;color:var(--txt);padding:10px 18px;border-radius:9px;font-size:13px;z-index:80;opacity:0;transition:.25s;pointer-events:none}
+  .toast.on{opacity:1}
+  .foot{text-align:center;color:var(--faint);font-size:11px;margin-top:18px}
+</style>
+</head>
+<body>
+<div class="screen">
+  <div class="sh">
+    <div class="title">总部库存总控中心<small>HQ INVENTORY CONTROL CENTER · SUBJECT = hq · 只读看板 · 与列车主体完全隔离</small></div>
+    <div class="tools">
+      <span class="clock"><span class="dot"></span><span id="hc">引擎自检中…</span></span>
+      <select id="period" title="过账期间"><option value="__ALL__">全部期间</option></select>
+      <button id="btn-refresh" type="button">↻ 刷新</button>
+      <button id="btn-workbench" type="button">开单过账 →</button>
+      <button id="btn-exit" type="button">退出 / 切换主体</button>
+    </div>
+  </div>
+
+  <div class="views" id="views">
+    <button class="on" data-u="__ALL__">▦ 总部总控（全部用途）</button>
+    <!-- 用途按钮由脚本按分类字典动态生成 -->
+  </div>
+
+  <div class="kpis" id="kpis">
+    <div class="kpi" style="--c:#8899aa"><div class="k"><i></i>期初总库存</div><div class="v" id="k-opening">—<span class="u">件</span></div><div class="s">上期结转</div></div>
+    <div class="kpi" style="--c:var(--red)"><div class="k"><i></i>本期采购入库</div><div class="v" id="k-purchase">—<span class="u">件</span></div><div class="s">采购验收单累计</div></div>
+    <div class="kpi" style="--c:var(--amber)"><div class="k"><i></i>本期回收回流</div><div class="v" id="k-recovery">—<span class="u">件</span></div><div class="s">回收+归还+盘盈</div></div>
+    <div class="kpi" style="--c:var(--blue)"><div class="k"><i></i>实物在库总量</div><div class="v" id="k-physical">—<span class="u">件</span></div><div class="s">期初+采购+回收−消耗</div></div>
+    <div class="kpi" style="--c:var(--purple)"><div class="k"><i></i>锁定库存合计</div><div class="v" id="k-locked">—<span class="u">件</span></div><div class="s">中奖+备货锁定</div></div>
+    <div class="kpi" style="--c:var(--cyan)"><div class="k"><i></i>可用库存</div><div class="v" id="k-available">—<span class="u">件</span></div><div class="s">实物在库 − 锁定</div></div>
+    <div class="kpi" style="--c:var(--green)"><div class="k"><i></i>本期消耗报废</div><div class="v" id="k-consume">—<span class="u">件</span></div><div class="s">邮寄+核销+领用+盘亏</div></div>
+    <div class="kpi" style="--c:var(--amber)"><div class="k"><i></i>待邮寄奖品</div><div class="v" id="k-ship">—<span class="u">件</span></div><div class="s">中奖登记未寄出</div></div>
+    <div class="kpi" style="--c:var(--blue)"><div class="k"><i></i>出团待核销</div><div class="v" id="k-verify">—<span class="u">件</span></div><div class="s">签收未核销</div></div>
+    <div class="kpi alert" style="--c:var(--red)"><div class="k"><i></i>对账异常预警</div><div class="v" id="k-error">—<span class="u">项</span></div><div class="s">需立即处理</div></div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <div class="pt">近 6 期库存流量趋势<span>红=采购入库 · 橙=回收 · 绿=消耗（件）</span></div>
+      <div class="cbox"><canvas id="trend"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="pt">库存结构占比<span>按用途 · 实物在库</span></div>
+      <div class="cbox"><canvas id="struct"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="pt">平衡校验健康度<span>台账恒等式实时校验</span></div>
+      <div id="bal"></div>
+      <div class="note" style="margin-top:4px">恒等式：<code>期初+采购+回收 = 可用+锁定+消耗</code>；任一不平即进入异常预警。</div>
+    </div>
+  </div>
+
+  <div class="panel led">
+    <div class="pt">台账明细（当前视图）<span id="led-count">— 行</span></div>
+    <div class="wrap"><table>
+      <thead><tr><th class="tl">物品</th><th class="tl">用途</th><th>期初</th><th>采购</th><th>回收</th><th>消耗</th><th>在库</th><th>锁定</th><th>可用</th><th class="tl">对账</th></tr></thead>
+      <tbody id="led-body"></tbody>
+    </table></div>
+    <div class="empty" id="led-empty" style="display:none">当前主体（hq）暂无过账台账数据。请先到 <b>开单过账</b> 录一张单据，指标会实时刷新。<br>本页为只读看板，不会写入或修改任何数据；列车主体（train）与本页面完全无关。</div>
+  </div>
+
+  <div class="ticker"><span class="lbl">● 实时告警</span><span class="scroll" id="ticker">—</span></div>
+  <div class="note">口径说明：全部指标来自 hq 台账 <code>stock_ledger</code> 与过账流水 <code>posting_journal</code> 真实汇总，无模拟数据。待邮寄/待核销/待归还由流水单据差额推算（中奖登记−邮寄、签收−核销、申领−归还），台账不落 in_transit 列。</div>
+  <div class="foot">HQFoundation v5.99 · 三期看板 · 总部主体专用 · 列车主体零交叉</div>
+</div>
+
+<div class="mask" id="mask"><div class="dlg">
+  <button class="x" id="dlg-x" type="button">×</button>
+  <h3 id="dlg-title">过账流水</h3>
+  <div class="sub" id="dlg-sub"></div>
+  <div class="wrap"><table><thead><tr><th class="tl">单号</th><th class="tl">单据类型</th><th>数量</th><th class="tl">期间</th><th class="tl">操作人</th><th class="tl">时间</th></tr></thead><tbody id="dlg-body"></tbody></table></div>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  'use strict';
+  var URL='https://vhnvjaghlvoqdgssidjw.supabase.co';
+  var KEY='sb_publishable_z06qPVHQAOHZuNiSxHXOyw_IL2-G7Bf';
+  var $=function(id){return document.getElementById(id);};
+  var client=(typeof supabase!=='undefined'&&supabase.createClient)?supabase.createClient(URL,KEY):null;
+  window.getCurrentSubject=function(){return 'hq';};
+  window._rawSupabase=function(){return client;};
+  var HQ=window.HQFoundation;
+  var Charts={trend:null,struct:null};
+
+  var state={period:'__ALL__',usage:'__ALL__',cats:[],ledger:[],journal:[],errors:[],allLedger:[]};
+  var usageName=function(c){var x=state.cats.find(function(o){return o.code===c;});return x?x.name:(c||'未分类');};
+  var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+  var num=function(x){var n=Number(x);return isFinite(n)?n:0;};
+  var fmt=function(x){var n=Math.round(num(x)*100)/100;return n.toLocaleString('zh-CN',{maximumFractionDigits:2});};
+  function toast(msg){var t=$('toast');t.textContent=msg;t.classList.add('on');setTimeout(function(){t.classList.remove('on');},2200);}
+
+  function loadBtn(btn,text){if(!btn)return;btn.dataset.t=btn.innerHTML;btn.disabled=true;btn.innerHTML='<span class="dot" style="background:#fff"></span>'+(text||'处理中…');}
+  function unloadBtn(btn){if(!btn||btn.dataset.t==null)return;btn.disabled=false;btn.innerHTML=btn.dataset.t;delete btn.dataset.t;}
+
+  function chartOpts(){return {
+    responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{labels:{color:'#8fa3c0',font:{size:11}}}},
+    scales:{x:{ticks:{color:'#61708f',font:{size:10}},grid:{color:'#1c2742'}},y:{ticks:{color:'#61708f',font:{size:10}},grid:{color:'#1c2742'},beginAtZero:true}}
+  };}
+
+  function renderKpis(){
+    var L=state.ledger, S={opening:0,purchase:0,recovery:0,consume:0,physical:0,locked:0,available:0};
+    L.forEach(function(r){
+      S.opening+=num(r.opening_qty); S.purchase+=num(r.purchase_in_qty); S.recovery+=num(r.recovery_in_qty);
+      S.consume+=num(r.consume_scrap_qty); S.physical+=num(r.physical_qty);
+      S.locked+=num(r.locked_qty); S.available+=num(r.available_qty);
+    });
+    // 待邮寄/待核销/待归还：流水单据差额推算
+    var J=state.journal, byType={};
+    J.forEach(function(j){byType[j.doc_type]=(byType[j.doc_type]||0)+num(j.qty);});
+    var ship=Math.max(0,(byType.win_register||0)-(byType.prize_ship||0));
+    var verify=Math.max(0,(byType.tour_signoff||0)-(byType.tour_verify||0));
+    $('k-opening').innerHTML=fmt(S.opening)+'<span class="u">件</span>';
+    $('k-purchase').innerHTML=fmt(S.purchase)+'<span class="u">件</span>';
+    $('k-recovery').innerHTML=fmt(S.recovery)+'<span class="u">件</span>';
+    $('k-physical').innerHTML=fmt(S.physical)+'<span class="u">件</span>';
+    $('k-locked').innerHTML=fmt(S.locked)+'<span class="u">件</span>';
+    $('k-available').innerHTML=fmt(S.available)+'<span class="u">件</span>';
+    $('k-consume').innerHTML=fmt(S.consume)+'<span class="u">件</span>';
+    $('k-ship').innerHTML=fmt(ship)+'<span class="u">件</span>';
+    $('k-verify').innerHTML=fmt(verify)+'<span class="u">件</span>';
+    $('k-error').innerHTML=state.errors.length+'<span class="u">项</span>';
+    return S;
+  }
+
+  function renderCharts(S){
+    var L=state.allLedger;
+    // 按期间聚合（受用途过滤）
+    var scope=(state.usage==='__ALL__')?L:L.filter(function(r){return r.usage_code===state.usage;});
+    var byP={};
+    scope.forEach(function(r){
+      var p=r.period||'—'; if(!byP[p])byP[p]={p:p,purchase:0,recovery:0,consume:0};
+      byP[p].purchase+=num(r.purchase_in_qty); byP[p].recovery+=num(r.recovery_in_qty); byP[p].consume+=num(r.consume_scrap_qty);
+    });
+    var periods=Object.keys(byP).sort().slice(-6);
+    var ds=periods.map(function(p){return byP[p];});
+    if(Charts.trend)Charts.trend.destroy();
+    if(typeof Chart==='function'){
+      Charts.trend=new Chart($('trend').getContext('2d'),{type:'bar',data:{labels:ds.map(function(d){return d.p;}),datasets:[
+        {label:'采购入库',data:ds.map(function(d){return d.purchase;}),backgroundColor:'#ff6b6b',borderRadius:3},
+        {label:'回收回流',data:ds.map(function(d){return d.recovery;}),backgroundColor:'#fbbf24',borderRadius:3},
+        {label:'消耗报废',data:ds.map(function(d){return d.consume;}),backgroundColor:'#4ade80',borderRadius:3}
+      ]},options:chartOpts()});
+    }
+    // 结构占比：按用途的物理在库（始终基于全部台账，方便看结构）
+    var byU={};
+    L.forEach(function(r){var u=r.usage_code||'未分类';byU[u]=(byU[u]||0)+num(r.physical_qty);});
+    var keys=Object.keys(byU).filter(function(k){return byU[k]>0;});
+    var colors=['#ff6b6b','#5ec8ff','#c084fc','#4ade80','#fbbf24','#22d3ee'];
+    if(Charts.struct)Charts.struct.destroy();
+    if(typeof Chart==='function'){
+      Charts.struct=new Chart($('struct').getContext('2d'),{type:'doughnut',data:{
+        labels:keys.map(function(k){return usageName(k);}),
+        datasets:[{data:keys.map(function(k){return byU[k];}),backgroundColor:colors.slice(0,keys.length),borderColor:'#121a2e',borderWidth:2}]
+      },options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#8fa3c0',font:{size:11},boxWidth:12}}}}});
+    }
+  }
+
+  function renderBalance(S){
+    var left=S.opening+S.purchase+S.recovery;
+    var right=S.available+S.locked+S.consume;
+    var balanced=Math.abs(left-right)<0.0005;
+    var rate=L.length?( (state.ledger.length-state.errors.length)/state.ledger.length*100 ):100;
+    rate=Math.max(0,Math.min(100,rate));
+    var rows=[
+      {n:'总账平衡率',v:(balanced?'100%':'失衡'),w:balanced?100:Math.max(3,rate),c:balanced?'linear-gradient(90deg,#16a34a,#4ade80)':'#ff5a5a'},
+      {n:'台账平衡行数',v:(state.ledger.length-state.errors.length)+' / '+state.ledger.length,w:rate,c:'#4ade80'},
+      {n:'对账异常',v:state.errors.length+' 项',w:state.errors.length?Math.min(100,state.errors.length*10):0,c:'#ff5a5a'}
+    ];
+    $('bal').innerHTML=rows.map(function(r){return '<div class="bal-row"><div class="bl"><span>'+r.n+'</span><b>'+r.v+'</b></div><div class="bal-track"><i style="width:'+r.w+'%;background:'+r.c+'"></i></div></div>';}).join('');
+  }
+
+  function renderLedger(){
+    var L=state.ledger;
+    $('led-count').textContent=L.length+' 行';
+    $('led-empty').style.display=L.length?'none':'block';
+    if(!L.length){$('led-body').innerHTML='';return;}
+    $('led-body').innerHTML=L.map(function(r,i){
+      var flag=r.reconcile_flag==='error'?'<span class="flag-err">异常</span>':'<span style="color:var(--green)">平衡</span>';
+      return '<tr data-i="'+i+'"><td class="tl">'+esc(r.item_name||r.sku||('ID'+r.item_id))+'</td><td class="tl">'+esc(usageName(r.usage_code))+'</td>'+
+        '<td>'+fmt(r.opening_qty)+'</td><td class="pos">'+fmt(r.purchase_in_qty)+'</td><td class="pos">'+fmt(r.recovery_in_qty)+'</td><td class="neg">'+fmt(r.consume_scrap_qty)+'</td>'+
+        '<td>'+fmt(r.physical_qty)+'</td><td>'+fmt(r.locked_qty)+'</td><td>'+fmt(r.available_qty)+'</td><td class="tl">'+flag+'</td></tr>';
+    }).join('');
+  }
+
+  function renderTicker(){
+    var msgs=[];
+    state.errors.slice(0,5).forEach(function(e){msgs.push('[总账] '+(e.item_name||e.sku||e.id)+' 平衡异常（差异 '+fmt(num(e.left)-num(e.right))+'）');});
+    state.ledger.forEach(function(r){if(num(r.available_qty)<num(r.safety_qty)&&num(r.safety_qty)>0){msgs.push('[预警] '+(r.item_name||r.sku)+' 可用 '+fmt(r.available_qty)+' < 安全线 '+fmt(r.safety_qty));}});
+    var J=state.journal,byType={};J.forEach(function(j){byType[j.doc_type]=(byType[j.doc_type]||0)+num(j.qty);});
+    if((byType.win_register||0)>(byType.prize_ship||0))msgs.push('[直播] 有 '+fmt((byType.win_register||0)-(byType.prize_ship||0))+' 件中奖奖品未邮寄');
+    if((byType.tour_signoff||0)>(byType.tour_verify||0))msgs.push('[出团] 有 '+fmt((byType.tour_signoff||0)-(byType.tour_verify||0))+' 件物料签收未核销');
+    if((byType.admin_loan||0)>(byType.admin_return||0))msgs.push('[行政] 有 '+fmt((byType.admin_loan||0)-(byType.admin_return||0))+' 件物料借出未归还');
+    if(!state.ledger.length)msgs.push('[系统] hq 主体暂无过账数据，请到工作台开单');
+    $('ticker').textContent=msgs.length?msgs.join('　　|　　'):'当前无异常告警，全部台账平衡 ✓';
+  }
+
+  function renderPeriods(){
+    var ps={};state.allLedger.forEach(function(r){if(r.period)ps[r.period]=1;});state.journal.forEach(function(j){if(j.period)ps[j.period]=1;});
+    var arr=Object.keys(ps).sort().reverse();
+    var sel=$('period'),cur=state.period;
+    sel.innerHTML='<option value="__ALL__">全部期间</option>'+arr.map(function(p){return '<option value="'+esc(p)+'">'+esc(p)+'</option>';}).join('');
+    sel.value=(cur==='__ALL__'||arr.indexOf(cur)>=0)?cur:'__ALL__';
+    state.period=sel.value;
+  }
+
+  function renderViews(){
+    var wrap=$('views');
+    wrap.querySelectorAll('button[data-u]').forEach(function(b){b.remove();});
+    state.cats.forEach(function(c){
+      var b=document.createElement('button');
+      b.setAttribute('data-u',c.code);
+      b.textContent='▤ '+esc(c.name);
+      wrap.appendChild(b);
+    });
+    wrap.querySelectorAll('button').forEach(function(b){
+      b.classList.toggle('on',b.getAttribute('data-u')===state.usage);
+    });
+  }
+
+  function renderAll(){
+    var period=state.period==='__ALL__'?null:state.period;
+    var usage=state.usage==='__ALL__'?null:state.usage;
+    state.ledger=(!usage)?state.allLedger.slice():state.allLedger.filter(function(r){return r.usage_code===usage;});
+    if(period)state.ledger=state.ledger.filter(function(r){return r.period===period;});
+    var S=renderKpis();
+    renderCharts(S); renderBalance(S); renderLedger(); renderTicker();
+  }
+
+  async function refresh(){
+    var btn=$('btn-refresh');loadBtn(btn,'刷新中…');
+    try{
+      var pr=state.period==='__ALL__'?null:state.period;
+      var lr=await HQ.listLedger(pr,null);
+      state.allLedger=(lr.ok&&lr.data)?lr.data:[];
+      // 流水（用于趋势 pf / 待办差额 / 告警）
+      if(client){
+        var q=client.from('posting_journal').select('doc_type,doc_no,qty,period,usage_code,operator,created_at,sku,item_id').eq('subject','hq');
+        if(pr)q=q.eq('period',pr);
+        var jr=await q.order('created_at',{ascending:false}).limit(3000);
+        state.journal=(jr&&jr.data)?jr.data:[];
+      }
+      var br=await HQ.checkBalance(pr);
+      state.errors=(br.ok&&br.data)?br.data:[];
+      renderPeriods(); renderViews(); renderAll();
+    }catch(e){toast('刷新失败：'+(e&&e.message||e));}
+    finally{unloadBtn(btn);}
+  }
+
+  async function showDoc(item){
+    $('mask').classList.add('on');
+    $('dlg-title').textContent='过账流水 · '+(item.item_name||item.sku||('ID'+item.item_id));
+    $('dlg-sub').textContent='用途：'+usageName(item.usage_code)+' · 期间：'+(item.period||'—')+' · 仅 hq 主体';
+    if(!client){$('dlg-body').innerHTML='<tr><td colspan="6" class="tl">Supabase 未加载</td></tr>';return;}
+    var q=client.from('posting_journal').select('doc_type,doc_no,qty,period,operator,created_at').eq('subject','hq');
+    if(item.period)q=q.eq('period',item.period);
+    if(item.usage_code)q=q.eq('usage_code',item.usage_code);
+    if(item.item_id)q=q.eq('item_id',item.item_id); else if(item.sku)q=q.eq('sku',item.sku);
+    var r=await q.order('created_at',{ascending:false}).limit(200);
+    var rows=(r&&r.data)||[];
+    var labels={purchase_acceptance:'采购验收',recovery_acceptance:'回收验收',win_register:'中奖登记',prize_ship:'邮寄出库',tour_signoff:'领用签收',tour_verify:'团后核销',cross_tour_transfer:'跨团流转',admin_loan:'行政申领',admin_return:'行政归还',inter_usage_transfer:'用途调拨',stocktake_confirm:'盘点确认'};
+    $('dlg-body').innerHTML=rows.length?rows.map(function(j){
+      return '<tr><td class="tl">'+esc(j.doc_no)+'</td><td class="tl">'+esc(labels[j.doc_type]||j.doc_type)+'</td><td>'+fmt(j.qty)+'</td><td class="tl">'+esc(j.period)+'</td><td class="tl">'+esc(j.operator||'—')+'</td><td class="tl">'+esc((j.created_at||'').slice(0,16).replace('T',' '))+'</td></tr>';
+    }).join(''):'<tr><td colspan="6" class="tl" style="text-align:center;color:var(--faint);padding:18px">该物品暂无流水记录</td></tr>';
+  }
+
+  async function boot(){
+    if(!HQ||!client){$('hc').textContent='引擎/客户端未加载';$('hc').style.color='var(--red)';return;}
+    var who='';
+    try{var raw=localStorage.getItem('currentUser')||localStorage.getItem('inv_user')||sessionStorage.getItem('inv_session');var w=JSON.parse(raw||'null');if(w&&(w.name||w.username))who=' · '+(w.name||w.username);}catch(e){}
+    var hc=await HQ.healthCheck();
+    var ok=hc.ok&&hc.tables&&hc.tables.ready;
+    $('hc').textContent=(ok?'引擎就绪':'引擎自检异常')+who;
+    $('hc').style.color=ok?'var(--txt)':'var(--red)';
+    $('hc').insertAdjacentHTML('beforebegin','<span class="dot" style="background:'+(ok?'var(--green)':'var(--red)')+'"></span>');
+    var cr=await HQ.listCategories();
+    state.cats=(cr.ok&&cr.data)?cr.data:[];
+    await refresh();
+    // 30s 自动刷新（投屏用）
+    setInterval(function(){if(!document.hidden)refresh();},30000);
+  }
+
+  $('period').addEventListener('change',function(){state.period=this.value;renderAll();});
+  $('views').addEventListener('click',function(e){
+    var b=e.target.closest('button[data-u]');if(!b)return;
+    state.usage=b.getAttribute('data-u');renderViews();renderAll();
+  });
+  $('led-body').addEventListener('click',function(e){
+    var tr=e.target.closest('tr[data-i]');if(!tr)return;
+    var item=state.ledger[Number(tr.getAttribute('data-i'))];if(item)showDoc(item);
+  });
+  $('btn-refresh').onclick=function(){refresh();};
+  $('btn-workbench').onclick=function(){window.location.href='hq-workbench.html';};
+  $('btn-exit').onclick=function(){
+    try{localStorage.removeItem('currentUser');localStorage.removeItem('inv_user');sessionStorage.removeItem('inv_session');sessionStorage.removeItem('inv_subject');}catch(e){}
+    window.location.href='index.html';
+  };
+  $('dlg-x').onclick=function(){$('mask').classList.remove('on');};
+  $('mask').addEventListener('click',function(e){if(e.target===this)this.classList.remove('on');});
+
+  boot();
+})();
+</script>
+</body>
+</html>
