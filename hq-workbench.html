@@ -320,7 +320,8 @@
     if(!client){ $('hc-badge').className='bad'; $('hc-badge').innerHTML='<span class="status-dot r"></span>Supabase 未加载'; return; }
     if(!HQ){ $('hc-badge').className='bad'; $('hc-badge').innerHTML='<span class="status-dot r"></span>引擎未加载'; return; }
     try{
-      var who=JSON.parse(localStorage.getItem('inv_user')||'null');
+      var raw=localStorage.getItem('currentUser')||localStorage.getItem('inv_user')||sessionStorage.getItem('inv_session');
+      var who=JSON.parse(raw||'null');
       if(who && (who.name||who.username)) $('op-badge').textContent='操作人：'+(who.name||who.username);
     }catch(e){}
     var hc=await HQ.healthCheck();
