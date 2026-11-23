@@ -82,6 +82,9 @@ CREATE TABLE IF NOT EXISTS public.subjects (
   sort_order integer NOT NULL DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+-- 主体字典为公开只读参考数据：关闭 RLS（或给 anon 开 SELECT 策略），
+-- 否则 anon key 读不到字典行（Supabase 新建表可能默认带 RLS）
+ALTER TABLE public.subjects DISABLE ROW LEVEL SECURITY;
 INSERT INTO public.subjects (code, name, sort_order) VALUES
   ('train', '遇见美好列车', 10),
   ('hq', '遇见美好总部', 20)
