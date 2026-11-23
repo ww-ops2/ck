@@ -17,9 +17,27 @@ Object.defineProperty(window, 'currentUser', {
   enumerable: true
 });
 
-function initAuth() {
+async function initAuth() {
+  // v5.93 多主体：先自检数据库迁移是否完成，未完成则阻止登录（否则全站查询会因缺 subject 列崩溃）
+  if (typeof checkSubjectMigration === 'function') {
+    const ok = await checkSubjectMigration();
+    if (!ok) {
+      showLoginPage();
+      const hint = document.getElementById('login-subject-group');
+      if (hint) {
+        hint.innerHTML = '<div style="padding:12px;border-radius:8px;background:var(--danger-bg);color:var(--danger);font-size:13px;line-height:1.6;">' +
+          '数据库尚未执行 v5.93 多主体迁移，暂无法登录。<br>请联系管理员在 Supabase SQL Editor 执行 ' +
+          '<code>database/migrations/20261123_multi_subject.sql</code> 后刷新。</div>';
+      }
+      const sub = document.getElementById('login-subject');
+      if (sub) sub.disabled = true;
+      console.error('[Auth] 多主体迁移未执行，已阻止登录');
+      return;
+    }
+  }
+
   // 不自动恢复会话：每次打开都显示登录页，避免共享/公共设备上直接以管理员态进入。
-  // （满足“每次用网页登录默认显示登录页面”的诉求，也防止旧版缓存直接进 admin 的观感）
+  // （满足"每次用网页登录默认显示登录页面"的诉求，也防止旧版缓存直接进 admin 的观感）
   let prefillUser = null;
   try {
     const s = localStorage.getItem('currentUser');
@@ -75,6 +93,9 @@ function initAuth() {
   showLoginPage();
   // 预填上次登录账号（仅用户名，不自动登录）
   if (prefillUser && phoneInput) phoneInput.value = prefillUser;
+  // v5.93 预选上次使用的主体
+  const subSel = document.getElementById('login-subject');
+  if (subSel && typeof getCurrentSubject === 'function') subSel.value = getCurrentSubject();
 }
 
 /**
@@ -105,7 +126,16 @@ async function handleLogin(e) {
   const phone = document.getElementById('login-phone').value.trim();
   if (!phone) { showToast('请输入手机号码/账号', 'warning'); return; }
 
+  // v5.93：读取登录页所选主体
+  const subjectSel = document.getElementById('login-subject');
+  const loginSubject = subjectSel ? subjectSel.value : 'train';
+  if (loginSubject !== 'train' && loginSubject !== 'hq') {
+    showToast('请选择有效的主体', 'warning'); return;
+  }
+
   if (phone === ADMIN_USERNAME) {
+    // admin 跨主体，登录时选哪个就进哪个
+    setCurrentSubject(loginSubject);
     const password = document.getElementById('login-password').value;
     if (password !== ADMIN_PASSWORD) {
       showToast('管理员密码错误', 'error');
@@ -152,6 +182,14 @@ async function handleLogin(e) {
     showToast('您的账号正在等待管理员审核，请稍后再试', 'warning');
     return;
   }
+  // v5.93 主体权限：普通账号暂绑定 train；总部目前仅 admin 可进。
+  // user.subject 若维护了则以其为准（预留未来按主体分配账号）
+  const userSubject = (user && user.subject) ? user.subject : 'train';
+  if (loginSubject !== userSubject) {
+    showToast('该账号无权访问此主体，请联系管理员', 'warning');
+    return;
+  }
+  setCurrentSubject(loginSubject);
   currentUserFallback = {
     id: user.id,
     username: user.username,
@@ -254,7 +292,16 @@ function handleLogout() {
     currentUserFallback = null;
     try { localStorage.removeItem('currentUser'); } catch (e) {}
     try { sessionStorage.removeItem('inv_session'); } catch (e) {}
+    try { sessionStorage.removeItem('inv_subject'); } catch (e) {}
     clearPermissionCache();
+    // v5.93：清空业务缓存，防止切换主体时看到上一主体的残留数据
+    if (typeof _appCache !== 'undefined') {
+      ['inventory','purchaseOrders','stockInRecords','stockOutRecords','requisitions',
+       'inventoryAdjustments','lossRecords','nonPurchaseStockIns','tourNames',
+       'consumptionStandards','settings','categories'].forEach(function(k) {
+        if (Array.isArray(_appCache[k])) _appCache[k] = [];
+      });
+    }
     showLoginPage();
   };
   if (typeof showConfirm === 'function') {
@@ -328,6 +375,13 @@ function updateUserDisplay() {
   if (!u) return;
   const nameEl = document.getElementById('user-name'); if (nameEl) nameEl.textContent = u.name;
   const roleEl = document.getElementById('user-role'); if (roleEl) roleEl.textContent = (getRoleName(u.role) || u.role);
+  // v5.93 显示当前主体
+  const badge = document.getElementById('current-subject-badge');
+  if (badge && typeof getSubjectName === 'function') {
+    badge.textContent = getSubjectName();
+    badge.style.background = getCurrentSubject() === 'hq' ? '#e1f5ee' : '#e6f1fb';
+    badge.style.color = getCurrentSubject() === 'hq' ? '#0f6e56' : '#185fa5';
+  }
   // Avatar: keep default SVG, no emoji replacement
 }
 
