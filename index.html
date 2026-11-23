@@ -15,7 +15,7 @@
   //    确保“长时间开着页面”也能自动升级到最新版（收藏夹点开场景同样覆盖）。
   // 3) localStorage 兜底（离线时按上次记录的版本判断）。
   (function() {
-    var APP_VERSION = '6.0';
+    var APP_VERSION = '6.1';
     var reloading = false;
     function forceReload() {
       if (reloading) return;
@@ -50,10 +50,10 @@
     } catch (e) {}
   })();
   </script>
-  <link rel="stylesheet" href="css/style.css?v=6.0">
-  <link rel="stylesheet" href="css/redesign.css?v=6.0">
+  <link rel="stylesheet" href="css/style.css?v=6.1">
+  <link rel="stylesheet" href="css/redesign.css?v=6.1">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <script src="js/vendor/chart.umd.min.js?v=6.0"></script>
+  <script src="js/vendor/chart.umd.min.js?v=6.1"></script>
 </head>
 <body>
   <!-- ===== 登录界面 — 动画角色版 ===== -->
@@ -260,7 +260,7 @@
             <span class="text">账号管理</span>
           </div>
           <div class="nav-item" data-module="admin-settings" data-tooltip="系统设置">
-            <span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+            <span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.16a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.16a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.16A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.16A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
             <span class="text">系统设置</span>
           </div>
         </div>
@@ -1929,28 +1929,28 @@
     </div>
   </div>
 
-  <script src="js/vendor/xlsx.full.min.js?v=6.0"></script>
-  <script src="js/vendor/supabase.min.js?v=6.0"></script>
-  <script src="js/supabase-db.js?v=6.0"></script>
-  <script src="js/hq-foundation.js?v=6.0"></script>
-  <script src="js/supabase-sync.js?v=6.0"></script>
-  <script src="js/migrate-data.js?v=6.0"></script>
-  <script src="js/toast.js?v=6.0"></script>
-  <script src="js/login-characters.js?v=6.0"></script>
-  <script src="js/auth-fix.js?v=6.0"></script>
-  <script src="js/navigation.js?v=6.0"></script>
-  <script src="js/purchase.js?v=6.0"></script>
-  <script src="js/stock-in.js?v=6.0"></script>
-  <script src="js/requisition.js?v=6.0"></script>
-  <script src="js/monthly-summary.js?v=6.0"></script>
-  <script src="js/tour-reports.js?v=6.0"></script>
-  <script src="js/business-flow.js?v=6.0"></script>
-  <script src="js/app.js?v=6.0"></script>
-  <script src="js/hq-custom.js?v=6.0"></script>
-  <script src="js/inventory-hybrid.js?v=6.0"></script>
-  <script src="js/admin-bindings.js?v=6.0"></script>
+  <script src="js/vendor/xlsx.full.min.js?v=6.1"></script>
+  <script src="js/vendor/supabase.min.js?v=6.1"></script>
+  <script src="js/supabase-db.js?v=6.1"></script>
+  <script src="js/hq-foundation.js?v=6.1"></script>
+  <script src="js/supabase-sync.js?v=6.1"></script>
+  <script src="js/migrate-data.js?v=6.1"></script>
+  <script src="js/toast.js?v=6.1"></script>
+  <script src="js/login-characters.js?v=6.1"></script>
+  <script src="js/auth-fix.js?v=6.1"></script>
+  <script src="js/navigation.js?v=6.1"></script>
+  <script src="js/purchase.js?v=6.1"></script>
+  <script src="js/stock-in.js?v=6.1"></script>
+  <script src="js/requisition.js?v=6.1"></script>
+  <script src="js/monthly-summary.js?v=6.1"></script>
+  <script src="js/tour-reports.js?v=6.1"></script>
+  <script src="js/business-flow.js?v=6.1"></script>
+  <script src="js/app.js?v=6.1"></script>
+  <script src="js/hq-custom.js?v=6.1"></script>
+  <script src="js/inventory-hybrid.js?v=6.1"></script>
+  <script src="js/admin-bindings.js?v=6.1"></script>
 
-  <script src="js/user-admin.js?v=6.0"></script>
+  <script src="js/user-admin.js?v=6.1"></script>
 
   <!-- ===== 模态框：非采购入库（退库回收） ===== -->
   <div id="modal-nonpurchase" class="modal">
