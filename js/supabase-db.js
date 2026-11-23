@@ -11,8 +11,70 @@ const SUPABASE_URL = 'https://vhnvjaghlvoqdgssidjw.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_z06qPVHQAOHZuNiSxHXOyw_IL2-G7Bf';
 
 let _supabase = null;
+let _supabaseScoped = null;
 
-function getSupabase() {
+// ============================================================
+// v5.93 多主体隔离（subject）
+// 主体：train=遇见美好列车 / hq=遇见美好总部
+// 策略：业务表加 subject 列；所有查询经 getSupabase() 包装层
+//       自动注入 .eq('subject', 当前主体)，写入自动补 subject 字段。
+// admin 跨主体（登录时选），普通账号绑 train（权限分开后续做）。
+// ============================================================
+const SUBJECTS = {
+  train: { code: 'train', name: '遇见美好列车' },
+  hq: { code: 'hq', name: '遇见美好总部' }
+};
+const SUBJECT_DEFAULT = 'train';
+let _currentSubject = SUBJECT_DEFAULT;
+let _subjectReady = false; // 迁移自检通过后才注入，防止迁移未执行时全站报错
+
+function getCurrentSubject() { return _currentSubject; }
+function getSubjectName(code) {
+  const c = code || _currentSubject;
+  return (SUBJECTS[c] && SUBJECTS[c].name) || c;
+}
+function setCurrentSubject(code) {
+  const c = (code && SUBJECTS[code]) ? code : SUBJECT_DEFAULT;
+  _currentSubject = c;
+  try { sessionStorage.setItem('inv_subject', c); } catch (e) {}
+}
+(function restoreSubject() {
+  try {
+    const s = sessionStorage.getItem('inv_subject');
+    if (s && SUBJECTS[s]) _currentSubject = s;
+  } catch (e) {}
+})();
+
+// 参与主体隔离的业务表（权限/账号表不在此列）
+const SUBJECT_SCOPED_TABLES = {
+  categories: 1, inventory_items: 1,
+  purchase_orders: 1, purchase_order_items: 1,
+  stock_in_records: 1, stock_in_items: 1,
+  requisitions: 1, requisition_items: 1,
+  stock_out_records: 1, stock_out_items: 1,
+  inventory_adjustments: 1, tour_names: 1,
+  consumption_standards: 1, settings: 1,
+  item_history: 1, audit_logs: 1,
+  non_purchase_stock_in: 1, loss_records: 1
+};
+
+/** 迁移自检：subjects 字典表存在即视为已迁移。未通过则阻止登录，避免全站崩溃 */
+async function checkSubjectMigration() {
+  if (_subjectReady) return true;
+  const sb = _rawSupabase();
+  if (!sb) return false;
+  try {
+    const res = await sb.from('subjects').select('code').limit(1);
+    if (res && res.error) return false;
+    _subjectReady = true;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/** 原始客户端（不带主体包装），仅供自检使用 */
+function _rawSupabase() {
   if (!_supabase) {
     if (typeof supabase !== 'undefined' && supabase.createClient) {
       _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -22,6 +84,53 @@ function getSupabase() {
     }
   }
   return _supabase;
+}
+
+/** 给 query builder 注入主体条件：读/改/删加 eq，写入补 subject 字段 */
+function _injectSubjectScope(builder, table) {
+  if (!builder || !_subjectReady || !SUBJECT_SCOPED_TABLES[table]) return builder;
+  const subj = _currentSubject;
+  return new Proxy(builder, {
+    get: function (t, prop) {
+      const v = Reflect.get(t, prop, t);
+      if (typeof v !== 'function') return v;
+      return function () {
+        const args = Array.prototype.slice.call(arguments);
+        if (prop === 'insert' || prop === 'upsert') {
+          const val = args[0];
+          if (Array.isArray(val)) {
+            args[0] = val.map(function (x) { return Object.assign({}, x, { subject: subj }); });
+          } else if (val && typeof val === 'object') {
+            args[0] = Object.assign({}, val, { subject: subj });
+          }
+          return v.apply(t, args);
+        }
+        const out = v.apply(t, args);
+        if ((prop === 'select' || prop === 'update' || prop === 'delete') && out && typeof out.eq === 'function') {
+          return out.eq('subject', subj);
+        }
+        return out;
+      };
+    }
+  });
+}
+
+function getSupabase() {
+  const raw = _rawSupabase();
+  if (!raw) return null;
+  if (!_supabaseScoped) {
+    _supabaseScoped = new Proxy(raw, {
+      get: function (t, prop) {
+        const v = Reflect.get(t, prop, t);
+        if (prop === 'from') {
+          return function (table) { return _injectSubjectScope(v.call(t, table), table); };
+        }
+        if (typeof v === 'function') return v.bind(t);
+        return v;
+      }
+    });
+  }
+  return _supabaseScoped;
 }
 
 // ============================================================
@@ -65,8 +174,11 @@ async function writeAuditLog(action, entityType, entityId, entityCode, details) 
 async function getNextCode(seqType, prefix, padLen) {
   padLen = padLen || 5;
   const sb = getSupabase();
+  // v5.93：hq 主体的序列类型加前缀，保证与 train 完全独立的编号段
+  const subj = (typeof getCurrentSubject === 'function') ? getCurrentSubject() : 'train';
+  const scopedType = (subj && subj !== 'train') ? (subj + '_' + seqType) : seqType;
   const { data, error } = await sb.rpc('next_code', {
-    seq_type: seqType, prefix: prefix, pad_len: padLen
+    seq_type: scopedType, prefix: prefix, pad_len: padLen, p_subject: subj
   });
   if (error) throw new Error('编码生成失败: ' + error.message);
   return data;
