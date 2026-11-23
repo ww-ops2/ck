@@ -1,5 +1,5 @@
 /**
- * HQ Foundation Engine - v5.95 (Phase 1 of group inventory upgrade)
+ * HQ Foundation Engine - v5.97 (Phase 1+2 of group inventory upgrade)
  * =================================================================
  * PURPOSE
  *   Headquarters-only inventory foundation: usage category dictionary,
@@ -260,7 +260,7 @@
       doc_no: doc.doc_no || '', period: doc.period,
       usage_code: doc.usage_code, item_id: row.item_id || null,
       sku: row.sku || null, qty: qty,
-      deltas: { seg: rule.seg || null, sign: rule.sign, physical: rule.physical, locked: rule.locked, qty: qty },
+      deltas: { seg: rule.seg || null, sign: rule.sign, physical: rule.physical, locked: rule.locked, qty: qty, meta: doc.meta || null },
       balance_snapshot: {
         opening_qty: next.opening_qty, purchase_in_qty: next.purchase_in_qty,
         recovery_in_qty: next.recovery_in_qty, consume_scrap_qty: next.consume_scrap_qty,
@@ -372,8 +372,9 @@
     if (!_assertHQ()) return { ok: true, skipped: 'not-hq' };
     var sb = _raw(); if (!sb) return { ok: false, error: 'supabase client not loaded' };
     var out = {};
-    for (var i = 0; i < ['usage_categories', 'stock_ledger', 'posting_journal']; i++) {
-      var t = ['usage_categories', 'stock_ledger', 'posting_journal'][i];
+    var _tables = ['usage_categories', 'stock_ledger', 'posting_journal'];
+    for (var i = 0; i < _tables.length; i++) {
+      var t = _tables[i];
       var res = await sb.from(t).select('id').eq('subject', SUBJECT).limit(1);
       out[t] = !res.error;
     }
