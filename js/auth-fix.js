@@ -312,6 +312,12 @@ function handleLogout() {
 }
 
 async function showApp() {
+  // v5.98 方案A：总部主体登录后直接落地到总部工作台；列车主体走原流程一行不变
+  if (typeof getCurrentSubject === 'function' && getCurrentSubject() === 'hq') {
+    try { window.location.replace('hq-workbench.html'); }
+    catch (e) { window.location.href = 'hq-workbench.html'; }
+    return;
+  }
   const lp = document.getElementById('login-page');
   const ac = document.getElementById('app-container');
   if (lp) lp.style.display = 'none';
