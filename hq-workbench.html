@@ -100,9 +100,10 @@
     <div class="meta">
       <span class="hl">主体：遇见美好总部 (hq)</span>
       <span id="hc-badge" class="">引擎自检中…</span>
-      <span>引擎：HQFoundation v5.98 · 二期单据闭环</span>
+      <span>引擎：HQFoundation v5.99 · 二期单据闭环</span>
       <span id="op-badge">操作人：—</span>
-      <button id="btn-exit" type="button" style="margin-left:auto;background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:20px;padding:5px 14px;font-size:12.5px;cursor:pointer">退出 / 切换主体 ↗</button>
+      <button id="btn-dashboard" type="button" style="margin-left:auto;background:#1d4ed8;border:1px solid #3b82f6;color:#fff;border-radius:20px;padding:5px 14px;font-size:12.5px;cursor:pointer;font-weight:600">📊 总控看板</button>
+      <button id="btn-exit" type="button" style="background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:20px;padding:5px 14px;font-size:12.5px;cursor:pointer">退出 / 切换主体 ↗</button>
     </div>
   </header>
 
@@ -221,8 +222,8 @@
   </div>
 </div>
 
-<script src="js/vendor/supabase.min.js?v=5.98"></script>
-<script src="js/hq-foundation.js?v=5.98"></script>
+<script src="js/vendor/supabase.min.js?v=5.99"></script>
+<script src="js/hq-foundation.js?v=5.99"></script>
 <script>
 (function(){
   'use strict';
@@ -517,6 +518,7 @@
     if(b.getAttribute('data-tab')==='ledger') refreshLedger();
   });
 
+  $('btn-dashboard').onclick=function(){ window.location.href='hq-dashboard.html'; };
   $('btn-exit').onclick=function(){
     try{ localStorage.removeItem('currentUser'); localStorage.removeItem('inv_user'); sessionStorage.removeItem('inv_session'); sessionStorage.removeItem('inv_subject'); }catch(e){}
     window.location.href='index.html';
