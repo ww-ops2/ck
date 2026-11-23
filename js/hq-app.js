@@ -7,11 +7,22 @@
 (function () {
   'use strict';
 
+  // ---------- 图标（内联 SVG，与列车导航图标同一风格） ----------
+  var ICONS = {
+    gift:      '<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"8.5\" width=\"18\" height=\"4\" rx=\"1.2\"/><path d=\"M12 8.5V21\"/><path d=\"M19 12.5v6.5a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6.5\"/><path d=\"M7.6 8.5a2.3 2.3 0 1 1 0-4.6C10.6 3.9 12 8.5 12 8.5s1.4-4.6 4.4-4.6a2.3 2.3 0 1 1 0 4.6\"/></svg>',
+    bus:       '<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 17V6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5V17\"/><path d=\"M4 11h16\"/><path d=\"M2.5 17h19\"/><circle cx=\"7.5\" cy=\"17.5\" r=\"1.3\"/><circle cx=\"16.5\" cy=\"17.5\" r=\"1.3\"/></svg>',
+    folder:    '<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 8a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.6.8l.9 1.2H19a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\"/></svg>',
+    warehouse: '<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 21V9.2L12 4l9 5.2V21\"/><path d=\"M7 21v-7h10v7\"/><path d=\"M2.5 21h19\"/></svg>',
+    inbox:     '<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M22 12h-6l-2 3h-4l-2-3H2\"/><path d=\"M5.5 5.5L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.5A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.5z\"/></svg>',
+    tag:       '<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z\"/><path d=\"M7 7h.01\"/></svg>'
+  };
+  function ico(k) { return ICONS[k] || ICONS.tag; }
+
   var OWNERS = [
-    { key: 'live',  icon: '🎁', name: '直播礼品', cls: 'live' },
-    { key: 'tour',  icon: '🚌', name: '出团物料', cls: 'tour' },
-    { key: 'admin', icon: '📎', name: '行政物料', cls: 'admin' },
-    { key: 'wh',    icon: '🏠', name: '总部仓库', cls: 'wh' }
+    { key: 'live',  icon: 'gift',      name: '直播礼品', cls: 'live' },
+    { key: 'tour',  icon: 'bus',       name: '出团物料', cls: 'tour' },
+    { key: 'admin', icon: 'folder',    name: '行政物料', cls: 'admin' },
+    { key: 'wh',    icon: 'warehouse', name: '总部仓库', cls: 'wh' }
   ];
   var OWN_CLS = { '直播礼品': 'live', '出团物料': 'tour', '行政物料': 'admin', '总部仓库': 'wh' };
 
@@ -129,7 +140,7 @@
     if (!wrap) return;
     if (D.inventory.length === 0 && D.purchase.length === 0 && D.requisitions.length === 0) {
       wrap.innerHTML = '<div style="grid-column:1/-1;background:var(--bg-card);border:1.5px dashed var(--border);border-radius:12px;padding:34px;text-align:center;color:var(--text-muted)">' +
-        '<div style="font-size:30px;margin-bottom:10px">📦</div>' +
+        '<div style="display:flex;justify-content:center;margin-bottom:12px;color:var(--text-muted);opacity:.55"><span class="empty-ic">' + ico('inbox') + '</span></div>' +
         '<div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:8px">总部还没有数据</div>' +
         '<div style="font-size:12.5px;line-height:1.9">4 个用途归属已建好（直播礼品 / 出团物料 / 行政物料 / 总部仓库）。<br>请到「采购单管理 / 入库管理 / 领用单管理 / 出库管理」录入带归属的真实单据，这里会自动汇总。<br>不会显示任何演示假数据。</div></div>';
       return;
@@ -142,7 +153,7 @@
       var midVal = o.key === 'live' ? b.locked : o.key === 'tour' ? b.inTransit : o.key === 'admin' ? b.low : b.pendingIn;
       var midCls = o.key === 'admin' ? 'yel' : (o.key === 'live' ? 'red' : 'blu');
       return '<div class="own-card ' + o.cls + '">' +
-        '<div class="oc-head"><span class="oc-ic">' + o.icon + '</span><span class="oc-name">' + o.name + '</span><span class="oc-tag' + tagCls + '">' + tag + '</span></div>' +
+        '<div class="oc-head"><span class="oc-ic">' + ico(o.icon) + '</span><span class="oc-name">' + o.name + '</span><span class="oc-tag' + tagCls + '">' + tag + '</span></div>' +
         '<div class="oc-grid">' +
           '<div><span>物品</span><b>' + b.items + ' <i>种</i></b></div>' +
           '<div><span>库存</span><b>' + b.stock + ' <i>件</i></b></div>' +
@@ -206,12 +217,12 @@
     D.inventory.forEach(function (it) { var c = catOf(it); counts[c] = (counts[c] || 0) + 1; });
     var cards = OWNERS.map(function (o) {
       var cnt = counts[o.name] || 0;
-      return '<div class="cat-card ' + o.cls + '"><div class="cnt">' + cnt + '</div><div class="ic">' + o.icon + '</div><div class="nm">' + o.name + '</div><div class="meta">' + (metaMap[o.name] || '') + '</div></div>';
+      return '<div class="cat-card ' + o.cls + '"><div class="cnt">' + cnt + '</div><div class="ic">' + ico(o.icon) + '</div><div class="nm">' + o.name + '</div><div class="meta">' + (metaMap[o.name] || '') + '</div></div>';
     });
     // 若加了自定义归属，也显示
     D.categories.forEach(function (c) {
       if (OWNERS.some(function (o) { return o.name === c.name; })) return;
-      cards.push('<div class="cat-card wh"><div class="cnt">' + (counts[c.name] || 0) + '</div><div class="ic">📌</div><div class="nm">' + esc(c.name) + '</div><div class="meta">自定义归属</div></div>');
+      cards.push('<div class="cat-card wh"><div class="cnt">' + (counts[c.name] || 0) + '</div><div class="ic">' + ico('tag') + '</div><div class="nm">' + esc(c.name) + '</div><div class="meta">自定义归属</div></div>');
     });
     cards.push('<div class="cat-add"><div class="plus">＋</div><div>新增归属分类</div></div>');
     grid.innerHTML = cards.join('');
