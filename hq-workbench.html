@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>总部库存工作台 · 11 类单据过账（subject=hq）</title>
+<style>
+  :root{
+    --bg:#f4f1ec; --surface:#ffffff; --surface2:#faf5ef; --surface3:#f0e9df;
+    --line:#e6dccf; --line2:#d8cbbb;
+    --ink:#2a2119; --muted:#82705e; --faint:#ab9b8a;
+    --accent:#c2410c; --accent-d:#8f2f0a;
+    --in:#e0000b; --in-bg:#fdecec; --out:#16a34a; --out-bg:#e8f6ec;
+    --blue:#185fa5; --blue-bg:#e7f0fa; --amber:#a8640b; --amber-bg:#fbf0dc;
+    --purple:#7c3aed; --purple-bg:#f1ebfd;
+    --green:#15803d; --green-bg:#e8f6ec; --red:#c0000b; --red-bg:#fdecec;
+    --shadow:0 2px 10px rgba(80,55,30,.06),0 8px 28px rgba(80,55,30,.05);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;line-height:1.55;font-size:14px}
+  .wrap{max-width:1320px;margin:0 auto;padding:0 26px 100px}
+  header.hero{padding:34px 0 20px;border-bottom:2px solid var(--line)}
+  header.hero h1{font-size:26px;margin:0 0 6px;letter-spacing:-.4px}
+  header.hero .sub{font-size:14px;color:var(--muted);max-width:960px}
+  .meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+  .meta span{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:5px 13px;font-size:12.5px;color:var(--muted)}
+  .meta span.hl{background:var(--amber-bg);border-color:#e8c98a;color:var(--amber);font-weight:600}
+  .meta span.ok{background:var(--green-bg);border-color:#a7d9b8;color:var(--green);font-weight:600}
+  .meta span.bad{background:var(--red-bg);border-color:#e8a7a7;color:var(--red);font-weight:600}
+  .status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+  .status-dot.g{background:#16a34a}.status-dot.r{background:#c0000b}
+  .tabs{display:flex;gap:6px;margin:22px 0 0;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+  .tabs button{background:none;border:none;border-bottom:2px solid transparent;padding:10px 16px;cursor:pointer;color:var(--muted);font-size:14px;font-weight:600;margin-bottom:-1px}
+  .tabs button:hover{color:var(--accent)}
+  .tabs button.on{color:var(--accent);border-bottom-color:var(--accent)}
+  .panel{display:none;background:var(--surface);border:1px solid var(--line);border-top:none;border-radius:0 0 14px 14px;padding:24px 28px;box-shadow:var(--shadow)}
+  .panel.on{display:block}
+  h2{font-size:17px;margin:0 0 4px}
+  .lead{color:var(--muted);font-size:13px;margin:0 0 18px}
+  .grid2{display:grid;grid-template-columns:1.05fr .95fr;gap:22px}
+  @media(max-width:900px){.grid2{grid-template-columns:1fr}}
+  .card{background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+  .card h3{font-size:14px;margin:0 0 14px;color:var(--accent-d)}
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px;font-weight:600}
+  .row{margin:0 0 12px}
+  input,select,textarea{width:100%;border:1px solid var(--line2);border-radius:8px;padding:8px 10px;font-size:13.5px;background:#fff;color:var(--ink);font-family:inherit}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+  textarea{resize:vertical;min-height:56px}
+  .inline{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .inline3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+  .btn{border:none;border-radius:8px;padding:10px 18px;font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit}
+  .btn.primary{background:var(--accent);color:#fff}
+  .btn.primary:hover{background:var(--accent-d)}
+  .btn.ghost{background:var(--surface3);color:var(--ink)}
+  .btn.ghost:hover{background:var(--line)}
+  .btn.mini{padding:5px 11px;font-size:12px}
+  .btn:disabled{opacity:.55;cursor:not-allowed}
+  .btn-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+  .note{border-radius:9px;padding:11px 14px;font-size:13px;margin:12px 0}
+  .note.ok{background:var(--green-bg);border:1px solid #a7d9b8;color:var(--green)}
+  .note.warn{background:var(--amber-bg);border:1px solid #e8c98a;color:var(--amber)}
+  .empty{color:var(--faint);text-align:center;padding:26px 10px;font-size:13px}
+  .formula{display:flex;gap:9px;align-items:center;flex-wrap:wrap;font-size:12.5px}
+  .formula .box{background:#fff;border:1px solid var(--line2);border-radius:7px;padding:5px 10px;font-family:ui-monospace,Menlo,monospace}
+  .formula .op{color:var(--faint)}
+  .bal{color:var(--green);font-weight:700}.err{color:var(--red);font-weight:700}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:8px 10px;text-align:center;border-bottom:1px solid var(--line)}
+  th{background:var(--surface3);color:var(--muted);font-size:12px;font-weight:600;position:sticky;top:0}
+  td.tl,th.tl{text-align:left}
+  td.num{font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+  .in-c{background:var(--in-bg)}.out-c{background:var(--out-bg)}
+  .tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600}
+  .tag.bal{background:var(--green-bg);color:var(--green)}
+  .tag.err{background:var(--red-bg);color:var(--red)}
+  .tag.meta{background:var(--purple-bg);color:var(--purple);font-weight:400;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:bottom}
+  .scroll{max-height:460px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+  .hint{font-size:12px;color:var(--faint);margin-top:10px;line-height:1.6}
+  code{background:var(--surface3);padding:1px 5px;border-radius:4px;font-size:12px}
+  .doc-hint{background:var(--blue-bg);border:1px solid #bcd6ee;border-radius:8px;padding:9px 12px;font-size:12.5px;color:var(--blue);margin:0 0 14px}
+  input.auto{background:#fffdf7;border-style:dashed}
+  .toast-container{position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:8px;align-items:center}
+  .tst{padding:10px 18px;border-radius:9px;font-size:13.5px;font-weight:600;box-shadow:0 6px 22px rgba(0,0,0,.15);animation:slidein .2s ease}
+  .tst.ok{background:var(--green);color:#fff}.tst.err{background:var(--red);color:#fff}.tst.info{background:var(--ink);color:#fff}
+  @keyframes slidein{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+  .mask{position:fixed;inset:0;background:rgba(42,33,25,.45);z-index:10000;display:none;align-items:center;justify-content:center}
+  .mask.on{display:flex}
+  .modal{background:#fff;border-radius:14px;padding:24px 26px;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+  .modal h3{margin:0 0 10px;font-size:17px}
+  .modal p{color:var(--muted);font-size:13.5px;margin:0 0 20px;line-height:1.6}
+  .modal .btn-row{justify-content:flex-end}
+  .foot{color:var(--faint);font-size:12px;text-align:center;padding:26px 0 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <h1>总部库存工作台 · 11 类单据过账</h1>
+    <div class="sub">subject=hq 专用。所有库存数量变化只能由单据确认驱动；过账由引擎统一重算 8 段台账并校验平衡。列车主体（train）与本页完全无关。</div>
+    <div class="meta">
+      <span class="hl">主体：遇见美好总部 (hq)</span>
+      <span id="hc-badge" class="">引擎自检中…</span>
+      <span>引擎：HQFoundation v5.97 · 二期单据闭环</span>
+      <span id="op-badge">操作人：—</span>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button class="on" data-tab="post">① 开单过账</button>
+    <button data-tab="ledger">② 库存台账</button>
+    <button data-tab="journal">③ 过账流水</button>
+    <button data-tab="check">④ 对账校验</button>
+    <button data-tab="cats">⑤ 用途分类</button>
+  </nav>
+
+  <!-- ① 开单过账 -->
+  <section class="panel on" id="panel-post">
+    <h2>开单过账</h2>
+    <p class="lead">选择单据类型 → 填写业务字段 → 确认过账。单号留空时由引擎按类型自动生成，永不重复。</p>
+    <div class="grid2">
+      <div class="card">
+        <h3 id="doc-title">单据信息</h3>
+        <div class="row">
+          <label>单据类型</label>
+          <select id="f-doctype"></select>
+        </div>
+        <div class="doc-hint" id="doc-hint"></div>
+        <div class="inline">
+          <div class="row"><label>期间（如 2026-11）</label><input id="f-period" value="2026-11"></div>
+          <div class="row"><label>用途分类</label><select id="f-usage"></select></div>
+        </div>
+        <div class="row">
+          <label>单据编号（留空 = 自动生成）</label>
+          <input id="f-docno" class="auto" placeholder="例如 PA00001，留空自动出号">
+        </div>
+        <div id="meta-fields"></div>
+      </div>
+      <div class="card">
+        <h3>物品明细</h3>
+        <div class="inline">
+          <div class="row"><label>SKU / 编码</label><input id="f-sku" placeholder="如 HQ-GIFT-001"></div>
+          <div class="row"><label>物品名称</label><input id="f-name" placeholder="如 黄桃罐头"></div>
+        </div>
+        <div class="inline">
+          <div class="row"><label>规格</label><input id="f-spec" placeholder="选填"></div>
+          <div class="row"><label>品牌</label><input id="f-brand" placeholder="选填"></div>
+        </div>
+        <div class="inline" id="qty-block">
+          <div class="row"><label>数量</label><input id="f-qty" type="number" min="0" step="0.001" placeholder="大于 0"></div>
+          <div class="row" id="book-block" style="display:none"><label>账面数量</label><input id="f-book" type="number" step="0.001" placeholder="盘点用"></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn primary" id="btn-post">确认过账</button>
+          <button class="btn ghost" id="btn-demo">一键跑示例（3 单）</button>
+        </div>
+        <div id="lastBalance"><div class="empty">过账后这里显示本单的左值 / 右值 / 平衡结果</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ② 库存台账 -->
+  <section class="panel" id="panel-ledger">
+    <h2>库存台账（8 段）</h2>
+    <p class="lead">平衡口径：期初 + 采购入库 + 回收入库 = 可用 + 锁定 + 消耗报废；实物在库 = 可用 + 锁定。</p>
+    <div class="inline3" style="margin-bottom:14px">
+      <div><label>期间筛选（留空 = 全部）</label><input id="q-period" placeholder="2026-11"></div>
+      <div><label>用途筛选</label><select id="q-usage"><option value="">全部用途</option></select></div>
+      <div style="display:flex;align-items:flex-end"><button class="btn ghost" id="btn-refresh">刷新台账</button></div>
+    </div>
+    <div class="scroll" id="ledgerWrap"><div class="empty">加载中…</div></div>
+    <div class="hint">红底列 = 入库流量，绿底列 = 消耗报废。校验列非「平衡」说明该行左值≠右值，需点开流水追查来源单据。</div>
+  </section>
+
+  <!-- ③ 过账流水 -->
+  <section class="panel" id="panel-journal">
+    <h2>过账流水（审计留痕）</h2>
+    <p class="lead">每笔过账一条不可变记录，业务元数据（场次 / 关联单 / 快递号等）存在 meta 列。红冲会生成新的负数记录，不改历史。</p>
+    <div class="scroll" id="journalWrap"><div class="empty">加载中…</div></div>
+  </section>
+
+  <!-- ④ 对账校验 -->
+  <section class="panel" id="panel-check">
+    <h2>对账校验</h2>
+    <p class="lead">对当前期间（留空 = 全部）每一行跑平衡公式，列出所有左值≠右值的异常行。</p>
+    <div class="btn-row" style="margin-bottom:14px"><button class="btn primary" id="btn-check">跑对账</button></div>
+    <div id="checkResult"></div>
+  </section>
+
+  <!-- ⑤ 用途分类 -->
+  <section class="panel" id="panel-cats">
+    <h2>用途分类字典</h2>
+    <p class="lead">总部下属的分类本质是可自由增减的字典值。加一块业务只需在这里新增，不动表结构。当前 4 类为初始基线。</p>
+    <div class="grid2">
+      <div class="card">
+        <h3>新增分类</h3>
+        <div class="row"><label>编码（英文，如 live_gift）</label><input id="c-code" placeholder="live_gift"></div>
+        <div class="row"><label>名称</label><input id="c-name" placeholder="直播礼品"></div>
+        <div class="row"><label>排序（数字越小越靠前）</label><input id="c-sort" type="number" value="99"></div>
+        <div class="btn-row"><button class="btn primary" id="btn-addcat">新增分类</button></div>
+      </div>
+      <div class="card">
+        <h3>现有分类</h3>
+        <div id="catList"><div class="empty">加载中…</div></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">总部库存工作台 · 二期单据闭环 · 数据直连 Supabase · train 主体零影响</div>
+</div>
+
+<div class="toast-container" id="toast"></div>
+<div class="mask" id="mask">
+  <div class="modal">
+    <h3 id="mk-title">确认操作</h3>
+    <p id="mk-msg"></p>
+    <div class="btn-row">
+      <button class="btn ghost" id="mk-cancel">取消</button>
+      <button class="btn primary" id="mk-ok">确认</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/vendor/supabase.min.js?v=5.97"></script>
+<script src="js/hq-foundation.js?v=5.97"></script>
+<script>
+(function(){
+  'use strict';
+  var URL='https://vhnvjaghlvoqdgssidjw.supabase.co';
+  var KEY='sb_publishable_z06qPVHQAOHZuNiSxHXOyw_IL2-G7Bf';
+  var client = (typeof supabase!=='undefined' && supabase.createClient) ? supabase.createClient(URL,KEY) : null;
+
+  // 本页固定代表 hq 主体；引擎的守卫据此放行，train 路径不受影响
+  window.getCurrentSubject = function(){ return 'hq'; };
+  window._rawSupabase = function(){ return client; };
+
+  var HQ = window.HQFoundation;
+  var $ = function(id){ return document.getElementById(id); };
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function n(x){ return Number(x||0).toLocaleString('zh-CN',{maximumFractionDigits:3}); }
+  function toast(msg,type){
+    var d=document.createElement('div'); d.className='tst '+(type||'info'); d.textContent=msg;
+    $('toast').appendChild(d); setTimeout(function(){ d.remove(); },3200);
+  }
+  function loadBtn(btn,text){ if(btn){ btn.disabled=true; btn.dataset.t=btn.textContent; btn.textContent=text||'处理中…'; } }
+  function unloadBtn(btn){ if(btn){ btn.disabled=false; btn.textContent=btn.dataset.t||btn.textContent; } }
+  function confirmBox(msg,onOk){
+    $('mk-msg').textContent=msg; $('mask').classList.add('on');
+    $('mk-ok').onclick=function(){ $('mask').classList.remove('on'); onOk(); };
+    $('mk-cancel').onclick=function(){ $('mask').classList.remove('on'); };
+  }
+  // 稳定 sku -> 正整数 id，保证同一物品聚合到同一台账行（避免 item_id=null 的多行歧义）
+  function skuToId(key){
+    var s=String(key||''), h=0;
+    for(var i=0;i<s.length;i++){ h=((h<<5)-h+s.charCodeAt(i))|0; }
+    return Math.abs(h)+1;
+  }
+
+  // 11 类单据各自的业务字段（存进 posting_journal.deltas.meta）
+  var DOC_META={
+    purchase_acceptance:{ hint:'关联采购单入库验收，过账：采购入库 +Q、实物 +Q。', fields:[
+      {k:'po_no',l:'关联采购单号',p:'PO-0045'},{k:'acceptor',l:'验收人',p:'姓名'}]},
+    recovery_acceptance:{ hint:'团期/活动物料回收入库，过账：回收入库 +Q、实物 +Q。', fields:[
+      {k:'tour',l:'关联团期',p:'新疆-0918'},{k:'source',l:'来源',p:'团回收 / 归还'}]},
+    win_register:{ hint:'直播中奖登记，过账：锁定 +Q、实物不变。收件信息请脱敏填写。', fields:[
+      {k:'session',l:'直播场次',p:'LIVE-1120'},{k:'fan',l:'粉丝（脱敏）',p:'张**'},
+      {k:'phone',l:'手机（脱敏）',p:'138****8888'},{k:'ship_addr',l:'收件地址（脱敏）',p:'**省**市**区'}]},
+    prize_ship:{ hint:'奖品邮寄出库，过账：消耗 +Q、锁定 −Q、实物 −Q。对应中奖单号用于一一核对。', fields:[
+      {k:'win_doc',l:'对应中奖单号',p:'WR00003'},{k:'express',l:'快递公司',p:'顺丰'},
+      {k:'tracking',l:'运单号',p:'SF···'}]},
+    tour_signoff:{ hint:'出团领用签收，过账：实物 −Q、转待核销 +Q。', fields:[
+      {k:'tour',l:'团期',p:'新疆-0918'},{k:'guide',l:'导游',p:'李导'},{k:'signer',l:'签收人',p:'姓名'}]},
+    tour_verify:{ hint:'团后核销确认，过账：待核销 −Q、消耗 +Q。', fields:[
+      {k:'tour',l:'团期',p:'新疆-0918'},{k:'signoff_doc',l:'关联签收单号',p:'TS00002'},{k:'verifier',l:'核销人',p:'计调'}]},
+    cross_tour_transfer:{ hint:'跨团流转审批，仅变更绑定/责任人，不改数量。', fields:[
+      {k:'from_tour',l:'转出团',p:'海南-1028'},{k:'to_tour',l:'转入团',p:'云南-1105'},{k:'approver',l:'审批人',p:'计调主管'}]},
+    admin_loan:{ hint:'行政物料申领，过账：实物 −Q、转待归还 +Q。', fields:[
+      {k:'borrower',l:'借用人',p:'姓名'},{k:'loan_date',l:'借出日',p:'2026-11-10'},{k:'due_date',l:'应还日',p:'2026-11-17'}]},
+    admin_return:{ hint:'行政物料归还，过账：回收入库 +Q、实物 +Q、待归还 −Q。', fields:[
+      {k:'loan_doc',l:'关联申领单号',p:'AL00001'},{k:'return_date',l:'归还日',p:'2026-11-15'}]},
+    inter_usage_transfer:{ hint:'用途间调拨审批，双签确认，各记各账（本页记调出方，调入方另开单）。', fields:[
+      {k:'from_usage',l:'调出用途',p:'总部仓库'},{k:'to_usage',l:'调入用途',p:'行政物料'},
+      {k:'signer_a',l:'调出方确认',p:'姓名'},{k:'signer_b',l:'调入方确认',p:'姓名'}]},
+    stocktake_confirm:{ hint:'盘点确认：填账面数与实盘数，差额自动算；盘盈→回收入库 +差，盘亏→消耗 +|差|。', fields:[
+      {k:'scope',l:'盘点范围',p:'A库区'},{k:'counter',l:'盘点人',p:'姓名'}]}
+  };
+
+  var cats=[];
+  function catName(code){ for(var i=0;i<cats.length;i++){ if(cats[i].code===code) return cats[i].name; } return code||''; }
+
+  function renderDocSelect(){
+    var sel=$('f-doctype'); sel.innerHTML='';
+    var rules=HQ.POSTING_RULES;
+    Object.keys(rules).forEach(function(k){
+      var o=document.createElement('option'); o.value=k; o.textContent=rules[k].prefix+' · '+rules[k].label; sel.appendChild(o);
+    });
+    sel.onchange=renderMetaFields;
+  }
+  function renderMetaFields(){
+    var t=$('f-doctype').value, cfg=DOC_META[t]||{hint:'',fields:[]};
+    $('doc-hint').textContent=cfg.hint;
+    var isStock=(t==='stocktake_confirm');
+    $('qty-block').querySelector('label').textContent=isStock?'实盘数量':'数量';
+    $('book-block').style.display=isStock?'':'none';
+    var wrap=$('meta-fields'); wrap.innerHTML='';
+    if(!cfg.fields.length) return;
+    var h='<h3 style="font-size:14px;margin:6px 0 12px;color:var(--accent-d)">业务字段（存入流水 meta）</h3><div class="inline">';
+    cfg.fields.forEach(function(f){
+      h+='<div class="row"><label>'+esc(f.l)+'</label><input data-meta="'+esc(f.k)+'" placeholder="'+esc(f.p||'')+'"></div>';
+    });
+    h+='</div>'; wrap.innerHTML=h;
+  }
+  function collectMeta(){
+    var meta={};
+    var inputs=$('meta-fields').querySelectorAll('[data-meta]');
+    for(var i=0;i<inputs.length;i++){ var v=inputs[i].value.trim(); if(v) meta[inputs[i].getAttribute('data-meta')]=v; }
+    return Object.keys(meta).length?meta:null;
+  }
+
+  async function boot(){
+    if(!client){ $('hc-badge').className='bad'; $('hc-badge').innerHTML='<span class="status-dot r"></span>Supabase 未加载'; return; }
+    if(!HQ){ $('hc-badge').className='bad'; $('hc-badge').innerHTML='<span class="status-dot r"></span>引擎未加载'; return; }
+    try{
+      var who=JSON.parse(localStorage.getItem('inv_user')||'null');
+      if(who && (who.name||who.username)) $('op-badge').textContent='操作人：'+(who.name||who.username);
+    }catch(e){}
+    var hc=await HQ.healthCheck();
+    if(hc.ok && hc.tables && hc.tables.ready){
+      $('hc-badge').className='ok'; $('hc-badge').innerHTML='<span class="status-dot g"></span>引擎自检通过 · 三表就绪';
+    } else {
+      $('hc-badge').className='bad'; $('hc-badge').innerHTML='<span class="status-dot r"></span>引擎自检异常';
+    }
+    renderDocSelect(); renderMetaFields();
+    await loadCats();
+    await refreshLedger(); await refreshJournal();
+  }
+
+  async function loadCats(){
+    var r=await HQ.listCategories(); cats=(r.ok&&r.data)?r.data:[];
+    var f=$('f-usage'), q=$('q-usage'); f.innerHTML=''; q.innerHTML='<option value="">全部用途</option>';
+    cats.forEach(function(c){
+      var o=document.createElement('option'); o.value=c.code; o.textContent=c.name+(c.is_active?'':'（停用）');
+      if(c.code==='warehouse') o.selected=true; f.appendChild(o);
+      var o2=document.createElement('option'); o2.value=c.code; o2.textContent=c.name; q.appendChild(o2);
+    });
+    renderCatList();
+  }
+  function renderCatList(){
+    if(!cats.length){ $('catList').innerHTML='<div class="empty">暂无分类</div>'; return; }
+    var h='<table><thead><tr><th class="tl">名称</th><th>编码</th><th>排序</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+    cats.forEach(function(c){
+      h+='<tr><td class="tl">'+esc(c.name)+'</td><td><code>'+esc(c.code)+'</code></td><td>'+n(c.sort_order)+'</td>'+
+         '<td><span class="tag '+(c.is_active?'bal':'err')+'">'+(c.is_active?'启用':'停用')+'</span></td>'+
+         '<td><button class="btn ghost mini" data-cat="'+esc(c.code)+'" data-act="'+(!c.is_active)+'">'+(c.is_active?'停用':'启用')+'</button></td></tr>';
+    });
+    h+='</tbody></table>'; $('catList').innerHTML=h;
+    $('catList').querySelectorAll('[data-cat]').forEach(function(b){
+      b.onclick=function(){ toggleCat(b.getAttribute('data-cat'), b.getAttribute('data-act')==='true'); };
+    });
+  }
+  async function toggleCat(code,active){
+    var b=loadBtn(null); var r=await HQ.setCategoryActive(code,active);
+    if(r.ok){ toast('已'+(active?'启用':'停用')+' '+code,'ok'); await loadCats(); } else { toast('失败：'+(r.error||'未知'),'err'); }
+  }
+  async function addCat(){
+    var code=$('c-code').value.trim(), name=$('c-name').value.trim(), sort=parseInt($('c-sort').value,10);
+    if(!/^[a-z0-9_]+$/.test(code)){ toast('编码只能小写字母/数字/下划线','err'); return; }
+    if(!name){ toast('请填分类名称','err'); return; }
+    var btn=$('btn-addcat'); loadBtn(btn,'新增中…');
+    var r=await HQ.addCategory(code,name,isNaN(sort)?99:sort);
+    unloadBtn(btn);
+    if(r.ok){ toast('已新增分类 '+name,'ok'); $('c-code').value=''; $('c-name').value=''; await loadCats(); }
+    else toast('失败：'+(r.error||'未知'),'err');
+  }
+
+  function buildDoc(){
+    var t=$('f-doctype').value, sku=$('f-sku').value.trim(), name=$('f-name').value.trim();
+    if(!sku && !name){ toast('请填 SKU 或物品名称','err'); return null; }
+    var key=sku||name;
+    var qty=parseFloat($('f-qty').value);
+    var book=parseFloat($('f-book').value);
+    var adjust=null;
+    if(t==='stocktake_confirm'){
+      if(!(book>=0) || !(qty>=0)){ toast('盘点需填账面数与实盘数','err'); return null; }
+      adjust=qty-book; qty=Math.abs(adjust)||1;
+    }
+    if(!(qty>0)){ toast('数量必须大于 0','err'); return null; }
+    return {
+      doc_type:t, doc_no:$('f-docno').value.trim(),
+      period:$('f-period').value.trim(), usage_code:$('f-usage').value,
+      item:{ item_id:skuToId(key), sku:sku||null, item_name:name||null,
+             spec:$('f-spec').value.trim()||null, brand:$('f-brand').value.trim()||null },
+      qty:qty, adjust_qty:adjust, meta:collectMeta()
+    };
+  }
+  function showBalance(res,label){
+    if(!res||!res.ok){ $('lastBalance').innerHTML='<div class="note warn">过账失败：'+esc(res&&res.error||'未知')+'</div>'; return; }
+    if(res.skipped){ $('lastBalance').innerHTML='<div class="note warn">引擎跳过（主体非 hq）</div>'; return; }
+    $('lastBalance').innerHTML='<div class="note '+(res.balanced?'ok':'warn')+'" style="margin:0"><b>'+esc(label||'本单')+'</b> 过账结果：'+
+      '<div class="formula" style="margin:10px 0 0"><span class="box">左 = '+n(res.left)+'</span><span class="op">vs</span>'+
+      '<span class="box">右 = '+n(res.right)+'</span><span class="op">→</span>'+
+      '<span class="'+(res.balanced?'bal':'err')+'" style="font-size:15px">'+(res.balanced?'✓ 平衡成立':'✗ 不平衡')+'</span></div></div>';
+  }
+  async function doPost(){
+    var doc=buildDoc(); if(!doc) return;
+    var btn=$('btn-post'); loadBtn(btn,'过账中…');
+    try{
+      var res=await HQ.postDocument(doc);
+      if(res.ok&&!res.skipped){
+        var shown=res.doc_no||doc.doc_no;
+        toast('过账成功 '+shown+' · '+(res.balanced?'平衡成立':'不平衡'),res.balanced?'ok':'err');
+        showBalance(res,shown+(res.autoGenerated?'（自动）':''));
+        $('f-docno').value='';
+        await refreshLedger(); await refreshJournal();
+      } else { toast('过账失败：'+(res.error||res.skipped||'未知'),'err'); showBalance(res,doc.doc_no); }
+    }catch(e){ toast('异常：'+e.message,'err'); }
+    finally{ unloadBtn(btn); }
+  }
+  async function runDemo(){
+    var btn=$('btn-demo'); loadBtn(btn,'演示中…');
+    var period=$('f-period').value.trim()||'2026-11', usage='live_gift';
+    var item={ item_id:skuToId('HQ-DEMO-GIFT'), sku:'HQ-DEMO-GIFT', item_name:'演示礼品套装', spec:'A款', brand:'演示' };
+    try{
+      var r1=await HQ.postDocument({doc_type:'purchase_acceptance',doc_no:null,period:period,usage_code:usage,item:item,qty:100,meta:{demo:true,po_no:'DEMO-PO'}});
+      if(!r1.ok||r1.skipped) throw new Error(r1.error||r1.skipped||'单1失败');
+      var r2=await HQ.postDocument({doc_type:'win_register',doc_no:null,period:period,usage_code:usage,item:item,qty:30,meta:{demo:true,session:'LIVE-DEMO',fan:'张**'}});
+      if(!r2.ok||r2.skipped) throw new Error(r2.error||r2.skipped||'单2失败');
+      var r3=await HQ.postDocument({doc_type:'prize_ship',doc_no:null,period:period,usage_code:usage,item:item,qty:10,meta:{demo:true,win_doc:r2.doc_no,express:'顺丰'}});
+      if(!r3.ok||r3.skipped) throw new Error(r3.error||r3.skipped||'单3失败');
+      toast('3 单连续过账完成','ok'); showBalance(r3,'示例第3单（邮寄出库）');
+      $('q-period').value=period; await refreshLedger(); await refreshJournal();
+    }catch(e){ toast('演示失败：'+e.message,'err'); }
+    finally{ unloadBtn(btn); }
+  }
+
+  async function refreshLedger(){
+    var period=$('q-period').value.trim()||null, usage=$('q-usage').value||null;
+    var r=await HQ.listLedger(period,usage); var w=$('ledgerWrap');
+    if(!r.ok){ w.innerHTML='<div class="empty">加载失败：'+esc(r.error)+'</div>'; return; }
+    if(!r.data.length){ w.innerHTML='<div class="empty">该范围暂无台账记录（过账后自动出现）</div>'; return; }
+    var h='<table><thead><tr><th class="tl">物品</th><th>用途</th><th>期初</th><th class="in-c">采购入库</th><th class="in-c">回收入库</th>'+
+      '<th class="out-c">消耗报废</th><th>实物在库</th><th>锁定</th><th>可用</th><th>安全</th><th>校验</th></tr></thead><tbody>';
+    r.data.forEach(function(x){
+      var left=(Number(x.opening_qty)+Number(x.purchase_in_qty)+Number(x.recovery_in_qty));
+      var right=(Number(x.available_qty)+Number(x.locked_qty)+Number(x.consume_scrap_qty));
+      var bal=Math.abs(left-right)<0.0005 && x.reconcile_flag==='balanced';
+      h+='<tr><td class="tl">'+esc(x.item_name||x.sku||('ID'+x.id))+(x.sku?'<br><span style="color:var(--faint);font-size:10px">'+esc(x.sku)+'</span>':'')+'</td>'+
+        '<td>'+esc(catName(x.usage_code))+'</td>'+
+        '<td class="num">'+n(x.opening_qty)+'</td><td class="num in-c">'+n(x.purchase_in_qty)+'</td>'+
+        '<td class="num in-c">'+n(x.recovery_in_qty)+'</td><td class="num out-c">'+n(x.consume_scrap_qty)+'</td>'+
+        '<td class="num"><b>'+n(x.physical_qty)+'</b></td><td class="num">'+n(x.locked_qty)+'</td>'+
+        '<td class="num">'+n(x.available_qty)+'</td><td class="num">'+n(x.safety_qty)+'</td>'+
+        '<td>'+(bal?'<span class="tag bal">平衡</span>':'<span class="tag err">异常</span>')+'</td></tr>';
+    });
+    h+='</tbody></table>'; w.innerHTML=h;
+  }
+
+  function metaSummary(deltas){
+    var m=deltas&&deltas.meta; if(!m) return '';
+    var parts=[]; Object.keys(m).forEach(function(k){ if(k!=='demo') parts.push(k+':'+m[k]); });
+    return parts.length?parts.join(' · '):'';
+  }
+  async function refreshJournal(){
+    var sb=window._rawSupabase();
+    var res=await sb.from('posting_journal').select('*').eq('subject','hq').order('created_at',{ascending:false}).limit(60);
+    var w=$('journalWrap');
+    if(res.error){ w.innerHTML='<div class="empty">加载失败：'+esc(res.error.message)+'</div>'; return; }
+    if(!res.data||!res.data.length){ w.innerHTML='<div class="empty">暂无过账流水</div>'; return; }
+    var map=HQ.POSTING_RULES;
+    var h='<table><thead><tr><th class="tl">单号</th><th class="tl">单据类型</th><th>期间</th><th>用途</th><th class="tl">物品</th>'+
+      '<th>数量</th><th class="tl">业务信息 (meta)</th><th class="tl">操作人</th><th class="tl">时间</th><th>操作</th></tr></thead><tbody>';
+    res.data.forEach(function(j){
+      var ms=metaSummary(j.deltas);
+      h+='<tr><td class="tl"><code>'+esc(j.doc_no)+'</code></td>'+
+        '<td class="tl">'+esc((map[j.doc_type]&&map[j.doc_type].label)||j.doc_type)+'</td>'+
+        '<td>'+esc(j.period)+'</td><td>'+esc(catName(j.usage_code))+'</td>'+
+        '<td class="tl">'+esc(j.sku||('ID'+(j.item_id||'')))+'</td>'+
+        '<td class="num">'+n(j.qty)+'</td>'+
+        '<td class="tl">'+(ms?'<span class="tag meta" title="'+esc(ms)+'">'+esc(ms)+'</span>':'')+'</td>'+
+        '<td class="tl">'+esc(j.operator||'')+'</td>'+
+        '<td class="tl" style="color:var(--faint);font-size:11px">'+esc((j.created_at||'').replace('T',' ').slice(0,19))+'</td>'+
+        '<td><button class="btn ghost mini" data-rev="'+esc(j.doc_no)+'">红冲</button></td></tr>';
+    });
+    h+='</tbody></table>'; w.innerHTML=h;
+    w.querySelectorAll('[data-rev]').forEach(function(b){
+      b.onclick=function(){ var dn=b.getAttribute('data-rev'); confirmBox('确认红冲单据 '+dn+'？将生成负数冲销记录，原单保留。',function(){ reverseDoc(dn,b); }); };
+    });
+  }
+  async function reverseDoc(docNo,btn){
+    loadBtn(btn,'红冲中…');
+    try{
+      var r=await HQ.reverseDocument(docNo,'工作台红冲');
+      if(r.ok){ toast('红冲成功 '+docNo,'ok'); await refreshLedger(); await refreshJournal(); }
+      else toast('红冲失败：'+(r.error||'未知'),'err');
+    }catch(e){ toast('异常：'+e.message,'err'); }
+    finally{ unloadBtn(btn); }
+  }
+  async function checkBalance(){
+    var btn=$('btn-check'); loadBtn(btn,'校验中…');
+    var r=await HQ.checkBalance($('q-period').value.trim()||null); unloadBtn(btn);
+    var box=$('checkResult');
+    if(!r.ok){ box.innerHTML='<div class="note warn">校验失败：'+esc(r.error)+'</div>'; return; }
+    if(!r.data.length){ box.innerHTML='<div class="note ok">对账通过：本期共 '+r.checked+' 行，全部平衡 ✓</div>'; toast('对账通过 · '+r.checked+' 行全平衡','ok'); return; }
+    var h='<div class="note warn">发现 '+r.data.length+' 行异常：</div><table><thead><tr><th class="tl">物品</th><th>左值</th><th>右值</th><th class="tl">标记</th></tr></thead><tbody>';
+    r.data.forEach(function(x){ h+='<tr><td class="tl">'+esc(x.item_name||x.sku||x.id)+'</td><td>'+n(x.left)+'</td><td>'+n(x.right)+'</td><td class="tl err">'+esc(x.flag)+'</td></tr>'; });
+    h+='</tbody></table>'; box.innerHTML=h; toast('发现 '+r.data.length+' 行异常','err');
+  }
+
+  // tab 切换
+  $('tabs').addEventListener('click',function(e){
+    var b=e.target.closest('button[data-tab]'); if(!b) return;
+    $('tabs').querySelectorAll('button').forEach(function(x){ x.classList.remove('on'); });
+    document.querySelectorAll('.panel').forEach(function(p){ p.classList.remove('on'); });
+    b.classList.add('on'); $('panel-'+b.getAttribute('data-tab')).classList.add('on');
+    if(b.getAttribute('data-tab')==='journal') refreshJournal();
+    if(b.getAttribute('data-tab')==='ledger') refreshLedger();
+  });
+
+  $('btn-post').onclick=doPost;
+  $('btn-demo').onclick=runDemo;
+  $('btn-refresh').onclick=refreshLedger;
+  $('btn-check').onclick=checkBalance;
+  $('btn-addcat').onclick=addCat;
+  $('q-period').addEventListener('keydown',function(e){ if(e.key==='Enter') refreshLedger(); });
+  boot();
+})();
+</script>
+</body>
+</html>
