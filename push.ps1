@@ -83,6 +83,7 @@ $filesToPush = @(
     "js/role-admin.js",
     "js/stock-in.js",
     "js/supabase-db.js",
+    "js/hq-foundation.js",
     "js/supabase-sync.js",
     "js/vendor/chart.umd.min.js",
     "js/vendor/supabase.min.js",
@@ -133,7 +134,7 @@ foreach ($relPath in $filesToPush) {
         $cloudSha = $resp.sha
     } catch {}
 
-    $msg = "v5.95 " + $(if ($cloudSha) { "update" } else { "add" }) + " $relPath"
+    $msg = "v5.96 " + $(if ($cloudSha) { "update" } else { "add" }) + " $relPath"
     $body = @{
         message = $msg
         content = $b64
