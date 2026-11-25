@@ -376,17 +376,36 @@
       var chain = 'normal';
       if (r.scenario === 'live_plan' || (catKeys.length === 1 && cats['直播礼品'])) chain = 'live';
       else if (catKeys.indexOf('出团物料') >= 0) chain = 'tour';
-      var flow;
-      if (chain === 'live') {
-        var lstep = (r.status === 'outbound_completed') ? 2 : 1;
-        flow = '<div class="flow"><span class="step ' + (lstep >= 1 ? 'on' : '') + '">主播拟出库·锁定</span><span class="arw">›</span><span class="step ' + (lstep >= 2 ? 'on' : '') + '">销售实际出库</span></div>';
-      } else if (chain === 'tour') {
-        var tstep = st === '待审核' ? 1 : (st === '在途' || st === '部分出库') ? 2 : 3;
-        flow = '<div class="flow"><span class="step ' + (tstep >= 1 ? 'on' : '') + '">审核</span><span class="arw">›</span><span class="step ' + (tstep >= 2 ? 'on' : '') + '">在途</span><span class="arw">›</span><span class="step ' + (tstep >= 3 ? 'on' : '') + '">核销</span></div>';
+      // 按角色展示流程：每个节点标注责任角色，并在卡点行告诉发起人「现在卡在哪、需要谁通过」
+      var FLOW_DEF = {
+        live: [{ n: '主播拟出库', r: '主播' }, { n: '审核', r: '总部' }, { n: '销售出库', r: '销售' }],
+        tour: [{ n: '审核', r: '总部' }, { n: '仓库出库', r: '仓库' }, { n: '核销', r: '总部' }],
+        normal: [{ n: '审核', r: '总部' }, { n: '仓库出库', r: '仓库' }]
+      };
+      var nodes = FLOW_DEF[chain] || FLOW_DEF.normal;
+      var stt = r.status || '';
+      var done;
+      if (stt === 'pending' || stt === 'pending_approval') done = chain === 'live' ? 1 : 0;
+      else if (stt === 'outbound_completed') done = nodes.length;
+      else done = chain === 'live' ? 2 : 1; // approved / pending_outbound / partially_outbounded
+      var me = null;
+      try { me = JSON.parse(localStorage.getItem('currentUser') || 'null'); } catch (e) {}
+      var myRole = me && me.role;
+      var blocker;
+      if (done >= nodes.length) {
+        blocker = '<div class="fr-blocker done">流程已完成</div>';
       } else {
-        var nstep = st === '待审核' ? 1 : 2;
-        flow = '<div class="flow"><span class="step ' + (nstep >= 1 ? 'on' : '') + '">审核</span><span class="arw">›</span><span class="step ' + (nstep >= 2 ? 'on' : '') + '">出库</span></div>';
+        var cur = nodes[done];
+        var mine = (cur.r === '总部' && myRole === 'admin') || (cur.r === '仓库' && myRole === 'warehouse');
+        var verb = cur.n.indexOf('审核') >= 0 ? '审核' : '出库';
+        var prefix = stt === 'partially_outbounded' ? '出库中：' : '卡在：';
+        blocker = '<div class="fr-blocker' + (mine ? ' mine' : '') + '">' + prefix + (mine ? '待你' + verb : '待' + cur.r + verb) + '</div>';
       }
+      var flow = '<div class="flow-role">' + nodes.map(function (nd, i) {
+        var cls = i < done ? ' done' : (i === done ? ' cur' : '');
+        return (i ? '<span class="arw">›</span>' : '') +
+          '<span class="fr-node' + cls + '"><em>' + esc(nd.n) + '</em><small>' + esc(nd.r) + '</small></span>';
+      }).join('') + '</div>' + blocker;
       var act = '<button class="row-act" data-act="rq-view" data-id="' + esc(r.id) + '">查看</button>';
       if (r.status === 'pending' || r.status === 'pending_approval') {
         act = '<button class="row-act" data-act="rq-approve" data-id="' + esc(r.id) + '">审核</button> · ' + act;
