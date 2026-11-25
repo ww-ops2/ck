@@ -57,7 +57,7 @@
     return [];
   }
 
-  var D = { inventory: [], categories: [], purchase: [], stockin: [], requisitions: [], stockout: [], audit: [], users: [] };
+  var D = { inventory: [], categories: [], purchase: [], stockin: [], requisitions: [], stockout: [], audit: [], users: [], returns: [] };
   var loaded = false;
 
   // ---------- 数据加载 ----------
@@ -76,7 +76,8 @@
         safe(SupaDB.getRequisitions()),
         safe(SupaDB.getStockOutRecords()),
         safe(SupaDB.getAuditLogs({ limit: 50 })),
-        safe(SupaDB.getUsers())
+        safe(SupaDB.getUsers()),
+        safe(SupaDB.getNonPurchaseStockIns({}))
       ]);
       D.inventory = res[0] || [];
       D.categories = res[1] || [];
@@ -86,6 +87,7 @@
       D.stockout = res[5] || [];
       D.audit = res[6] || [];
       D.users = res[7] || [];
+      D.returns = res[8] || [];
       loaded = true;
       renderAll();
     } catch (e) {
@@ -101,7 +103,7 @@
   // ---------- 归属聚合 ----------
   function aggregate() {
     var out = {};
-    OWNERS.forEach(function (o) { out[o.key] = { items: 0, stock: 0, value: 0, locked: 0, low: 0, pendingIn: 0, inTransit: 0, pendingAudit: 0, mailPending: 0 }; });
+    OWNERS.forEach(function (o) { out[o.key] = { items: 0, stock: 0, value: 0, locked: 0, low: 0, pendingIn: 0, inTransit: 0, pendingAudit: 0, mailPending: 0, plannedQty: 0, outQty: 0, returnedQty: 0 }; });
     D.inventory.forEach(function (it) {
       var cat = catOf(it);
       var o = OWNERS.find(function (x) { return x.name === cat; });
@@ -119,19 +121,44 @@
       itemsOf(p).forEach(function (it) { if (it.category) cats[it.category] = 1; });
       Object.keys(cats).forEach(function (c) { var o = OWNERS.find(function (x) { return x.name === c; }); if (o) out[o.key].pendingIn += 1; });
     });
+    // 出库单按领用单号累计已出库数量（用于算"主播拟出库未出库=锁定"）
+    var outedByReq = {};
+    D.stockout.forEach(function (s) {
+      if (!s.requisition_id) return;
+      var k = String(s.requisition_id);
+      itemsOf(s).forEach(function (it) { outedByReq[k] = (outedByReq[k] || 0) + n(it.quantity); });
+    });
     D.requisitions.forEach(function (r) {
-      var cats = {};
-      itemsOf(r).forEach(function (it) { if (it.category) cats[it.category] = 1; });
+      var its = itemsOf(r);
+      var cats = {}; its.forEach(function (it) { if (it.category) cats[it.category] = 1; });
       var os = Object.keys(cats).map(function (c) { return OWNERS.find(function (x) { return x.name === c; }); }).filter(Boolean);
       if (r.status === 'pending' || r.status === 'pending_approval') os.forEach(function (o) { out[o.key].pendingAudit += 1; });
       else if (r.status === 'pending_outbound' || r.status === 'partially_outbounded') os.forEach(function (o) { out[o.key].inTransit += 1; });
+      // 直播链路：主播拟出库未实际出库的数量 = 锁定库存
+      var isLivePlan = r.scenario === 'live_plan' || (os.length === 1 && os[0].key === 'live');
+      if (isLivePlan && r.status !== 'outbound_completed' && r.status !== 'withdrawn') {
+        var totalReq = its.reduce(function (a, i) { return a + n(i.quantity); }, 0);
+        var outed = outedByReq[String(r.id)] || 0;
+        var left = Math.max(0, totalReq - outed);
+        os.forEach(function (o) { out[o.key].plannedQty += left; out[o.key].locked += left; });
+      }
     });
     D.stockout.forEach(function (s) {
+      itemsOf(s).forEach(function (it) {
+        var o = OWNERS.find(function (x) { return x.name === it.category; });
+        if (o) out[o.key].outQty += n(it.quantity);
+      });
       if (s.out_type === 'mail' || s.is_mail || (s.remark || '').indexOf('邮寄') >= 0) {
         var cats = {};
         itemsOf(s).forEach(function (it) { if (it.category) cats[it.category] = 1; });
         Object.keys(cats).forEach(function (c) { var o = OWNERS.find(function (x) { return x.name === c; }); if (o && (s.status === 'pending' || s.status === 'pending_ship')) out[o.key].mailPending += 1; });
       }
+    });
+    // 库存退回（特殊入库）：已审核的回流数量按归属累计
+    (D.returns || []).forEach(function (rr) {
+      if (rr.status !== 'approved') return;
+      var o = OWNERS.find(function (x) { return x.name === (rr.category_name || rr.category); });
+      if (o) out[o.key].returnedQty += n(rr.qty);
     });
     return out;
   }
@@ -145,7 +172,7 @@
       var b = agg[o.key];
       var tag = (b.low || b.inTransit || b.pendingAudit) ? '进行中' : '平稳';
       var tagCls = tag === '平稳' ? ' ok' : '';
-      var midLabel = o.key === 'live' ? '锁定' : o.key === 'tour' ? '在途' : o.key === 'admin' ? '低库存' : '待入库';
+      var midLabel = o.key === 'live' ? '锁定待出库' : o.key === 'tour' ? '在途' : o.key === 'admin' ? '低库存' : '待入库';
       var midVal = o.key === 'live' ? b.locked : o.key === 'tour' ? b.inTransit : o.key === 'admin' ? b.low : b.pendingIn;
       var midCls = o.key === 'admin' ? 'yel' : (o.key === 'live' ? 'red' : 'blu');
       return '<div class="own-card ' + o.cls + '">' +
@@ -157,9 +184,9 @@
           '<div><span>库存额</span><b>' + shortMoney(b.value) + '</b></div>' +
         '</div>' +
         '<div class="oc-foot">' +
-          '<span class="st"><i style="background:var(--accent)"></i>待入库 <b>' + b.pendingIn + '</b></span>' +
-          '<span class="st"><i style="background:var(--info)"></i>在途 <b>' + b.inTransit + '</b></span>' +
-          '<span class="st"><i style="background:var(--warning)"></i>待审核 <b>' + b.pendingAudit + '</b></span>' +
+          '<span class="st"><i style="background:var(--accent)"></i>实际出库 <b>' + b.outQty + '</b></span>' +
+          '<span class="st"><i style="background:var(--warning)"></i>锁定待出 <b>' + b.locked + '</b></span>' +
+          '<span class="st"><i style="background:var(--success)"></i>退回入库 <b>' + b.returnedQty + '</b></span>' +
         '</div></div>';
     }).join('');
 
@@ -179,6 +206,27 @@
   function renderInventory() {
     var body = $('inv-body');
     if (!body) return;
+    // 按物品累计"主播拟出库未出库"的锁定量（来自真实领用单 - 出库单）
+    var lockMap = {};
+    var outedByReq = {};
+    D.stockout.forEach(function (s) {
+      if (!s.requisition_id) return;
+      var k = String(s.requisition_id);
+      itemsOf(s).forEach(function (it) { outedByReq[k] = (outedByReq[k] || 0) + n(it.quantity); });
+    });
+    D.requisitions.forEach(function (r) {
+      if (r.status === 'outbound_completed' || r.status === 'withdrawn') return;
+      var isLivePlan = r.scenario === 'live_plan';
+      if (!isLivePlan) return;
+      var outed = outedByReq[String(r.id)] || 0;
+      itemsOf(r).forEach(function (it) {
+        var key = it.code || it.name;
+        var totalReq = n(it.quantity);
+        var perOuted = Math.min(totalReq, outed);
+        outed = Math.max(0, outed - perOuted);
+        lockMap[key] = (lockMap[key] || 0) + Math.max(0, totalReq - perOuted);
+      });
+    });
     if (!D.inventory.length) {
       body.innerHTML = emptyRow(10, '暂无物品，请先在「采购单管理」录入采购并验收入库');
     } else {
@@ -187,8 +235,9 @@
         var st = n(it.stock);
         var ss = n(it.safety_stock || 10);
         var status = st === 0 ? '<span class="tag r">缺货</span>' : st < ss ? '<span class="tag y">低库存</span>' : '<span class="tag g">正常</span>';
+        var lk = lockMap[it.code] || lockMap[it.name] || n(it.locked_qty || it.locked || 0);
         return '<tr><td>' + esc(it.code) + '</td><td>' + esc(it.name) + '</td><td>' + esc(it.brand || '') + ' / ' + esc(it.model || '') + '</td><td>' + esc(it.unit || '') + '</td>' +
-          '<td class="num">' + money(it.unit_price) + '</td><td class="num">' + st + '</td><td class="num">' + n(it.locked_qty || it.locked || 0) + '</td>' +
+          '<td class="num">' + money(it.unit_price) + '</td><td class="num">' + st + '</td><td class="num">' + lk + '</td>' +
           '<td>' + ownBadge(cat) + '</td><td>' + status + '</td><td class="lnk"><button class="row-act" data-act="item-edit" data-id="' + esc(it.id) + '">编辑</button></td></tr>';
       }).join('');
     }
@@ -267,6 +316,29 @@
     }).join('');
   }
 
+  // ---------- 渲染：特殊入库（库存退回） ----------
+  function renderSpecialIn() {
+    var body = $('spt-body');
+    if (!body) return;
+    var list = D.returns || [];
+    if (!list.length) { body.innerHTML = emptyRow(8, '暂无退回入库单，领用后如有剩余物料可新建退回单'); return; }
+    var stMap = { pending: '待审核', approved: '已入库', rejected: '已驳回' };
+    var stCls = { pending: 'y', approved: 'g', rejected: 'r' };
+    body.innerHTML = list.map(function (rr) {
+      var st = stMap[rr.status] || rr.status || '—';
+      var cat = rr.category_name || rr.category || '未分类';
+      var act = '<button class="row-act" data-act="spt-view" data-id="' + esc(rr.id) + '">查看</button>';
+      if (rr.status === 'pending') {
+        act = '<button class="row-act" data-act="spt-approve" data-id="' + esc(rr.id) + '">审核入库</button> · ' +
+          '<button class="row-act" data-act="spt-reject" data-id="' + esc(rr.id) + '">驳回</button> · ' + act;
+      }
+      return '<tr><td class="lnk">' + esc(rr.code) + '</td><td>' + esc((rr.created_at || '').slice(5, 10)) + '</td>' +
+        '<td>' + esc(rr.name || '—') + '</td><td>' + ownBadge(cat) + '</td>' +
+        '<td class="num">' + n(rr.qty) + '</td><td>' + esc(rr.applicant_name || '—') + '</td>' +
+        '<td>' + esc(rr.reason || '—') + '</td><td><span class="tag ' + (stCls[rr.status] || '') + '">' + esc(st) + '</span> ' + act + '</td></tr>';
+    }).join('');
+  }
+
   // ---------- 渲染：领用单 ----------
   function renderRequisition() {
     var body = $('rq-body');
@@ -276,17 +348,33 @@
     body.innerHTML = D.requisitions.map(function (r) {
       var its = itemsOf(r);
       var cats = {}; its.forEach(function (i) { if (i.category) cats[i.category] = 1; });
-      var catStr = Object.keys(cats).map(ownBadge).join(' ') || ownBadge('未分类');
+      var catKeys = Object.keys(cats);
+      var catStr = catKeys.map(ownBadge).join(' ') || ownBadge('未分类');
       var st = stMap[r.status] || r.status || '—';
-      var step = st === '待审核' ? 1 : (st === '在途' || st === '部分出库') ? 2 : 3;
-      var flow = '<div class="flow"><span class="step ' + (step >= 1 ? 'on' : '') + '">审核</span><span class="arw">›</span><span class="step ' + (step >= 2 ? 'on' : '') + '">在途</span><span class="arw">›</span><span class="step ' + (step >= 3 ? 'on' : '') + '">核销</span></div>';
+      // 链路按归属分类：直播=主播拟出库→销售实际出库；出团=审核→在途→核销；常规=审核→出库
+      var chain = 'normal';
+      if (r.scenario === 'live_plan' || (catKeys.length === 1 && cats['直播礼品'])) chain = 'live';
+      else if (catKeys.indexOf('出团物料') >= 0) chain = 'tour';
+      var flow;
+      if (chain === 'live') {
+        var lstep = (r.status === 'outbound_completed') ? 2 : 1;
+        flow = '<div class="flow"><span class="step ' + (lstep >= 1 ? 'on' : '') + '">主播拟出库·锁定</span><span class="arw">›</span><span class="step ' + (lstep >= 2 ? 'on' : '') + '">销售实际出库</span></div>';
+      } else if (chain === 'tour') {
+        var tstep = st === '待审核' ? 1 : (st === '在途' || st === '部分出库') ? 2 : 3;
+        flow = '<div class="flow"><span class="step ' + (tstep >= 1 ? 'on' : '') + '">审核</span><span class="arw">›</span><span class="step ' + (tstep >= 2 ? 'on' : '') + '">在途</span><span class="arw">›</span><span class="step ' + (tstep >= 3 ? 'on' : '') + '">核销</span></div>';
+      } else {
+        var nstep = st === '待审核' ? 1 : 2;
+        flow = '<div class="flow"><span class="step ' + (nstep >= 1 ? 'on' : '') + '">审核</span><span class="arw">›</span><span class="step ' + (nstep >= 2 ? 'on' : '') + '">出库</span></div>';
+      }
       var act = '<button class="row-act" data-act="rq-view" data-id="' + esc(r.id) + '">查看</button>';
       if (r.status === 'pending' || r.status === 'pending_approval') {
         act = '<button class="row-act" data-act="rq-approve" data-id="' + esc(r.id) + '">审核</button> · ' + act;
       } else if (r.status === 'approved' || r.status === 'pending_outbound' || r.status === 'partially_outbounded') {
-        act = '<button class="row-act" data-act="rq-out" data-id="' + esc(r.id) + '">出库</button> · ' + act;
+        var outLabel = chain === 'live' ? '销售出库' : '出库';
+        act = '<button class="row-act" data-act="rq-out" data-id="' + esc(r.id) + '">' + outLabel + '</button> · ' + act;
       }
-      return '<tr><td class="lnk">' + esc(r.code) + '</td><td>' + esc((r.created_at || '').slice(5, 10)) + '</td><td>' + esc(r.applicant || '—') + '</td><td>' + esc(r.tour_name || r.purpose || '—') + '</td>' +
+      var purpose = chain === 'tour' ? (r.tour_name || '—') : (r.purpose || r.remark || '常规出库');
+      return '<tr><td class="lnk">' + esc(r.code) + '</td><td>' + esc((r.created_at || '').slice(5, 10)) + '</td><td>' + esc(r.applicant || '—') + '</td><td>' + esc(purpose) + '</td>' +
         '<td>' + its.length + ' 项</td><td>' + catStr + '</td><td>' + flow + '</td><td class="lnk">' + act + '</td></tr>';
     }).join('');
   }
@@ -453,17 +541,30 @@
         kpiCard('已入库量', inQty + ' <small>件</small>', '', 'g') +
         kpiCard('不入库跳过', skip + ' <small>项</small>', '', 'p');
     }
+    // 特殊入库（退回）
+    var spt = $('spt-kpis');
+    if (spt) {
+      var pendRet = (D.returns || []).filter(function (x) { return x.status === 'pending'; }).length;
+      var aprvRet = (D.returns || []).filter(function (x) { return x.status === 'approved'; }).length;
+      var retQty = (D.returns || []).filter(function (x) { return x.status === 'approved'; }).reduce(function (a, x) { return a + n(x.qty); }, 0);
+      var liveRet = (D.returns || []).filter(function (x) { return x.status === 'approved' && (x.category_name || x.category) === '直播礼品'; }).reduce(function (a, x) { return a + n(x.qty); }, 0);
+      spt.innerHTML = kpiCard('待审核退回', pendRet + ' <small>单</small>', '', 'y') +
+        kpiCard('已入库', aprvRet + ' <small>单</small>', '', 'g') +
+        kpiCard('退回总量', retQty + ' <small>件</small>') +
+        kpiCard('直播礼品退回', liveRet + ' <small>件</small>', '', 'b');
+    }
     // 领用
     var rq = $('rq-kpis');
     if (rq) {
       var audit = D.requisitions.filter(function (r) { return r.status === 'pending' || r.status === 'pending_approval'; }).length;
       var transit = D.requisitions.filter(function (r) { return r.status === 'pending_outbound' || r.status === 'partially_outbounded'; }).length;
-      var doneR = D.requisitions.filter(function (r) { return r.status === 'outbound_completed'; }).length;
-      var locked = D.inventory.reduce(function (a, i) { return a + n(i.locked_qty || i.locked || 0); }, 0);
+      var doneR = D.stockout.filter(function (s) { return s.out_type !== 'mail' && !s.is_mail; }).length;
+      var agg = aggregate();
+      var locked = OWNERS.reduce(function (a, o) { return a + agg[o.key].plannedQty; }, 0);
       rq.innerHTML = kpiCard('待审核', audit + ' <small>单</small>', '', 'y') +
-        kpiCard('在途中', transit + ' <small>单</small>', '', 'b') +
-        kpiCard('已出库', doneR + ' <small>单</small>', '', 'g') +
-        kpiCard('锁定库存', locked + ' <small>件</small>', '', 'r');
+        kpiCard('实际出库', doneR + ' <small>单</small>', '', 'b') +
+        kpiCard('已出库量', OWNERS.reduce(function (a, o) { return a + agg[o.key].outQty; }, 0) + ' <small>件</small>', '', 'g') +
+        kpiCard('主播拟出库锁定', locked + ' <small>件</small>', '', 'r');
     }
     // 出库
     var so = $('so-kpis');
@@ -547,6 +648,7 @@
     renderCategories();
     renderPurchase();
     renderStockIn();
+    renderSpecialIn();
     renderRequisition();
     renderStockOut();
     renderMonthly(currentOwner);
