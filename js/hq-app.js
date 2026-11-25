@@ -57,7 +57,7 @@
     return [];
   }
 
-  var D = { inventory: [], categories: [], purchase: [], stockin: [], requisitions: [], stockout: [], audit: [] };
+  var D = { inventory: [], categories: [], purchase: [], stockin: [], requisitions: [], stockout: [], audit: [], users: [] };
   var loaded = false;
 
   // ---------- 数据加载 ----------
@@ -75,7 +75,8 @@
         safe(SupaDB.getStockInRecords()),
         safe(SupaDB.getRequisitions()),
         safe(SupaDB.getStockOutRecords()),
-        safe(SupaDB.getAuditLogs({ limit: 50 }))
+        safe(SupaDB.getAuditLogs({ limit: 50 })),
+        safe(SupaDB.getUsers())
       ]);
       D.inventory = res[0] || [];
       D.categories = res[1] || [];
@@ -84,6 +85,7 @@
       D.requisitions = res[4] || [];
       D.stockout = res[5] || [];
       D.audit = res[6] || [];
+      D.users = res[7] || [];
       loaded = true;
       renderAll();
     } catch (e) {
@@ -138,13 +140,7 @@
   function renderDashboard(agg) {
     var wrap = $('ownOverview');
     if (!wrap) return;
-    if (D.inventory.length === 0 && D.purchase.length === 0 && D.requisitions.length === 0) {
-      wrap.innerHTML = '<div style="grid-column:1/-1;background:var(--bg-card);border:1.5px dashed var(--border);border-radius:12px;padding:34px;text-align:center;color:var(--text-muted)">' +
-        '<div style="display:flex;justify-content:center;margin-bottom:12px;color:var(--text-muted);opacity:.55"><span class="empty-ic">' + ico('inbox') + '</span></div>' +
-        '<div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:8px">总部还没有数据</div>' +
-        '<div style="font-size:12.5px;line-height:1.9">4 个用途归属已建好（直播礼品 / 出团物料 / 行政物料 / 总部仓库）。<br>请到「采购单管理 / 入库管理 / 领用单管理 / 出库管理」录入带归属的真实单据，这里会自动汇总。<br>不会显示任何演示假数据。</div></div>';
-      return;
-    }
+    // 用户明确要求：保留这套 4 归属卡片结构，数字勾稽真实数据；空库时显示 0，不再整块替换成空白提示。
     wrap.innerHTML = OWNERS.map(function (o) {
       var b = agg[o.key];
       var tag = (b.low || b.inTransit || b.pendingAudit) ? '进行中' : '平稳';
@@ -193,7 +189,7 @@
         var status = st === 0 ? '<span class="tag r">缺货</span>' : st < ss ? '<span class="tag y">低库存</span>' : '<span class="tag g">正常</span>';
         return '<tr><td>' + esc(it.code) + '</td><td>' + esc(it.name) + '</td><td>' + esc(it.brand || '') + ' / ' + esc(it.model || '') + '</td><td>' + esc(it.unit || '') + '</td>' +
           '<td class="num">' + money(it.unit_price) + '</td><td class="num">' + st + '</td><td class="num">' + n(it.locked_qty || it.locked || 0) + '</td>' +
-          '<td>' + ownBadge(cat) + '</td><td>' + status + '</td><td class="lnk">—</td></tr>';
+          '<td>' + ownBadge(cat) + '</td><td>' + status + '</td><td class="lnk"><button class="row-act" data-act="item-edit" data-id="' + esc(it.id) + '">编辑</button></td></tr>';
       }).join('');
     }
     var kp = $('inv-kpis');
@@ -241,8 +237,11 @@
       var catStr = Object.keys(cats).map(ownBadge).join(' ') || ownBadge('未分类');
       var amt = its.reduce(function (a, i) { return a + i.amount; }, 0) || n(p.total_amount);
       var st = statusText[p.status] || p.status || '—';
+      var act = p.status === 'stockin_completed'
+        ? '<button class="row-act" data-act="po-view" data-id="' + esc(p.id) + '">查看</button>'
+        : '<button class="row-act" data-act="po-edit" data-id="' + esc(p.id) + '">编辑</button> · <button class="row-act" data-act="po-stockin" data-id="' + esc(p.id) + '">入库</button>';
       return '<tr><td class="lnk">' + esc(p.code || p.order_no) + '</td><td>' + esc((p.purchase_date || p.created_at || '').slice(5, 10)) + '</td><td>' + esc(p.purchaser || p.creator || '—') + '</td>' +
-        '<td>' + its.length + ' 项</td><td class="num">' + money(amt) + '</td><td>' + catStr + '</td><td><span class="tag ' + (statusCls[p.status] || '') + '">' + esc(st) + '</span></td><td class="lnk">查看</td></tr>';
+        '<td>' + its.length + ' 项</td><td class="num">' + money(amt) + '</td><td>' + catStr + '</td><td><span class="tag ' + (statusCls[p.status] || '') + '">' + esc(st) + '</span></td><td class="lnk">' + act + '</td></tr>';
     }).join('');
   }
 
@@ -256,7 +255,7 @@
       if (p.status === 'stockin_completed') return;
       itemsOf(p).forEach(function (it) {
         var done = n(it.received_qty || it.actual_quantity || 0);
-        rows.push({ po: p.code || p.order_no, it: it, done: done });
+        rows.push({ po: p.code || p.order_no, poId: p.id, it: it, done: done });
       });
     });
     if (!rows.length) { body.innerHTML = emptyRow(7, '暂无待入库明细'); return; }
@@ -264,7 +263,7 @@
       var st = r.done >= r.it.quantity ? '已完成' : r.done > 0 ? '部分入库' : '待入库';
       var cls = st === '已完成' ? 'g' : st === '部分入库' ? 'b' : 'r';
       return '<tr><td>' + esc(r.po) + '</td><td>' + esc(r.it.name) + '</td><td class="num">' + r.it.quantity + '</td><td class="num">' + r.done + '</td>' +
-        '<td>' + ownBadge(r.it.category) + '</td><td><span class="tag ' + cls + '">' + st + '</span></td><td class="lnk">验收入库</td></tr>';
+        '<td>' + ownBadge(r.it.category) + '</td><td><span class="tag ' + cls + '">' + st + '</span></td><td class="lnk"><button class="row-act" data-act="si-accept" data-id="' + esc(r.poId) + '">' + (r.done > 0 ? '继续入库' : '验收入库') + '</button></td></tr>';
     }).join('');
   }
 
@@ -281,8 +280,14 @@
       var st = stMap[r.status] || r.status || '—';
       var step = st === '待审核' ? 1 : (st === '在途' || st === '部分出库') ? 2 : 3;
       var flow = '<div class="flow"><span class="step ' + (step >= 1 ? 'on' : '') + '">审核</span><span class="arw">›</span><span class="step ' + (step >= 2 ? 'on' : '') + '">在途</span><span class="arw">›</span><span class="step ' + (step >= 3 ? 'on' : '') + '">核销</span></div>';
+      var act = '<button class="row-act" data-act="rq-view" data-id="' + esc(r.id) + '">查看</button>';
+      if (r.status === 'pending' || r.status === 'pending_approval') {
+        act = '<button class="row-act" data-act="rq-approve" data-id="' + esc(r.id) + '">审核</button> · ' + act;
+      } else if (r.status === 'approved' || r.status === 'pending_outbound' || r.status === 'partially_outbounded') {
+        act = '<button class="row-act" data-act="rq-out" data-id="' + esc(r.id) + '">出库</button> · ' + act;
+      }
       return '<tr><td class="lnk">' + esc(r.code) + '</td><td>' + esc((r.created_at || '').slice(5, 10)) + '</td><td>' + esc(r.applicant || '—') + '</td><td>' + esc(r.tour_name || r.purpose || '—') + '</td>' +
-        '<td>' + its.length + ' 项</td><td>' + catStr + '</td><td>' + flow + '</td><td class="lnk">查看</td></tr>';
+        '<td>' + its.length + ' 项</td><td>' + catStr + '</td><td>' + flow + '</td><td class="lnk">' + act + '</td></tr>';
     }).join('');
   }
 
@@ -301,7 +306,7 @@
       var st = stMap[s.status] || s.status || '—';
       var stCls = st === '在途' ? 'b' : st === '已签收' ? 'g' : 'y';
       return '<tr><td class="lnk">' + esc(s.code) + '</td><td>' + typeTag + '</td><td>' + esc(its.map(function (i) { return i.name; }).join('、')) + '</td>' +
-        '<td class="num">' + qty + '</td><td>' + esc(s.tracking_no || (isMail ? '待填写' : '—')) + '</td><td>' + ownBadge(cat) + '</td><td><span class="tag ' + stCls + '">' + esc(st) + '</span></td></tr>';
+        '<td class="num">' + qty + '</td><td>' + esc(s.tracking_no || (isMail ? '待填写' : '—')) + '</td><td>' + ownBadge(cat) + '</td><td><span class="tag ' + stCls + '">' + esc(st) + '</span> <button class="row-act" data-act="so-view" data-id="' + esc(s.id) + '">查看</button></td></tr>';
     }).join('');
   }
 
@@ -478,10 +483,66 @@
     }
   }
 
+  // ---------- 渲染：数据分析（真实数据，覆盖设计稿假图表） ----------
+  function renderAnalytics(agg) {
+    var bars = document.querySelector('#mod-analytics .bars');
+    if (bars) {
+      var byMonth = {};
+      D.purchase.forEach(function (p) {
+        var key = String(p.purchase_date || p.created_at || '').slice(0, 7);
+        if (key.length < 7) return;
+        var amt = itemsOf(p).reduce(function (a, i) { return a + n(i.amount); }, 0) || n(p.total_amount);
+        byMonth[key] = (byMonth[key] || 0) + amt;
+      });
+      var keys = Object.keys(byMonth).sort().slice(-6);
+      if (!keys.length) {
+        bars.innerHTML = '<div style="color:var(--text-muted);font-size:12.5px;text-align:center;width:100%;padding-top:55px">暂无采购数据，录入采购单后自动生成趋势</div>';
+      } else {
+        var max = 1;
+        keys.forEach(function (k) { max = Math.max(max, byMonth[k]); });
+        bars.innerHTML = keys.map(function (k) {
+          var h = Math.max(2, Math.round(byMonth[k] / max * 100));
+          return '<div class="bcol"><div class="bstick" style="height:' + h + '%;background:var(--accent)" title="' + k + ' ' + money(byMonth[k]) + '"></div><div class="blab">' + k.slice(5) + '月</div></div>';
+        }).join('');
+      }
+    }
+    var ring = document.querySelector('#mod-analytics .ring'), lg = document.querySelector('#mod-analytics .lg');
+    if (ring && lg) {
+      var vals = OWNERS.map(function (o) { return { o: o, v: agg[o.key].value }; });
+      var total = vals.reduce(function (a, x) { return a + x.v; }, 0);
+      var colors = { live: 'var(--accent)', tour: 'var(--info)', admin: 'var(--purple)', wh: 'var(--success)' };
+      if (total <= 0) {
+        ring.style.background = 'var(--bg-elevated)';
+        lg.innerHTML = '<div style="color:var(--text-muted)">暂无库存数据</div>';
+      } else {
+        ring.style.background = 'conic-gradient(' + vals.map(function (x, i) {
+          var s = vals.slice(0, i).reduce(function (a, y) { return a + y.v / total * 100; }, 0);
+          return colors[x.o.key] + ' ' + s + '% ' + (s + x.v / total * 100) + '%';
+        }).join(',') + ')';
+        lg.innerHTML = vals.map(function (x) { return '<div><i style="background:' + colors[x.o.key] + '"></i>' + x.o.name + ' ' + Math.round(x.v / total * 100) + '%</div>'; }).join('');
+      }
+    }
+  }
+
+  // ---------- 渲染：账号管理（真实数据） ----------
+  function renderAdminUsers() {
+    var body = document.querySelector('#mod-adminuser tbody');
+    if (!body || !D.users) return;
+    if (!D.users.length) { body.innerHTML = emptyRow(6, '暂无账号'); return; }
+    body.innerHTML = D.users.map(function (u) {
+      var role = u.role || 'staff';
+      var cls = role === 'admin' ? 'r' : role === 'warehouse' ? 'y' : 'b';
+      return '<tr><td>' + esc(u.username) + '</td><td>' + esc(u.name || '—') + '</td><td><span class="tag ' + cls + '">' + esc(role) + '</span></td>' +
+        '<td>' + esc(u.subject || 'hq') + '</td><td><span class="tag g">启用</span></td>' +
+        '<td class="lnk"><button class="row-act" data-act="user-perm" data-id="' + esc(u.username) + '">权限</button></td></tr>';
+    }).join('');
+  }
+
   function renderAll() {
     var agg = aggregate();
     renderDashboard(agg);
     renderCharts(agg);
+    renderAnalytics(agg);
     renderInventory();
     renderCategories();
     renderPurchase();
@@ -492,6 +553,7 @@
     renderReports();
     renderHistory();
     renderModuleKPIs();
+    renderAdminUsers();
   }
 
   // ---------- 归属切换（出入库明细）----------
@@ -536,6 +598,9 @@
 
   // ---------- 启动 ----------
   function boot() {
+    // 首屏同步渲染一次（此时云端尚未回来），把 HTML 里的设计稿假数字全部覆盖为真实空态，
+    // 避免"先闪几秒假数据、再变成无数据页"。随后 loadAll 云端数据覆盖。
+    renderAll();
     bindOwnerSwitch();
     renderOperator();
     bindTopButtons();
@@ -550,6 +615,14 @@
     }
     tick(); setInterval(tick, 1000);
   }
+
+  // 暴露给 hq-actions.js：所有按钮操作共用同一份数据与渲染入口，避免两处各自读库。
+  window.HQApp = {
+    D: D, OWNERS: OWNERS, ICONS: ICONS,
+    ico: ico, esc: esc, n: n, money: money, itemsOf: itemsOf, catOf: catOf, ownBadge: ownBadge,
+    loadAll: loadAll, renderAll: renderAll, aggregate: aggregate,
+    setOwner: function (key) { currentOwner = key; renderMonthly(key); }
+  };
 
   // 设计稿的内联脚本已处理模块切换/展开，这里只补数据。等 DOM 就绪。
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
