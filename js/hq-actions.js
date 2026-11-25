@@ -43,6 +43,9 @@
     '#hq-modal-root .hq-pick-row .stk{color:#5e554c;white-space:nowrap}',
     '#hq-modal-root .hq-msg{font-size:13.5px;line-height:1.9;color:#5e554c}',
     '#hq-modal-root .hq-notice{font-size:12px;line-height:1.7;color:#8a5a12;background:#fff9e6;border:1.5px solid #f0d9a8;border-radius:8px;padding:9px 12px;margin:12px 0}',
+    '#hq-modal-root .hqf-grid>select,#hq-modal-root .hqf-grid>input{border:1.5px solid #d4cdc4;border-radius:8px;padding:8px 10px;font-size:12.5px;font-family:inherit;color:#2d2620;background:#fff;width:100%}',
+    '#hq-modal-root .po-group select,#hq-modal-root .po-group input[type=text],#hq-modal-root .po-group input:not([type]){border:1.5px solid #d4cdc4;border-radius:6px;padding:5px 7px;font-size:11.5px;font-family:inherit;width:100%;box-sizing:border-box;background:#fff;color:#2d2620}',
+    '#hq-modal-root .po-group input[type=number]{border:1.5px solid #d4cdc4;border-radius:6px;padding:5px 5px;font-size:11.5px;font-family:inherit;width:100%;box-sizing:border-box;background:#fff;color:#2d2620}',
     '#hq-modal-root .hq-detail{font-size:12.5px;color:#5e554c;line-height:1.95}',
     '#hq-modal-root .hq-detail b{color:#2d2620}',
     '.row-act{background:none;border:none;color:#c23616;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;padding:0 2px}',
@@ -318,7 +321,10 @@
       }
     });
     render();
-    return { get: function () { return rows.filter(function (r) { return String(r.name || '').trim(); }); } };
+    return {
+      get: function () { return rows.filter(function (r) { return String(r.name || '').trim(); }); },
+      addRow: function (row) { rows.push(row); render(); }
+    };
   }
   function attachItemId(items) {
     return items.map(function (it) {
@@ -432,35 +438,137 @@
     }
   }
 
-  // ---------- 采购单 ----------
+  // ---------- 采购单（对齐列车模板 + 总部4归属定制） ----------
+  // 表格列：类别/物品名称/品牌/型号/数量/单位/单价/金额/操作，供应商行选填，小计实时联动
   function editPO(id, btn) {
     var p = id ? findIn(H.D.purchase, id) : null;
     var its = p ? H.itemsOf(p).map(function (x) { return { name: x.name, code: x.code, brand: x.brand, model: x.model, category: x.category, quantity: x.quantity, unit: x.unit, price: x.price, item_id: x.item_id || x.inventory_item_id }; }) : [];
+    var suppliers = [];
+    if (p && p.suppliers) { try { suppliers = typeof p.suppliers === 'string' ? JSON.parse(p.suppliers) : p.suppliers; } catch (e) {} }
     var m = openModal(p ? '编辑采购单 · ' + (p.code || '') : '新建采购单',
-      '<form id="hq-po-form"><div class="hqf-grid">' +
-      field('采购日期', 'purchase_date', p && p.purchase_date || today(), 'date') +
-      field('采购人', 'purchaser', p && p.purchaser || '') +
-      '</div><div class="hq-sec">采购明细 <small style="font-weight:400;color:#a09890">新商品直接填；已有商品点「库存」选择，自动带出品牌 / 型号 / 编码</small></div><div id="hq-po-lines"></div>' +
-      '<div class="hqf-grid" style="margin-top:14px">' + field('备注', 'remark', p && p.remark, 'textarea') + '</div></form>',
-      '<button class="btn" data-hq-cancel>取消</button><button class="btn primary" data-hq-save>' + (p ? '保存修改' : '创建采购单') + '</button>');
-    var ed = linesEditor($('#hq-po-lines', m.root), its.length ? its : [{ name: '', code: '', brand: '', model: '', category: ownNames()[0], quantity: '', unit: '', price: '' }], true);
+      '<form id="hq-po-form">' +
+      '<div class="hqf-grid">' +
+      field('采购日期 *', 'purchase_date', p && p.purchase_date || today(), 'date', { attrs: 'required' }) +
+      field('采购人 *', 'purchaser', p && p.purchaser || (function(){try{var u=JSON.parse(localStorage.getItem('currentUser')||'null');return u&&u.name||'';}catch(e){return '';}})(), 'text', { attrs: 'required placeholder="请输入采购人姓名"' }) +
+      '</div>' +
+      '<div class="hq-sec">采购明细 <small style="font-weight:400;color:#a09890">按用途归属分类，已有商品可从库存选择</small></div>' +
+      '<div id="hq-supplier-rows"></div>' +
+      '<button type="button" class="btn" id="hq-add-supplier" style="margin-top:10px">+ 添加供应商</button>' +
+      '<div class="hqf-grid" style="margin-top:14px">' + field('备注说明', 'remark', p && p.remark, 'textarea', { attrs: 'placeholder="选填"' }) + '</div></form>',
+      '<button class="btn" data-hq-cancel>取消</button><button class="btn primary" data-hq-save>' + (p ? '保存修改' : '提交采购单') + '</button>');
+    var host = $('#hq-supplier-rows', m.root);
+    var groups = [];
+    function makeGroup(supplierName, items) {
+      var g = { supplier: supplierName || '', items: JSON.parse(JSON.stringify(items || [])) };
+      groups.push(g);
+      return g;
+    }
+    if (suppliers.length) suppliers.forEach(function (s, i) {
+      var nm = typeof s === 'string' ? s : (s.name || '');
+      var its2 = its.filter(function (x) { return (x.supplier || '') === nm; });
+      makeGroup(nm, its2);
+    });
+    if (!groups.length) makeGroup('', its.length ? its : [emptyPorow()]);
+    function emptyPorow() { return { name: '', code: '', brand: '', model: '', category: ownNames()[0], quantity: '', unit: '', price: '' }; }
+    function render() {
+      host.innerHTML = groups.map(function (g, gi) {
+        var rows = g.items.length ? g.items : [emptyPorow()];
+        var subtotal = g.items.reduce(function (a, r) { return a + num(r.quantity) * num(r.price); }, 0);
+        var body = rows.map(function (r, ri) {
+          return '<tr data-g="' + gi + '" data-r="' + ri + '">' +
+            '<td><select data-k="category">' + ownOpts(r.category) + '</select></td>' +
+            '<td><input data-k="name" list="hq-po-names" value="' + esc(r.name || '') + '" placeholder="物品名称" required></td>' +
+            '<td><input data-k="brand" value="' + esc(r.brand || '') + '" placeholder="品牌"></td>' +
+            '<td><input data-k="model" value="' + esc(r.model || '') + '" placeholder="型号"></td>' +
+            '<td><input data-k="quantity" type="number" min="0" step="0.01" value="' + esc(r.quantity == null ? '' : r.quantity) + '" placeholder="数量" required></td>' +
+            '<td><input data-k="unit" value="' + esc(r.unit || '') + '" placeholder="单位"></td>' +
+            '<td><input data-k="price" type="number" min="0" step="0.01" value="' + esc(r.price == null ? '' : r.price) + '" placeholder="单价"></td>' +
+            '<td class="num po-amt">' + (num(r.quantity) * num(r.price)).toFixed(2) + '</td>' +
+            '<td><button type="button" class="hq-del" data-del="' + gi + ':' + ri + '" title="删除该行">×</button></td></tr>';
+        }).join('');
+        return '<div class="po-group" data-gi="' + gi + '" style="border:1.5px solid #e8e2da;background:#faf7f2;border-radius:12px;padding:13px;margin-bottom:13px">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">' +
+          '<label style="font-size:11px;color:#5e554c;font-weight:600">供应商名称（选填）</label>' +
+          '<button type="button" class="btn" data-delg="' + gi + '" style="padding:3px 10px;color:#c0392b">删除</button></div>' +
+          '<input class="supplier-name" value="' + esc(g.supplier || '') + '" placeholder="请输入供应商名称（可不填）" style="width:100%;box-sizing:border-box;border:1.5px solid #d4cdc4;border-radius:7px;padding:7px 10px;font-size:12px;margin-bottom:10px">' +
+          '<datalist id="hq-po-names">' + (H.D.inventory || []).map(function (x) { return '<option value="' + esc(x.name) + '">'; }).join('') + '</datalist>' +
+          '<div class="tw"><table style="width:100%"><thead><tr><th>类别</th><th>物品名称</th><th>品牌</th><th>型号</th><th class="num">数量</th><th>单位</th><th class="num">单价(元)</th><th class="num">金额(元)</th><th>操作</th></tr></thead><tbody>' + body + '</tbody>' +
+          '<tfoot><tr style="background:#f0e9df;font-weight:700"><td colspan="7" style="text-align:right">小计</td><td class="num po-subtotal">' + subtotal.toFixed(2) + '</td><td></td></tr></tfoot></table></div>' +
+          '<div style="display:flex;gap:8px;margin-top:9px">' +
+          '<button type="button" class="btn" data-addrow="' + gi + '">+ 添加新物品</button>' +
+          '<button type="button" class="btn" data-pick="' + gi + '" style="border-color:#c23616;color:#c23616">从库存中选择</button></div>' +
+          '</div>';
+      }).join('');
+    }
+    function syncCell(tr) {
+      var gi = Number(tr.getAttribute('data-g')), ri = Number(tr.getAttribute('data-r'));
+      var k = tr.getAttribute('data-k'); // handled by input listener below via target
+    }
+    host.addEventListener('input', function (e) {
+      var t = e.target, tr = t.closest('tr[data-g]'); if (!tr || !t.hasAttribute('data-k')) return;
+      var gi = Number(tr.getAttribute('data-g')), ri = Number(tr.getAttribute('data-r'));
+      groups[gi].items[ri][t.getAttribute('data-k')] = t.value;
+      if (t.getAttribute('data-k') === 'quantity' || t.getAttribute('data-k') === 'price') {
+        var row = groups[gi].items[ri];
+        tr.querySelector('.po-amt').textContent = (num(row.quantity) * num(row.price)).toFixed(2);
+        var sub = 0; groups[gi].items.forEach(function (x) { sub += num(x.quantity) * num(x.price); });
+        tr.closest('.po-group').querySelector('.po-subtotal').textContent = sub.toFixed(2);
+      }
+      if (t.getAttribute('data-k') === 'name') {
+        var hit = (H.D.inventory || []).find(function (x) { return x.name === t.value; });
+        if (hit) {
+          ['brand', 'model', 'unit', 'price', 'category'].forEach(function (k) {
+            var val = k === 'category' ? (hit.category_name || hit.category) : (k === 'price' ? hit.unit_price : hit[k]);
+            if (val) { groups[gi].items[ri][k] = val; var inp = tr.querySelector('[data-k="' + k + '"]'); if (inp) inp.value = val; }
+          });
+        }
+      }
+    });
+    host.addEventListener('change', function (e) {
+      var t = e.target, tr = t.closest('tr[data-g]'); if (!tr || !t.hasAttribute('data-k')) return;
+      var gi = Number(tr.getAttribute('data-g')), ri = Number(tr.getAttribute('data-r'));
+      groups[gi].items[ri][t.getAttribute('data-k')] = t.value;
+    });
+    host.addEventListener('click', function (e) {
+      var add = e.target.closest('[data-addrow]');
+      if (add) { groups[Number(add.getAttribute('data-addrow'))].items.push(emptyPorow()); render(); return; }
+      var pick = e.target.closest('[data-pick]');
+      if (pick) {
+        var gi = Number(pick.getAttribute('data-pick'));
+        openInvPicker(function (item) {
+          groups[gi].items.push({ name: item.name, code: item.code, brand: item.brand, model: item.model, category: item.category_name || item.category, quantity: '', unit: item.unit, price: item.unit_price, item_id: item.id });
+          render();
+        });
+        return;
+      }
+      var del = e.target.closest('[data-del]');
+      if (del) { var a = del.getAttribute('data-del').split(':'); groups[Number(a[0])].items.splice(Number(a[1]), 1); render(); return; }
+      var delg = e.target.closest('[data-delg]');
+      if (delg) { groups.splice(Number(delg.getAttribute('data-delg')), 1); if (!groups.length) makeGroup('', [emptyPorow()]); render(); return; }
+    });
+    $('#hq-add-supplier', m.root).onclick = function () { makeGroup('', [emptyPorow()]); render(); };
+    render();
     $('[data-hq-cancel]', m.root).onclick = m.close;
     $('[data-hq-save]', m.root).onclick = function () {
       var b = this, f = $('#hq-po-form', m.root); if (!f.reportValidity()) return;
-      var v = formValues(f), rows = attachItemId(ed.get());
-      if (!rows.length) { toast('请至少填写一行采购明细', 'err'); return; }
-      // 编码唯一化（对齐列车 reconcileItemCodes）：重复编码自动加 -2/-3 后缀，防撞号
+      host.querySelectorAll('.po-group').forEach(function (gr, gi) { if (groups[gi]) groups[gi].supplier = gr.querySelector('.supplier-name').value; });
+      var allRows = [];
+      groups.forEach(function (g) { g.items.forEach(function (r) { if (String(r.name || '').trim()) allRows.push(Object.assign({}, r, { supplier: g.supplier })); }); });
+      if (!allRows.length) { toast('请至少填写一行采购明细', 'err'); return; }
       var seen = {}, seq = {};
-      rows.forEach(function (r) {
+      allRows.forEach(function (r) {
         var base = String(r.code || '').trim();
         if (!base || !seen[base]) { if (base) seen[base] = true; return; }
         var n = (seq[base] = (seq[base] || 1) + 1);
         r.code = base + '-' + n;
       });
+      var uniq = [];
+      allRows.forEach(function (r) { if (r.supplier && uniq.indexOf(r.supplier) < 0) uniq.push(r.supplier); });
       var payload = {
-        purchase_date: v.purchase_date, purchaser: v.purchaser, remark: v.remark, suppliers: [],
-        items: rows.map(function (r) {
-          return { name: r.name, code: r.code, brand: r.brand, model: r.model, category: r.category, quantity: num(r.quantity), unit: r.unit, price: num(r.price), amount: Number((num(r.quantity) * num(r.price)).toFixed(2)), item_id: r.item_id };
+        purchase_date: f.purchase_date.value, purchaser: f.purchaser.value, remark: f.remark.value,
+        suppliers: uniq.map(function (name) { return { name: name }; }),
+        items: allRows.map(function (r) {
+          return { name: r.name, code: r.code, brand: r.brand, model: r.model, category: r.category, supplier: r.supplier, quantity: num(r.quantity), unit: r.unit, price: num(r.price), amount: Number((num(r.quantity) * num(r.price)).toFixed(2)), item_id: r.item_id };
         })
       };
       payload.total_amount = payload.items.reduce(function (a, i) { return a + i.amount; }, 0);
@@ -577,12 +685,42 @@
       '</div>' +
       '<div class="hq-notice" id="hq-rq-tip"></div>' +
       '<div class="hqf-grid" id="hq-rq-chain-fields"></div>' +
-      '<div class="hq-sec">领用明细</div><div id="hq-rq-lines"></div>' +
+      '<div class="hq-sec">添加出库物品</div>' +
+      '<div class="hqf-grid"><select id="rq-pick-cat"><option value="">全部分类</option>' + cats.map(function (c) { return '<option>' + esc(c) + '</option>'; }).join('') + '</select>' +
+      '<input id="rq-pick-kw" placeholder="搜索名称/编码/型号"></div>' +
+      '<div id="rq-pick-list" style="border:1.5px solid #e8e2da;border-radius:10px;margin-top:8px;max-height:190px;overflow:auto"></div>' +
+      '<div class="hq-sec">已选物品</div><div id="hq-rq-lines"></div>' +
       '<div class="hqf-grid" style="margin-top:14px">' + field('备注', 'remark', '', 'textarea') + '</div></form>',
       '<button class="btn" data-hq-cancel>取消</button><button class="btn primary" data-hq-save>提交领用单</button>');
-    var ed = linesEditor($('#hq-rq-lines', m.root), [{ name: '', code: '', category: first, quantity: '', unit: '' }], false);
+    var ed = linesEditor($('#hq-rq-lines', m.root), [], false);
     var catSel = $('[name="category"]', m.root);
     var tip = $('#hq-rq-tip', m.root), fields = $('#hq-rq-chain-fields', m.root);
+    // 库存物品选择器（对齐列车：分类筛选 + 搜索 + 库存量 + 添加按钮，可重复添加）
+    var pickCat = $('#rq-pick-cat', m.root), pickKw = $('#rq-pick-kw', m.root), pickList = $('#rq-pick-list', m.root);
+    function renderPickList() {
+      var c = pickCat.value, kw = String(pickKw.value || '').trim().toLowerCase();
+      var items = (H.D.inventory || []).filter(function (x) {
+        var xc = x.category_name || x.category || '未分类';
+        if (c && xc !== c) return false;
+        if (!kw) return true;
+        return [x.name, x.code, x.brand, x.model].some(function (v) { return String(v || '').toLowerCase().indexOf(kw) >= 0; });
+      });
+      pickList.innerHTML = items.length ? items.map(function (x, i) {
+        var xc = x.category_name || x.category || '未分类';
+        return '<div class="hq-pick-row"><span><b>' + esc(x.name) + '</b> <small>' + esc(x.code || '无编码') + ' · ' + esc(x.brand || '') + ' ' + esc(x.model || '') + ' · ' + esc(xc) + '</small></span>' +
+          '<span class="stk">库存 ' + num(x.stock) + esc(x.unit || '') + '</span>' +
+          '<button type="button" class="hq-pick" data-addinv="' + esc(x.id) + '">+ 添加</button></div>';
+      }).join('') : '<div class="hq-msg" style="padding:14px;text-align:center">未找到匹配的库存物品</div>';
+    }
+    pickCat.onchange = renderPickList; pickKw.oninput = renderPickList;
+    pickList.addEventListener('click', function (e) {
+      var ab = e.target.closest('[data-addinv]'); if (!ab) return;
+      var item = (H.D.inventory || []).find(function (x) { return String(x.id) === ab.getAttribute('data-addinv'); });
+      if (!item) return;
+      ed.addRow({ name: item.name, code: item.code, brand: item.brand, model: item.model, category: catSel.value, quantity: '', unit: item.unit, item_id: item.id });
+      toast('已添加 ' + item.name + ' 到已选物品');
+    });
+    renderPickList();
     function renderChain() {
       var cat = catSel.value, info = chainOf(cat);
       tip.textContent = info.tip;
@@ -761,42 +899,136 @@
     };
   }
 
-  // ---------- 特殊入库（库存退回） ----------
+  // ---------- 特殊入库（库存退回）—— 出团物料关联领用单 ----------
   function newReturn(btn) {
     var cats = ownNames().filter(function (x) { return x !== '未分类'; });
     var m = openModal('新建退回入库单',
-      '<form id="hq-return-form"><div class="hqf-grid">' +
-      field('退回物品', 'name', '', 'text', { attrs: 'required list="hq-ret-names" placeholder="选择库存物品或输入名称"' }) +
+      '<form id="hq-return-form">' +
+      '<div class="hqf-grid">' +
+      field('退回方式', 'mode', 'linked', 'select', { options: [{ v: 'linked', t: '关联领用单退回（出团物料）' }, { v: 'free', t: '普通物品退回' }] }) +
+      field('用途归属', 'category', '出团物料', 'select', { options: cats }) +
+      '</div>' +
+      '<div id="hq-ret-linked">' +
+      '<div class="hqf-grid" style="margin-top:10px">' +
+      field('筛选团期', 'tour', '', 'select', { options: ['全部团期'] }) +
+      field('选择领用单', 'req', '', 'select', { options: ['请先选择团期'] }) +
+      '</div>' +
+      '<div id="hq-ret-preview" style="margin-top:10px;border:1.5px dashed #d4cdc4;border-radius:10px;padding:12px;min-height:52px;color:#a09890;font-size:12px">选择领用单后可预览明细，并勾选要退回的物品与数量</div>' +
+      '</div>' +
+      '<div id="hq-ret-free" style="display:none;margin-top:10px" class="hqf-grid">' +
+      field('退回物品', 'name', '', 'text', { attrs: 'list="hq-ret-names" placeholder="选择库存物品或输入名称"' }) +
       '<datalist id="hq-ret-names">' + (H.D.inventory || []).map(function (x) { return '<option value="' + esc(x.name) + '">'; }).join('') + '</datalist>' +
       field('物品编码', 'code', '', 'text') +
-      field('用途归属', 'category', cats[0], 'select', { options: cats }) +
-      field('退回数量', 'qty', '', 'number', { attrs: 'required min="0.01" step="0.01" placeholder="数量"' }) +
+      field('退回数量', 'qty', '', 'number', { attrs: 'min="0.01" step="0.01" placeholder="数量"' }) +
       field('单位', 'unit', '', 'text') +
+      '</div>' +
+      '<div class="hqf-grid" style="margin-top:12px">' +
       field('申请人', 'applicant', '', 'text', { attrs: 'required placeholder="退回经办人"' }) +
-      '</div><div class="hqf-grid" style="margin-top:12px">' + field('退回原因', 'reason', '', 'textarea', { attrs: 'required placeholder="例如：直播后未发出的礼品退回 / 出团剩余物料退回"' }) + '</div>' +
+      field('退回原因', 'reason', '', 'text', { attrs: 'required placeholder="例如：团后剩余物料退回"' }) +
+      '</div>' +
       '<div class="hq-notice">退回单提交后为「待审核」，审核通过才回补库存；入库成本按物品当前加权均价计，均价不变。</div></form>',
       '<button class="btn" data-hq-cancel>取消</button><button class="btn primary" data-hq-save>提交退回单</button>');
     var f = $('#hq-return-form', m.root);
+    var modeSel = $('[name="mode"]', f), catSel = $('[name="category"]', f);
+    var tourSel = $('[name="tour"]', f), reqSel = $('[name="req"]', f), preview = $('#hq-ret-preview', m.root);
+    var selectedReq = null;
+    // 已出库量按领用单统计（按 code/name）
+    function outedMap(reqId) {
+      var mp = {};
+      (H.D.stockout || []).forEach(function (s) {
+        if (String(s.requisition_id) !== String(reqId)) return;
+        H.itemsOf(s).forEach(function (it) { var k = it.code || it.name; mp[k] = (mp[k] || 0) + num(it.quantity); });
+      });
+      return mp;
+    }
+    function rebuildTours() {
+      var tours = {};
+      (H.D.requisitions || []).forEach(function (r) {
+        if (r.status === 'withdrawn') return;
+        var its = H.itemsOf(r);
+        var cat = its[0] && its[0].category;
+        if (catSel.value === '出团物料' && !r.tour_name) return;
+        if (cat && cat !== catSel.value) return;
+        if (r.tour_name) tours[r.tour_name] = 1;
+      });
+      var tl = Object.keys(tours);
+      tourSel.innerHTML = '<option value="">全部' + (catSel.value === '出团物料' ? '团期' : '单据') + '</option>' + tl.map(function (t) { return '<option>' + esc(t) + '</option>'; }).join('');
+      rebuildReqs();
+    }
+    function rebuildReqs() {
+      var tour = tourSel.value;
+      var list = (H.D.requisitions || []).filter(function (r) {
+        if (r.status === 'withdrawn') return false;
+        var its = H.itemsOf(r);
+        var cat = its[0] && its[0].category;
+        if (cat && cat !== catSel.value) return false;
+        if (catSel.value === '出团物料' && tour && r.tour_name !== tour) return false;
+        return true;
+      });
+      reqSel.innerHTML = list.length ? '<option value="">请选择领用单</option>' + list.map(function (r) {
+        return '<option value="' + esc(r.id) + '">' + esc(r.code) + ' · ' + esc(r.tour_name || r.applicant || '') + ' · ' + esc((r.created_at || '').slice(5, 10)) + '</option>';
+      }).join('') : '<option value="">该团期暂无领用单</option>';
+      selectedReq = null; preview.innerHTML = '选择领用单后可预览明细，并勾选要退回的物品与数量';
+    }
+    function renderPreview() {
+      var r = selectedReq; if (!r) return;
+      var its = H.itemsOf(r), outed = outedMap(r.id);
+      if (!its.length) { preview.innerHTML = '该领用单无明细'; return; }
+      preview.innerHTML = '<div style="font-weight:700;color:#2d2620;margin-bottom:8px">领用单 ' + esc(r.code) + ' · ' + esc(r.tour_name || r.applicant || '') + ' · 明细预览</div>' +
+        '<table style="width:100%;font-size:11.5px;border-collapse:collapse"><thead><tr style="background:#f0e9df"><th style="text-align:left;padding:5px">退?</th><th style="text-align:left;padding:5px">物品</th><th style="padding:5px">领用</th><th style="padding:5px">已出库</th><th style="padding:5px">可退回</th><th style="padding:5px">退回数量</th></tr></thead><tbody>' +
+        its.map(function (it, i) {
+          var total = num(it.quantity), od = outed[it.code || it.name] || 0, left = Math.max(0, total - od);
+          return '<tr><td style="padding:4px"><input type="checkbox" data-retck="' + i + '"' + (left > 0 ? '' : ' disabled') + '></td>' +
+            '<td style="padding:4px">' + esc(it.name) + '</td><td style="text-align:center;padding:4px">' + total + '</td>' +
+            '<td style="text-align:center;padding:4px">' + od + '</td><td style="text-align:center;padding:4px">' + left + '</td>' +
+            '<td style="padding:4px"><input type="number" data-retqty="' + i + '" min="0" max="' + left + '" step="0.01" value="' + left + '" style="width:74px;border:1px solid #d4cdc4;border-radius:6px;padding:4px"></td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+    function switchMode() {
+      var linked = modeSel.value === 'linked';
+      $('#hq-ret-linked', m.root).style.display = linked ? '' : 'none';
+      $('#hq-ret-free', m.root).style.display = linked ? 'none' : '';
+      if (linked) rebuildTours();
+    }
+    modeSel.onchange = switchMode;
+    catSel.onchange = switchMode;
+    tourSel.onchange = rebuildReqs;
+    reqSel.onchange = function () { selectedReq = findIn(H.D.requisitions || [], reqSel.value); renderPreview(); };
+    switchMode();
+    // 普通模式：物品名带出编码/单位
     var nameInput = $('[name="name"]', f);
-    nameInput.onchange = function () {
+    if (nameInput) nameInput.onchange = function () {
       var hit = (H.D.inventory || []).find(function (x) { return x.name === nameInput.value; });
-      if (hit) {
-        $('[name="code"]', f).value = hit.code || '';
-        $('[name="unit"]', f).value = hit.unit || '';
-        var cat = hit.category_name || hit.category;
-        if (cat && Array.prototype.some.call($('[name="category"]', f).options, function (o) { return o.value === cat; })) $('[name="category"]', f).value = cat;
-      }
+      if (hit) { $('[name="code"]', f).value = hit.code || ''; $('[name="unit"]', f).value = hit.unit || ''; }
     };
     $('[data-hq-cancel]', m.root).onclick = m.close;
     $('[data-hq-save]', m.root).onclick = function () {
       var b = this; if (!f.reportValidity()) return;
       var v = formValues(f);
+      var linked = modeSel.value === 'linked';
+      var jobs = [];
+      if (linked) {
+        if (!selectedReq) { toast('请选择要退回的领用单', 'err'); return; }
+        var its = H.itemsOf(selectedReq), outed = outedMap(selectedReq.id), picked = 0;
+        its.forEach(function (it, i) {
+          var ck = $('[data-retck="' + i + '"]', preview), qi = $('[data-retqty="' + i + '"]', preview);
+          if (!ck || !ck.checked) return;
+          var q = num(qi && qi.value), total = num(it.quantity), od = outed[it.code || it.name] || 0, left = Math.max(0, total - od);
+          if (q <= 0) return;
+          if (q > left) { toast(it.name + ' 退回数量超过可退回量 ' + left, 'err'); return; }
+          picked++;
+          jobs.push({ code: it.code, name: it.name, category: catSel.value, unit: it.unit, qty: q, reason: '团期物料退回 / 领用单 ' + selectedReq.code + (v.reason ? ' / ' + v.reason : '') + ' / 申请人：' + v.applicant });
+        });
+        if (!picked) { toast('请至少勾选一项并填写退回数量', 'err'); return; }
+      } else {
+        if (!v.name || num(v.qty) <= 0) { toast('请填写退回物品与数量', 'err'); return; }
+        jobs.push({ code: v.code, name: v.name, category: v.category, unit: v.unit, qty: num(v.qty), reason: (v.reason || '') + ' / 申请人：' + v.applicant });
+      }
       busy(b, '提交中', true);
-      Promise.resolve(SupaDB.createNonPurchaseStockIn({
-        code: v.code, name: v.name, category: v.category, unit: v.unit,
-        qty: num(v.qty), reason: v.reason + ' / 申请人：' + v.applicant, price: 0
-      })).then(function (r) {
-        m.close(); toast('退回单已提交：' + (r && r.code || '') + '（待审核）'); H.loadAll();
+      Promise.all(jobs.map(function (j) {
+        return SupaDB.createNonPurchaseStockIn({ code: j.code, name: j.name, category: j.category, unit: j.unit, qty: j.qty, reason: j.reason, price: 0 });
+      })).then(function (rs) {
+        m.close(); toast('退回单已提交 ' + rs.length + ' 张（待审核）'); H.loadAll();
       }).catch(function (e) { busy(b, null, false); toast('提交失败：' + (e && e.message || e), 'err'); });
     };
   }
@@ -960,6 +1192,80 @@
       .catch(function (e) { toast('设置保存失败：' + (e && e.message || e), 'err'); });
   }
 
+  // ---------- 仪表盘数字下钻 ----------
+  var OWN_NAME = { live: '直播礼品', tour: '出团物料', admin: '行政物料', wh: '总部仓库' };
+  function drillDown(kind, ownerKey) {
+    var own = OWN_NAME[ownerKey] || '全部归属';
+    var rows = [], title = '', note = '';
+    if (kind === 'locked') {
+      // 直播拟出库锁定：逐单逐场列出
+      title = '锁定待出库明细 · ' + own;
+      note = '主播已拟出库、尚未由销售实际出库的物料。锁定数量 = 申请量 − 已出库量。';
+      var outedByReq = {};
+      (H.D.stockout || []).forEach(function (s) {
+        if (!s.requisition_id) return;
+        var k = String(s.requisition_id);
+        H.itemsOf(s).forEach(function (it) { outedByReq[k] = (outedByReq[k] || 0) + num(it.quantity); });
+      });
+      (H.D.requisitions || []).forEach(function (r) {
+        if (r.status === 'outbound_completed' || r.status === 'withdrawn') return;
+        var its = H.itemsOf(r);
+        var hit = its.filter(function (it) { return !ownerKey || it.category === own; });
+        if (!hit.length) return;
+        var isLive = r.scenario === 'live_plan' || (hit[0] && hit[0].category === '直播礼品');
+        if (ownerKey === 'live' && !isLive) return;
+        var outed = outedByReq[String(r.id)] || 0;
+        var session = (r.purpose || r.remark || '').replace(/归属：.*/, '').trim() || '未命名场次';
+        hit.forEach(function (it) {
+          var left = Math.max(0, num(it.quantity) - outed);
+          outed = Math.max(0, outed - num(it.quantity));
+          if (left <= 0) return;
+          rows.push({ cells: [esc(r.code || ''), esc(session), esc(r.applicant || '—'), esc(it.name), num(it.quantity).toFixed(0), left.toFixed(0), esc(it.unit || '')] });
+        });
+      });
+    } else if (kind === 'out') {
+      // 实际出库：逐单列出，直播礼品含中奖邮寄
+      title = '实际出库明细 · ' + own;
+      note = '已实际发出的物料，按出库单统计；直播礼品含中奖邮寄出库。';
+      (H.D.stockout || []).forEach(function (s) {
+        var isMail = s.out_type === 'mail' || s.is_mail || (s.remark || '').indexOf('邮寄') >= 0;
+        H.itemsOf(s).forEach(function (it) {
+          if (ownerKey && it.category !== own) return;
+          rows.push({ cells: [esc(s.code || ''), esc((s.stockout_date || '').slice(5, 10)), isMail ? '中奖邮寄' : '领用出库', esc(it.name), num(it.quantity).toFixed(0), esc(it.unit || ''), esc(s.tracking_no || (isMail ? '待填写' : '—'))] });
+        });
+      });
+    } else if (kind === 'returned') {
+      title = '退回入库明细 · ' + own;
+      note = '领用/邮寄后剩余物料退回，审核通过已回补库存的流水。';
+      (H.D.returns || []).filter(function (r) { return r.status === 'approved'; }).forEach(function (r) {
+        if (ownerKey && (r.category_name || r.category) !== own) return;
+        rows.push({ cells: [esc(r.code || ''), esc((r.created_at || '').slice(5, 10)), esc(r.name || ''), esc(r.reason || '—'), num(r.qty).toFixed(0), esc(r.applicant_name || '—'), esc(r.remark || '—')] });
+      });
+    }
+    var heads;
+    if (kind === 'locked') heads = ['领用单号', '直播场次', '主播', '物料', '拟出库量', '锁定待出', '单位'];
+    else if (kind === 'out') heads = ['出库单号', '日期', '出库类型', '物料', '数量', '单位', '快递单号'];
+    else heads = ['退回单号', '日期', '物料', '退回原因', '数量', '申请人', '备注'];
+    var body = rows.length
+      ? '<div class="tw"><table><thead><tr>' + heads.map(function (h) { return '<th>' + h + '</th>'; }).join('') + '</tr></thead><tbody>' +
+        rows.map(function (r) { return '<tr>' + r.cells.map(function (c, i) { return '<td' + (i >= 4 && i <= 5 ? ' class="num"' : '') + '>' + c + '</td>'; }).join('') + '</tr>'; }).join('') +
+        '</tbody></table></div>'
+      : '<div class="hq-msg" style="text-align:center;padding:24px 0">暂无' + esc(title.replace(/明细.*/, '')) + '记录</div>';
+    var foot = '<button class="btn" data-hq-cancel>关闭</button>';
+    if (kind === 'out' || kind === 'returned') foot = '<button class="btn" data-hq-goto-monthly style="margin-right:auto">查看出入库明细 ›</button>' + foot;
+    var m = openModal(title,
+      '<div class="hq-notice">' + esc(note) + '</div>' + body,
+      foot);
+    $('[data-hq-cancel]', m.root).onclick = m.close;
+    var go = $('[data-hq-goto-monthly]', m.root);
+    if (go) go.onclick = function () {
+      m.close();
+      if (window.HQApp && HQApp.setOwner) HQApp.setOwner(ownerKey || 'all');
+      var nav = document.querySelector('.nav-item[data-mod="monthly"]');
+      if (nav) nav.click();
+    };
+  }
+
   // ---------- 事件分发 ----------
   var ACTS = {
     'item-edit': function (id, b) { editItem(id, b); },
@@ -977,6 +1283,8 @@
     'user-perm': function (id) { userPerm(id); }
   };
   document.addEventListener('click', function (e) {
+    var drill = e.target.closest('[data-drill]');
+    if (drill) { e.preventDefault(); drillDown(drill.getAttribute('data-drill'), drill.getAttribute('data-own')); return; }
     var row = e.target.closest('.row-act');
     if (row) {
       e.preventDefault(); var fn = ACTS[row.getAttribute('data-act')];
