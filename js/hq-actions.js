@@ -42,6 +42,7 @@
     '#hq-modal-root .hq-pick-row small{color:#a09890;font-size:11px}',
     '#hq-modal-root .hq-pick-row .stk{color:#5e554c;white-space:nowrap}',
     '#hq-modal-root .hq-msg{font-size:13.5px;line-height:1.9;color:#5e554c}',
+    '#hq-modal-root .hq-notice{font-size:12px;line-height:1.7;color:#8a5a12;background:#fff9e6;border:1.5px solid #f0d9a8;border-radius:8px;padding:9px 12px;margin:12px 0}',
     '#hq-modal-root .hq-detail{font-size:12.5px;color:#5e554c;line-height:1.95}',
     '#hq-modal-root .hq-detail b{color:#2d2620}',
     '.row-act{background:none;border:none;color:#c23616;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;padding:0 2px}',
@@ -555,28 +556,81 @@
     };
   }
 
-  // ---------- 领用单 ----------
+  // ---------- 领用单（按用途归属分链路） ----------
+  // 直播礼品：主播拟出库(锁定) → 销售实际出库；出团物料：团期必填 → 领用出库 → 核销；行政/仓库：常规出库
+  var CHAIN_INFO = {
+    '直播礼品': { key: 'live_plan', label: '直播双链路', tip: '主播拟出库后库存进入「锁定待出」状态，实际出库由销售角色在「出库管理」完成。团期无需填写。', applicant: '主播姓名' },
+    '出团物料': { key: 'tour', label: '团期领用', tip: '出团物料必须填写团期名称与团期日期，领用后按团期核销。', applicant: '领用人（导游）' },
+    '行政物料': { key: 'normal', label: '常规出库', tip: '行政物料属常规物品出库，无需团期，审核后领用出库即可。', applicant: '领用人' },
+    '总部仓库': { key: 'normal', label: '常规出库', tip: '总部仓库物料属常规出库，无需团期，审核后领用出库即可。', applicant: '领用人' }
+  };
+  function chainOf(cat) { return CHAIN_INFO[cat] || { key: 'normal', label: '常规出库', tip: '常规物品出库，无需团期。', applicant: '领用人' }; }
+
   function newReq(btn) {
-    var m = openModal('新建领用单',
-      '<form id="hq-rq-form"><div class="hqf-grid">' +
+    var cats = ownNames().filter(function (x) { return x !== '未分类'; });
+    var first = cats.indexOf('直播礼品') >= 0 ? '直播礼品' : cats[0];
+    var m = openModal('新建领用单（按用途归属分链路）',
+      '<form id="hq-rq-form">' +
+      '<div class="hqf-grid">' +
+      field('用途归属', 'category', first, 'select', { options: cats }) +
       field('申请日期', 'apply_date', today(), 'date') +
-      field('团期日期', 'tour_date', today(), 'date') +
-      field('团期名称', 'tour_name', '', 'text', { attrs: 'placeholder="例如：0918 华东五日游"' }) +
-      field('领用人', 'applicant', '', 'text', { attrs: 'required placeholder="例如：导游-陈"' }) +
-      '</div><div class="hq-sec">领用明细</div><div id="hq-rq-lines"></div>' +
+      '</div>' +
+      '<div class="hq-notice" id="hq-rq-tip"></div>' +
+      '<div class="hqf-grid" id="hq-rq-chain-fields"></div>' +
+      '<div class="hq-sec">领用明细</div><div id="hq-rq-lines"></div>' +
       '<div class="hqf-grid" style="margin-top:14px">' + field('备注', 'remark', '', 'textarea') + '</div></form>',
       '<button class="btn" data-hq-cancel>取消</button><button class="btn primary" data-hq-save>提交领用单</button>');
-    var ed = linesEditor($('#hq-rq-lines', m.root), [{ name: '', code: '', category: ownNames()[0], quantity: '', unit: '' }], false);
+    var ed = linesEditor($('#hq-rq-lines', m.root), [{ name: '', code: '', category: first, quantity: '', unit: '' }], false);
+    var catSel = $('[name="category"]', m.root);
+    var tip = $('#hq-rq-tip', m.root), fields = $('#hq-rq-chain-fields', m.root);
+    function renderChain() {
+      var cat = catSel.value, info = chainOf(cat);
+      tip.textContent = info.tip;
+      if (info.key === 'live_plan') {
+        fields.innerHTML = field('直播场次/主题（拟出库用途）', 'purpose', '', 'text', { attrs: 'required placeholder="例如：1125 双十一专场直播"' }) +
+          field(info.applicant, 'applicant', '', 'text', { attrs: 'required placeholder="主播姓名"' });
+      } else if (info.key === 'tour') {
+        fields.innerHTML = field('团期名称', 'tour_name', '', 'text', { attrs: 'required placeholder="例如：0918 华东五日游"' }) +
+          field('团期日期', 'tour_date', today(), 'date', { attrs: 'required' }) +
+          field(info.applicant, 'applicant', '', 'text', { attrs: 'required placeholder="例如：导游-陈"' }) +
+          field('出团用途说明', 'purpose', '', 'text', { attrs: 'placeholder="选填"' });
+      } else {
+        fields.innerHTML = field(info.applicant, 'applicant', '', 'text', { attrs: 'required placeholder="领用人姓名"' }) +
+          field('用途说明', 'purpose', '', 'text', { attrs: 'placeholder="选填，例如：办公领用"' });
+      }
+    }
+    catSel.onchange = renderChain;
+    renderChain();
     $('[data-hq-cancel]', m.root).onclick = m.close;
     $('[data-hq-save]', m.root).onclick = function () {
       var b = this, f = $('#hq-rq-form', m.root); if (!f.reportValidity()) return;
       var v = formValues(f), rows = attachItemId(ed.get());
       if (!rows.length) { toast('请至少填写一行领用明细', 'err'); return; }
-      var payload = { apply_date: v.apply_date, tour_date: v.tour_date, tour_name: v.tour_name,
-        applicant: v.applicant, remark: v.remark, total_quantity: rows.reduce(function (a, r) { return a + num(r.quantity); }, 0),
-        items: rows.map(function (r) { return { item_id: r.item_id, name: r.name, code: r.code, category: r.category, unit: r.unit, quantity: num(r.quantity), brand: r.brand, model: r.model }; }) };
+      // 明细归属统一跟随所选用途归属（便于按归属切换筛选与链路判定）
+      rows.forEach(function (r) { r.category = v.category; });
+      var info = chainOf(v.category);
+      var remarkBits = ['归属：' + v.category];
+      if (v.purpose) remarkBits.push((info.key === 'live_plan' ? '直播场次：' : '用途：') + v.purpose);
+      if (v.remark) remarkBits.push(v.remark);
+      var payload = {
+        apply_date: v.apply_date, applicant: v.applicant, purpose: v.purpose || '',
+        remark: remarkBits.join(' / '),
+        scenario: info.key,
+        category_name: v.category,
+        tour_name: info.key === 'tour' ? v.tour_name : '',
+        tour_date: info.key === 'tour' ? v.tour_date : null,
+        total_quantity: rows.reduce(function (a, r) { return a + num(r.quantity); }, 0),
+        items: rows.map(function (r) { return { item_id: r.item_id, name: r.name, code: r.code, category: v.category, unit: r.unit, quantity: num(r.quantity), brand: r.brand, model: r.model }; })
+      };
       busy(b, '提交中', true);
-      Promise.resolve(SupaDB.createRequisition(payload)).then(function (r) { m.close(); toast('领用单已创建：' + (r && r.code || '')); H.loadAll(); })
+      var task = info.key === 'live_plan'
+        ? SupaDB.createRequisition(payload).then(function (r) {
+            // 直播链路：主播拟出库即锁定库存，走台账 win_register（locked +1）
+            postLedger('win_register', rows, v.category, v.apply_date, r && r.code);
+            return r;
+          })
+        : SupaDB.createRequisition(payload);
+      Promise.resolve(task).then(function (r) { m.close(); toast('领用单已创建：' + (r && r.code || '') + (info.key === 'live_plan' ? '（主播拟出库·已锁定）' : '')); H.loadAll(); })
         .catch(function (e) { busy(b, null, false); toast('提交失败：' + (e && e.message || e), 'err'); });
     };
   }
@@ -594,8 +648,13 @@
       if (String(s.requisition_id) !== String(r.id)) return;
       H.itemsOf(s).forEach(function (x) { var k = x.code || x.name; done[k] = (done[k] || 0) + num(x.quantity); });
     });
-    var m = openModal('领用出库 · ' + (r.code || ''),
-      '<form id="hq-out-form"><div class="hqf-grid">' + field('出库日期', 'stockout_date', today(), 'date') + '</div>' +
+    var chain = chainOf(r.category_name || (its[0] || {}).category);
+    var isLive = chain.key === 'live_plan';
+    var m = openModal((isLive ? '销售实际出库 · ' : '领用出库 · ') + (r.code || ''),
+      '<form id="hq-out-form"><div class="hqf-grid">' +
+      field('出库日期', 'stockout_date', today(), 'date') +
+      field(isLive ? '出库销售' : '出库经办人', 'operator', '', 'text', { attrs: 'required placeholder="' + (isLive ? '销售姓名' : '经办人姓名') + '"' }) +
+      '</div>' + (isLive ? '<div class="hq-notice">直播链路第二段：主播已拟出库并锁定库存，此处由销售确认实际出库，锁定自动释放。</div>' : '') +
       '<div class="hq-sec">本次出库数量</div>' +
       its.map(function (it, i) {
         var k = it.code || it.name, d = done[k] || 0, left = Math.max(0, num(it.quantity) - d);
@@ -612,10 +671,12 @@
         if (q > 0) lines.push({ name: it.name, code: it.code, category: it.category, unit: it.unit, quantity: q, requested_quantity: num(it.quantity), item_id: it.inventory_item_id, price: num(it.price) });
       });
       if (!lines.length) { toast('请至少填写一个出库数量', 'err'); return; }
+      if (!v.operator) { toast('请填写' + (isLive ? '出库销售' : '出库经办人'), 'err'); return; }
       busy(b, '出库处理中', true);
-      Promise.resolve(SupaDB.confirmStockOut(r.id, { stockout_date: v.stockout_date, items: lines, total_quantity: lines.reduce(function (a, x) { return a + x.quantity; }, 0) }))
+      Promise.resolve(SupaDB.confirmStockOut(r.id, { stockout_date: v.stockout_date, confirmed_by: v.operator, items: lines, total_quantity: lines.reduce(function (a, x) { return a + x.quantity; }, 0) }))
         .then(function (res) {
-          postLedger('tour_signoff', lines, (lines[0] || {}).category, v.stockout_date, res && res.code);
+          // 直播：win_register 锁定已在拟出库时登记，实际出库用 prize_ship 解锁(locked -1 / physical -1)
+          postLedger(isLive ? 'prize_ship' : 'tour_signoff', lines, (lines[0] || {}).category, v.stockout_date, res && res.code);
           m.close(); toast('出库完成：' + (res && res.code || '')); H.loadAll();
         })
         .catch(function (e) { busy(b, null, false); toast('出库失败：' + (e && e.message || e), 'err'); });
@@ -698,6 +759,73 @@
         });
       }, { danger: true, confirmText: '确认红冲', okText: '台账已红冲' });
     };
+  }
+
+  // ---------- 特殊入库（库存退回） ----------
+  function newReturn(btn) {
+    var cats = ownNames().filter(function (x) { return x !== '未分类'; });
+    var m = openModal('新建退回入库单',
+      '<form id="hq-return-form"><div class="hqf-grid">' +
+      field('退回物品', 'name', '', 'text', { attrs: 'required list="hq-ret-names" placeholder="选择库存物品或输入名称"' }) +
+      '<datalist id="hq-ret-names">' + (H.D.inventory || []).map(function (x) { return '<option value="' + esc(x.name) + '">'; }).join('') + '</datalist>' +
+      field('物品编码', 'code', '', 'text') +
+      field('用途归属', 'category', cats[0], 'select', { options: cats }) +
+      field('退回数量', 'qty', '', 'number', { attrs: 'required min="0.01" step="0.01" placeholder="数量"' }) +
+      field('单位', 'unit', '', 'text') +
+      field('申请人', 'applicant', '', 'text', { attrs: 'required placeholder="退回经办人"' }) +
+      '</div><div class="hqf-grid" style="margin-top:12px">' + field('退回原因', 'reason', '', 'textarea', { attrs: 'required placeholder="例如：直播后未发出的礼品退回 / 出团剩余物料退回"' }) + '</div>' +
+      '<div class="hq-notice">退回单提交后为「待审核」，审核通过才回补库存；入库成本按物品当前加权均价计，均价不变。</div></form>',
+      '<button class="btn" data-hq-cancel>取消</button><button class="btn primary" data-hq-save>提交退回单</button>');
+    var f = $('#hq-return-form', m.root);
+    var nameInput = $('[name="name"]', f);
+    nameInput.onchange = function () {
+      var hit = (H.D.inventory || []).find(function (x) { return x.name === nameInput.value; });
+      if (hit) {
+        $('[name="code"]', f).value = hit.code || '';
+        $('[name="unit"]', f).value = hit.unit || '';
+        var cat = hit.category_name || hit.category;
+        if (cat && Array.prototype.some.call($('[name="category"]', f).options, function (o) { return o.value === cat; })) $('[name="category"]', f).value = cat;
+      }
+    };
+    $('[data-hq-cancel]', m.root).onclick = m.close;
+    $('[data-hq-save]', m.root).onclick = function () {
+      var b = this; if (!f.reportValidity()) return;
+      var v = formValues(f);
+      busy(b, '提交中', true);
+      Promise.resolve(SupaDB.createNonPurchaseStockIn({
+        code: v.code, name: v.name, category: v.category, unit: v.unit,
+        qty: num(v.qty), reason: v.reason + ' / 申请人：' + v.applicant, price: 0
+      })).then(function (r) {
+        m.close(); toast('退回单已提交：' + (r && r.code || '') + '（待审核）'); H.loadAll();
+      }).catch(function (e) { busy(b, null, false); toast('提交失败：' + (e && e.message || e), 'err'); });
+    };
+  }
+  function findReturn(id) { return findIn(H.D.returns || [], id); }
+  function approveReturn(id) {
+    var rr = findReturn(id); if (!rr) return;
+    confirmBox('审核退回入库', '确认将 ' + (rr.code || '') + ' · ' + esc(rr.name || '') + ' × ' + num(rr.qty) + ' 审核入库？审核后回补库存。', function () {
+      return SupaDB.approveNonPurchaseStockIn(rr.id, '总部审核退回入库').then(function () {
+        postLedger('recovery_acceptance', [{ name: rr.name, code: rr.item_code || rr.code, category: rr.category_name || rr.category, quantity: num(rr.qty), item_id: null }],
+          rr.category_name || rr.category, today(), rr.code);
+      });
+    }, { confirmText: '审核入库', okText: '已回补库存' });
+  }
+  function rejectReturn(id) {
+    var rr = findReturn(id); if (!rr) return;
+    confirmBox('驳回退回单', '确认驳回 ' + (rr.code || '') + '？驳回后不会回补库存。', function () {
+      return SupaDB.rejectNonPurchaseStockIn(rr.id, '总部审核驳回');
+    }, { danger: true, confirmText: '确认驳回', okText: '已驳回' });
+  }
+  function viewReturn(id) {
+    var rr = findReturn(id); if (!rr) return;
+    var stMap = { pending: '待审核', approved: '已入库', rejected: '已驳回' };
+    var m = openModal('退回入库单 · ' + (rr.code || ''),
+      '<div class="hq-detail"><b>物品：</b>' + esc(rr.name || '—') + '　<b>编码：</b>' + esc(rr.item_code || rr.code || '—') + '<br>' +
+      '<b>归属：</b>' + esc(rr.category_name || rr.category || '—') + '　<b>数量：</b>' + num(rr.qty) + ' ' + esc(rr.unit || '') + '<br>' +
+      '<b>状态：</b>' + esc(stMap[rr.status] || rr.status || '—') + '　<b>申请人：</b>' + esc(rr.applicant_name || '—') + '<br>' +
+      '<b>退回原因：</b>' + esc(rr.reason || '—') + (rr.remark ? '<br><b>备注：</b>' + esc(rr.remark) : '') + '</div>',
+      '<button class="btn" data-hq-cancel>关闭</button>');
+    $('[data-hq-cancel]', m.root).onclick = m.close;
   }
 
   // ---------- 账号 ----------
@@ -843,6 +971,9 @@
     'rq-out': function (id, b) { outReq(id, b); },
     'rq-view': function (id) { viewReq(id); },
     'so-view': function (id) { viewSO(id); },
+    'spt-approve': function (id) { approveReturn(id); },
+    'spt-reject': function (id) { rejectReturn(id); },
+    'spt-view': function (id) { viewReturn(id); },
     'user-perm': function (id) { userPerm(id); }
   };
   document.addEventListener('click', function (e) {
@@ -866,6 +997,7 @@
     else if (txt.indexOf('新建采购单') >= 0) editPO(null, btn);
     else if (txt.indexOf('导入Excel') >= 0) importPO(btn);
     else if (txt.indexOf('新建领用单') >= 0) newReq(btn);
+    else if (txt.indexOf('新建退回单') >= 0) newReturn(btn);
     else if (txt.indexOf('邮寄出库') >= 0) mailOut(btn);
     else if (txt.indexOf('领用出库') >= 0 && mod === 'stockout') outReqPrompt(btn);
     else if (txt.indexOf('导出') >= 0) exportCSV(mod);
@@ -889,6 +1021,11 @@
     if (el.matches('#mod-inventory .filterbar .sel')) filterRows('inventory', 7, el.value);
     else if (el.matches('#mod-purchase .filterbar .sel')) filterRows('purchase', 5, el.value);
     else if (el.matches('#mod-stockin .filterbar .sel')) filterRows('stockin', 4, el.value);
+    else if (el.matches('#mod-specialin .filterbar .sel')) {
+      var ss2 = $$('#mod-specialin .filterbar .sel');
+      if (ss2[0] === el) filterRows('specialin', 3, el.value);
+      else filterRows('specialin', 7, el.value);
+    }
     else if (el.matches('#mod-requisition .filterbar .sel')) {
       var sels = $$('#mod-requisition .filterbar .sel');
       if (sels[0] === el) filterRows('requisition', 5, el.value);
