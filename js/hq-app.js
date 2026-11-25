@@ -1,5 +1,5 @@
 /**
- * HQ App - 遇见美好总部正式系统（v6.1）
+ * HQ App - 遇见美好总部正式系统（v6.12 · 六链路流程流转）
  * 设计稿 hq-clone-preview.html 的真实数据驱动版。
  * 固定 subject=hq，复用 supabase-db.js 的 SupaDB（自动按主体隔离），列车主体零影响。
  * 空库显示引导，不造假数据。列车已有 no Realtime：30s 同步 + 切回刷新，这里照搬。
@@ -159,7 +159,7 @@
         Object.keys(cats).forEach(function (c) { var o = OWNERS.find(function (x) { return x.name === c; }); if (o && (s.status === 'pending' || s.status === 'pending_ship')) out[o.key].mailPending += 1; });
       }
     });
-    // 库存退回（特殊入库）：已审核的回流数量按归属累计
+    // 库存退回（特殊入库）：已由仓库确定的回流数量按归属累计
     (D.returns || []).forEach(function (rr) {
       if (rr.status !== 'approved') return;
       var o = OWNERS.find(function (x) { return x.name === (rr.category_name || rr.category); });
@@ -201,7 +201,7 @@
       var t = OWNERS.reduce(function (a, o) { a.pendingIn += agg[o.key].pendingIn; a.audit += agg[o.key].pendingAudit; a.transit += agg[o.key].inTransit; a.mail += agg[o.key].mailPending; return a; }, { pendingIn: 0, audit: 0, transit: 0, mail: 0 });
       todo.innerHTML =
         '<div class="kpi"><div class="k">待入库采购单</div><div class="v red">' + t.pendingIn + ' <small>单</small></div><div class="s">按用途归属汇总</div></div>' +
-        '<div class="kpi y"><div class="k">待审核领用</div><div class="v yel">' + t.audit + ' <small>单</small></div><div class="s">按用途归属汇总</div></div>' +
+        '<div class="kpi y"><div class="k">待办理领用</div><div class="v yel">' + t.audit + ' <small>单</small></div><div class="s">按用途归属汇总</div></div>' +
         '<div class="kpi b"><div class="k">在途未签收</div><div class="v blu">' + t.transit + ' <small>笔</small></div><div class="s">领用 + 邮寄在途</div></div>' +
         '<div class="kpi p"><div class="k">中奖待邮寄</div><div class="v pur">' + t.mail + ' <small>笔</small></div><div class="s">直播礼品归属</div></div>';
     }
@@ -264,7 +264,7 @@
   function renderCategories() {
     var grid = $('cat-grid');
     if (!grid) return;
-    var metaMap = { '直播礼品': '中奖锁定 · 邮寄出库', '出团物料': '领用出库 · 团期核销', '行政物料': '行政申领 · 归还', '总部仓库': '调入调出 · 盘点' };
+    var metaMap = { '直播礼品': '中奖锁定 · 填写并邮寄', '出团物料': '领用出库 · 仓库确定', '行政物料': '行政申领 · 归还', '总部仓库': '调入调出 · 盘点' };
     var counts = {};
     D.inventory.forEach(function (it) { var c = catOf(it); counts[c] = (counts[c] || 0) + 1; });
     var cards = OWNERS.map(function (o) {
@@ -285,7 +285,7 @@
     var body = $('po-body');
     if (!body) return;
     if (!D.purchase.length) { body.innerHTML = emptyRow(8, '暂无采购单，请新建带用途归属的采购单'); return; }
-    var statusText = { pending_stockin: '待入库', partially_stockin: '部分入库', stockin_completed: '已完成' };
+    var statusText = { pending_stockin: '待仓库确定', partially_stockin: '部分确定', stockin_completed: '已完成' };
     var statusCls = { pending_stockin: 'y', partially_stockin: 'b', stockin_completed: 'g' };
     body.innerHTML = D.purchase.map(function (p) {
       var its = itemsOf(p);
@@ -295,7 +295,7 @@
       var st = statusText[p.status] || p.status || '—';
       var act = p.status === 'stockin_completed'
         ? '<button class="row-act" data-act="po-view" data-id="' + esc(p.id) + '">查看</button>'
-        : '<button class="row-act" data-act="po-edit" data-id="' + esc(p.id) + '">编辑</button> · <button class="row-act" data-act="po-stockin" data-id="' + esc(p.id) + '">入库</button>';
+        : '<button class="row-act" data-act="po-edit" data-id="' + esc(p.id) + '">编辑</button> · <button class="row-act" data-act="po-stockin" data-id="' + esc(p.id) + '">仓库确定</button>';
       return '<tr><td class="lnk">' + esc(p.code || p.order_no) + '</td><td>' + esc((p.purchase_date || p.created_at || '').slice(5, 10)) + '</td><td>' + esc(p.purchaser || p.creator || '—') + '</td>' +
         '<td>' + its.length + ' 项</td><td class="num">' + money(amt) + '</td><td>' + catStr + '</td><td><span class="tag ' + (statusCls[p.status] || '') + '">' + esc(st) + '</span></td><td class="lnk">' + act + '</td></tr>';
     }).join('');
@@ -331,7 +331,7 @@
       var cls = st === '已完成' ? 'g' : st === '部分入库' ? 'b' : 'r';
       var act = r.finished
         ? '<button class="row-act" data-act="po-view" data-id="' + esc(r.poId) + '">查看</button>'
-        : '<button class="row-act" data-act="si-accept" data-id="' + esc(r.poId) + '">' + (r.done > 0 ? '继续入库' : '验收入库') + '</button>';
+        : '<button class="row-act" data-act="si-accept" data-id="' + esc(r.poId) + '">' + (r.done > 0 ? '继续确定' : '仓库确定') + '</button>';
       return '<tr><td>' + esc(r.po) + '</td><td>' + esc(r.it.name) + '</td><td class="num">' + r.it.quantity + '</td><td class="num">' + r.done + '</td>' +
         '<td>' + ownBadge(r.it.category) + '</td><td><span class="tag ' + cls + '">' + st + '</span></td><td class="lnk">' + act + '</td></tr>';
     }).join('');
@@ -343,14 +343,14 @@
     if (!body) return;
     var list = D.returns || [];
     if (!list.length) { body.innerHTML = emptyRow(8, '暂无退回入库单，领用后如有剩余物料可新建退回单'); return; }
-    var stMap = { pending: '待审核', approved: '已入库', rejected: '已驳回' };
+    var stMap = { pending: '待仓库确定', approved: '已回补', rejected: '已驳回' };
     var stCls = { pending: 'y', approved: 'g', rejected: 'r' };
     body.innerHTML = list.map(function (rr) {
       var st = stMap[rr.status] || rr.status || '—';
       var cat = rr.category_name || rr.category || '未分类';
       var act = '<button class="row-act" data-act="spt-view" data-id="' + esc(rr.id) + '">查看</button>';
       if (rr.status === 'pending') {
-        act = '<button class="row-act" data-act="spt-approve" data-id="' + esc(rr.id) + '">审核入库</button> · ' +
+        act = '<button class="row-act" data-act="spt-approve" data-id="' + esc(rr.id) + '">仓库确定</button> · ' +
           '<button class="row-act" data-act="spt-reject" data-id="' + esc(rr.id) + '">驳回</button> · ' + act;
       }
       return '<tr><td class="lnk">' + esc(rr.code) + '</td><td>' + esc((rr.created_at || '').slice(5, 10)) + '</td>' +
@@ -360,60 +360,76 @@
     }).join('');
   }
 
+  // ---------- 工具：团号（v6.12 团号必填；零迁移时降级从 remark 解析） ----------
+  function tourNoOf(r) {
+    if (!r) return '';
+    if (r.tour_no) return String(r.tour_no);
+    var m = String(r.remark || '').match(/团号[:：]\s*([^\s/，,]+)/);
+    return m ? m[1] : '';
+  }
+
   // ---------- 渲染：领用单 ----------
+  // v6.12 六链路流程：领用 3 链路（直播礼品 / 出团物料 / 常规）在此展示；入库 3 链路在采购、特殊入库、库存概览模块体现。
+  // 末端岗位统一为「仓库」（行政 / 库存 / 仓库为同一岗位，用户 2026-11-25 定稿），全流程无审核、无核销节点。
+  // 状态复用线上合法值，不新增 status（避免 CHECK 23514）：
+  //   pending / pending_approval            = 业务方申请已提交，待下一岗位办理
+  //   approved / pending_outbound（已办理） = 中间环节已办理，待仓库确定出库
+  //   outbound_completed                   = 仓库已确定出库，流程完成
   function renderRequisition() {
     var body = $('rq-body');
     if (!body) return;
     if (!D.requisitions.length) { body.innerHTML = emptyRow(8, '暂无领用单，请新建带用途归属的领用单'); return; }
-    var stMap = { pending: '待审核', pending_approval: '待审核', pending_outbound: '在途', partially_outbounded: '部分出库', outbound_completed: '已出库' };
+    var stMap = { pending: '待办理', pending_approval: '待办理', approved: '待仓库确定', pending_outbound: '待仓库确定', partially_outbounded: '部分出库', outbound_completed: '已出库', rejected: '已驳回', withdrawn: '已撤回' };
+    // 六链路之领用 3 链路：末端岗位统一「仓库」（行政 / 库存 / 仓库同一岗位）
+    var FLOW_DEF = {
+      live:   [{ n: '主播申请·锁定', r: '主播' }, { n: '销售填写并邮寄', r: '销售' }, { n: '仓库数据确认·出库', r: '仓库' }],
+      tour:   [{ n: '计调填团期单', r: '计调' }, { n: '仓库核对实拿', r: '仓库' }, { n: '仓库确定出库', r: '仓库' }],
+      normal: [{ n: '领用人申请', r: '领用人' }, { n: '仓库确定数量金额', r: '仓库' }, { n: '仓库确定出库', r: '仓库' }]
+    };
     body.innerHTML = D.requisitions.map(function (r) {
       var its = itemsOf(r);
       var cats = {}; its.forEach(function (i) { if (i.category) cats[i.category] = 1; });
       var catKeys = Object.keys(cats);
       var catStr = catKeys.map(ownBadge).join(' ') || ownBadge('未分类');
       var st = stMap[r.status] || r.status || '—';
-      // 链路按归属分类：直播=主播拟出库→销售实际出库；出团=审核→在途→核销；常规=审核→出库
       var chain = 'normal';
       if (r.scenario === 'live_plan' || (catKeys.length === 1 && cats['直播礼品'])) chain = 'live';
-      else if (catKeys.indexOf('出团物料') >= 0) chain = 'tour';
-      // 按角色展示流程：每个节点标注责任角色，并在卡点行告诉发起人「现在卡在哪、需要谁通过」
-      var FLOW_DEF = {
-        live: [{ n: '主播拟出库', r: '主播' }, { n: '审核', r: '总部' }, { n: '销售出库', r: '销售' }],
-        tour: [{ n: '审核', r: '总部' }, { n: '仓库出库', r: '仓库' }, { n: '核销', r: '总部' }],
-        normal: [{ n: '审核', r: '总部' }, { n: '仓库出库', r: '仓库' }]
-      };
+      else if (catKeys.indexOf('出团物料') >= 0 || r.scenario === 'tour') chain = 'tour';
       var nodes = FLOW_DEF[chain] || FLOW_DEF.normal;
       var stt = r.status || '';
+      // 线上 CHECK 未放宽时 createRequisition 会降级为 pending_outbound；用 remark 的 HQ_HANDLED 标记区分「新建」与「已办理」
+      var handled = /HQ_HANDLED/.test(String(r.remark || ''));
+      var fresh = (stt === 'pending' || stt === 'pending_approval' || (stt === 'pending_outbound' && !handled));
       var done;
-      if (stt === 'pending' || stt === 'pending_approval') done = chain === 'live' ? 1 : 0;
-      else if (stt === 'outbound_completed') done = nodes.length;
-      else done = chain === 'live' ? 2 : 1; // approved / pending_outbound / partially_outbounded
-      var me = null;
-      try { me = JSON.parse(localStorage.getItem('currentUser') || 'null'); } catch (e) {}
-      var myRole = me && me.role;
+      if (stt === 'outbound_completed') done = nodes.length;
+      else if (fresh) done = 1;              // 业务方申请已提交，待下一岗位办理
+      else done = nodes.length - 1;          // 中间环节已办理，卡在末端仓库确定出库
+      var flow = '<div class="flow-role">' + nodes.map(function (nd, i) {
+        var cls = i < done ? ' done' : (i === done ? ' cur' : '');
+        return (i ? '<span class="arw">›</span>' : '') +
+          '<span class="fr-node' + cls + '"><em>' + esc(nd.n) + '</em><small>' + esc(nd.r) + '</small></span>';
+      }).join('') + '</div>';
       var blocker;
       if (done >= nodes.length) {
         blocker = '<div class="fr-blocker done">流程已完成</div>';
       } else {
         var cur = nodes[done];
-        var mine = (cur.r === '总部' && myRole === 'admin') || (cur.r === '仓库' && myRole === 'warehouse');
-        var verb = cur.n.indexOf('审核') >= 0 ? '审核' : '出库';
         var prefix = stt === 'partially_outbounded' ? '出库中：' : '卡在：';
-        blocker = '<div class="fr-blocker' + (mine ? ' mine' : '') + '">' + prefix + (mine ? '待你' + verb : '待' + cur.r + verb) + '</div>';
+        blocker = '<div class="fr-blocker">' + prefix + '待' + esc(cur.r) + '办理（' + esc(cur.n) + '）</div>';
       }
-      var flow = '<div class="flow-role">' + nodes.map(function (nd, i) {
-        var cls = i < done ? ' done' : (i === done ? ' cur' : '');
-        return (i ? '<span class="arw">›</span>' : '') +
-          '<span class="fr-node' + cls + '"><em>' + esc(nd.n) + '</em><small>' + esc(nd.r) + '</small></span>';
-      }).join('') + '</div>' + blocker;
+      flow += blocker;
       var act = '<button class="row-act" data-act="rq-view" data-id="' + esc(r.id) + '">查看</button>';
-      if (r.status === 'pending' || r.status === 'pending_approval') {
-        act = '<button class="row-act" data-act="rq-approve" data-id="' + esc(r.id) + '">审核</button> · ' + act;
-      } else if (r.status === 'approved' || r.status === 'pending_outbound' || r.status === 'partially_outbounded') {
-        var outLabel = chain === 'live' ? '销售出库' : '出库';
-        act = '<button class="row-act" data-act="rq-out" data-id="' + esc(r.id) + '">' + outLabel + '</button> · ' + act;
+      if (fresh) {
+        var lbl = chain === 'live' ? '销售填写并邮寄' : (chain === 'tour' ? '仓库核对实拿' : '仓库确定数量金额');
+        act = '<button class="row-act" data-act="rq-handle" data-id="' + esc(r.id) + '">' + lbl + '</button> · ' + act;
+      } else if (stt === 'approved' || stt === 'pending_outbound' || stt === 'partially_outbounded') {
+        act = '<button class="row-act" data-act="rq-out" data-id="' + esc(r.id) + '">仓库确定出库</button> · ' + act;
       }
-      var purpose = chain === 'tour' ? (r.tour_name || '—') : (r.purpose || r.remark || '常规出库');
+      var tno = tourNoOf(r);
+      var purpose;
+      if (chain === 'tour') purpose = (tno ? '团号 ' + tno + ' · ' : '') + (r.tour_name || '—');
+      else if (chain === 'live') purpose = (tno ? '团号 ' + tno + ' · ' : '') + (r.purpose || '直播礼品');
+      else purpose = r.purpose || r.tour_name || '常规领用';
       return '<tr><td class="lnk">' + esc(r.code) + '</td><td>' + esc((r.created_at || '').slice(5, 10)) + '</td><td>' + esc(r.applicant || '—') + '</td><td>' + esc(purpose) + '</td>' +
         '<td>' + its.length + ' 项</td><td>' + catStr + '</td><td>' + flow + '</td><td class="lnk">' + act + '</td></tr>';
     }).join('');
@@ -599,8 +615,8 @@
       var inQty = 0, skip = 0;
       D.stockin.forEach(function (s) { itemsOf(s).forEach(function (i) { inQty += n(i.actual_quantity || i.quantity); }); });
       D.purchase.forEach(function (p) { itemsOf(p).forEach(function (i) { if (i.is_skipped) skip++; }); });
-      si.innerHTML = kpiCard('待入库', pendPO + ' <small>单</small>', '', 'y') +
-        kpiCard('部分入库', partPO + ' <small>单</small>', '', 'b') +
+      si.innerHTML = kpiCard('待仓库确定', pendPO + ' <small>单</small>', '', 'y') +
+        kpiCard('部分确定', partPO + ' <small>单</small>', '', 'b') +
         kpiCard('已入库量', inQty + ' <small>件</small>', '', 'g') +
         kpiCard('不入库跳过', skip + ' <small>项</small>', '', 'p');
     }
@@ -611,8 +627,8 @@
       var aprvRet = (D.returns || []).filter(function (x) { return x.status === 'approved'; }).length;
       var retQty = (D.returns || []).filter(function (x) { return x.status === 'approved'; }).reduce(function (a, x) { return a + n(x.qty); }, 0);
       var liveRet = (D.returns || []).filter(function (x) { return x.status === 'approved' && (x.category_name || x.category) === '直播礼品'; }).reduce(function (a, x) { return a + n(x.qty); }, 0);
-      spt.innerHTML = kpiCard('待审核退回', pendRet + ' <small>单</small>', '', 'y') +
-        kpiCard('已入库', aprvRet + ' <small>单</small>', '', 'g') +
+      spt.innerHTML = kpiCard('待仓库确定退回', pendRet + ' <small>单</small>', '', 'y') +
+        kpiCard('已回补', aprvRet + ' <small>单</small>', '', 'g') +
         kpiCard('退回总量', retQty + ' <small>件</small>') +
         kpiCard('直播礼品退回', liveRet + ' <small>件</small>', '', 'b');
     }
@@ -624,7 +640,7 @@
       var doneR = D.stockout.filter(function (s) { return s.out_type !== 'mail' && !s.is_mail; }).length;
       var agg = aggregate();
       var locked = OWNERS.reduce(function (a, o) { return a + agg[o.key].plannedQty; }, 0);
-      rq.innerHTML = kpiCard('待审核', audit + ' <small>单</small>', '', 'y') +
+      rq.innerHTML = kpiCard('待办理', audit + ' <small>单</small>', '', 'y') +
         kpiCard('实际出库', doneR + ' <small>单</small>', '', 'b') +
         kpiCard('已出库量', OWNERS.reduce(function (a, o) { return a + agg[o.key].outQty; }, 0) + ' <small>件</small>', '', 'g') +
         kpiCard('主播拟出库锁定', locked + ' <small>件</small>', '', 'r');
