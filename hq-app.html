@@ -226,8 +226,10 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .hidden{display:none}
 </style>
 <!-- 数据层：本地 supabase-js + 主体隔离数据访问层（复用列车，自动按 subject=hq 过滤） -->
-<script src="js/vendor/supabase.min.js?v=6.3"></script>
-<script src="js/supabase-db.js?v=6.3"></script>
+<script src="js/vendor/supabase.min.js?v=6.4"></script>
+<script src="js/supabase-db.js?v=6.4"></script>
+<script src="js/toast.js?v=6.4"></script>
+<script src="js/hq-foundation.js?v=6.4"></script>
 </head>
 <body>
 <div class="app">
@@ -686,8 +688,8 @@ function toggleTour(headEl){
 }
 </script>
 <!-- 真实数据驱动：从 SupaDB 拉取 hq 主体数据并填充全部模块（空库显示引导，不造假） -->
-<script src="js/hq-app.js?v=6.3"></script>
+<script src="js/hq-app.js?v=6.4"></script>
 <!-- 操作层：所有按钮/弹窗/写库（依赖 hq-app.js 暴露的 HQApp） -->
-<script src="js/hq-actions.js?v=6.3"></script>
+<script src="js/hq-actions.js?v=6.4"></script>
 </body>
 </html>
