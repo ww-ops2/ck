@@ -1,7 +1,8 @@
 /**
  * HQ Actions - 遇见美好总部：按钮 / 附属弹窗页 / 真实写库（v6.3）
  * 依赖：hq-app.js 暴露的 window.HQApp（同一份 D 数据与 renderAll 入口）
- * 所有写操作一律经 SupaDB.* 落 Supabase；所有删除/审核走自定义确认弹窗。
+ * 所有写操作一律经 SupaDB.* 落 Supabase；所有删除/仓库确定走自定义确认弹窗。
+ * v6.12：六链路流转，末端岗位统一「仓库」，全流程无审核、无核销节点（底层 API 名保留历史命名）。
  */
 (function () {
   'use strict';
@@ -674,15 +675,73 @@
     };
   }
 
-  // ---------- 领用单（按用途归属分链路） ----------
-  // 直播礼品：主播拟出库(锁定) → 销售实际出库；出团物料：团期必填 → 领用出库 → 核销；行政/仓库：常规出库
+  // ---------- 领用单（按用途归属分链路 · v6.12 六链路流程流转） ----------
+  // 领用 1 直播礼品：主播申请·锁定(填团号) → 销售填写并邮寄(客户信息手动、一物多客户) → 仓库数据确认·出库
+  // 领用 2 出团物料：计调填团期单(填团号) → 仓库核对导游实拿一致 → 仓库确定出库
+  // 领用 3 行政物料/总部仓库：领用人申请 → 仓库确定数量金额 → 仓库确定出库
+  // 末端岗位统一「仓库」（行政/库存/仓库为同一岗位，用户 2026-11-25 定稿），全流程无审核、无核销节点。
+
+  // ---------- 六链路流程负载（v6.12） ----------
+  // 客户明细 / 实拿量 / 金额 等结构化数据：零 DDL 时序列化进 requisitions.remark（必成功、可回显、可追溯）；
+  // 迁移脚本执行后，双写 flow_stage / flow_payload 列；列不存在自动降级，不影响主流程。
+  function _b64enc(str) { return btoa(unescape(encodeURIComponent(str))); }
+  function _b64dec(str) { try { return decodeURIComponent(escape(atob(str))); } catch (e) { return ''; } }
+  var FLOW_TAG = 'HQ_FLOW2:';
+  function readFlowPayload(r) {
+    var rm = String((r && r.remark) || ''), i = rm.indexOf(FLOW_TAG);
+    if (i < 0) return null;
+    var tail = rm.slice(i + FLOW_TAG.length), end = tail.indexOf(' / HQ_');
+    var b64 = (end >= 0 ? tail.slice(0, end) : tail).trim();
+    try { return JSON.parse(_b64dec(b64)); } catch (e) { return null; }
+  }
+  function tourNoFromRemark(r) {
+    var m = String((r && r.remark) || '').match(/团号[:：]\s*([^\s/，,]+)/);
+    return m ? m[1] : '';
+  }
+  function writeFlowPayload(req, payload) {
+    var rm = String(req.remark || '').replace(/\s*\/\s*HQ_FLOW2:[^/]*/g, '').replace(/\s*\/\s*HQ_HANDLED/g, '').trim();
+    var pkg = 'HQ_HANDLED / ' + FLOW_TAG + _b64enc(JSON.stringify(payload));
+    var next = rm ? rm + ' / ' + pkg : pkg;
+    var sb = (typeof getSupabase === 'function') ? getSupabase() : null;
+    if (!sb) return Promise.resolve();
+    return Promise.resolve(sb.from('requisitions').update({
+      remark: next, flow_stage: payload.step, flow_payload: JSON.stringify(payload)
+    }).eq('id', req.id)).then(function (res) {
+      if (res && res.error) throw res.error;
+    }).catch(function () {
+      // 线上无 flow_stage / flow_payload 列（42703）时降级为仅写 remark
+      return Promise.resolve(sb.from('requisitions').update({ remark: next }).eq('id', req.id)).then(function (r2) {
+        if (r2 && r2.error) throw r2.error;
+      });
+    });
+  }
+  function chainOfReq(r) {
+    var its = H.itemsOf(r), cats = {};
+    its.forEach(function (i) { if (i.category) cats[i.category] = 1; });
+    var keys = Object.keys(cats);
+    if (r.scenario === 'live_plan' || (keys.length === 1 && cats['直播礼品'])) return 'live';
+    if (keys.indexOf('出团物料') >= 0 || r.scenario === 'tour') return 'tour';
+    return 'normal';
+  }
+  function priceOfItem(it) {
+    var hit = (H.D.inventory || []).find(function (x) {
+      return (it.code && x.code === it.code) || (it.name && x.name === it.name);
+    });
+    return hit ? num(hit.unit_price) : num(it.price);
+  }
+  // 推进「中间环节已办理」：复用合法状态 approved（约束未放宽时降级 pending_outbound），
+  // 让 confirmStockOut 的「未审核禁止出库」门禁放行；业务语义是办理完成、不是审核。
+  function advanceHandled(req, remarkText) {
+    return Promise.resolve(SupaDB.approveRequisition(req.id, remarkText || '流程办理完成'))
+      .catch(function () { return null; }); // 已 approved / 约束降级失败时不阻断主流程
+  }
   var CHAIN_INFO = {
-    '直播礼品': { key: 'live_plan', label: '直播双链路', tip: '主播拟出库后库存进入「锁定待出」状态，实际出库由销售角色在「出库管理」完成。团期无需填写。', applicant: '主播姓名' },
-    '出团物料': { key: 'tour', label: '团期领用', tip: '出团物料必须填写团期名称与团期日期，领用后按团期核销。', applicant: '领用人（导游）' },
-    '行政物料': { key: 'normal', label: '常规出库', tip: '行政物料属常规物品出库，无需团期，审核后领用出库即可。', applicant: '领用人' },
-    '总部仓库': { key: 'normal', label: '常规出库', tip: '总部仓库物料属常规出库，无需团期，审核后领用出库即可。', applicant: '领用人' }
+    '直播礼品': { key: 'live_plan', label: '领用1 · 直播礼品（三段）', tip: '主播填申请并锁定库存、团号必填 → 销售关联单据填写并邮寄（客户信息全部手动填写，一物可寄多客户）→ 仓库数据确认与出库。', applicant: '主播姓名' },
+    '出团物料': { key: 'tour', label: '领用2 · 出团物料', tip: '计调填对应团期领用单、团号必填 → 仓库核对导游实际拿走的数量与物品与领用单一致（差异须说明）→ 确定出库。', applicant: '计调' },
+    '行政物料': { key: 'normal', label: '领用3 · 行政物料', tip: '领用人实际申请领用 → 仓库确定数量与金额（金额=数量×单价）→ 出库。无需团号。', applicant: '领用人' },
+    '总部仓库': { key: 'normal', label: '领用3 · 总部仓库', tip: '领用人实际申请领用 → 仓库确定数量与金额（金额=数量×单价）→ 出库。无需团号。', applicant: '领用人' }
   };
-  function chainOf(cat) { return CHAIN_INFO[cat] || { key: 'normal', label: '常规出库', tip: '常规物品出库，无需团期。', applicant: '领用人' }; }
+  function chainOf(cat) { return CHAIN_INFO[cat] || { key: 'normal', label: '领用3 · 常规领用', tip: '领用人申请 → 仓库确定数量金额 → 出库。', applicant: '领用人' }; }
 
   function newReq(btn) {
     var cats = ownNames().filter(function (x) { return x !== '未分类'; });
@@ -735,12 +794,14 @@
       var cat = catSel.value, info = chainOf(cat);
       tip.textContent = info.tip;
       if (info.key === 'live_plan') {
-        fields.innerHTML = field('直播场次/主题（拟出库用途）', 'purpose', '', 'text', { attrs: 'required placeholder="例如：1125 双十一专场直播"' }) +
+        fields.innerHTML = field('团号 *（必填）', 'tour_no', '', 'text', { attrs: 'required placeholder="例如：T1126-DB12"' }) +
+          field('直播场次/主题', 'purpose', '', 'text', { attrs: 'required placeholder="例如：1125 双十一专场直播"' }) +
           field(info.applicant, 'applicant', '', 'text', { attrs: 'required placeholder="主播姓名"' });
       } else if (info.key === 'tour') {
-        fields.innerHTML = field('团期名称', 'tour_name', '', 'text', { attrs: 'required placeholder="例如：0918 华东五日游"' }) +
+        fields.innerHTML = field('团号 *（必填）', 'tour_no', '', 'text', { attrs: 'required placeholder="例如：T1124-HD"' }) +
+          field('团期名称', 'tour_name', '', 'text', { attrs: 'required placeholder="例如：0918 华东五日游"' }) +
           field('团期日期', 'tour_date', today(), 'date', { attrs: 'required' }) +
-          field(info.applicant, 'applicant', '', 'text', { attrs: 'required placeholder="例如：导游-陈"' }) +
+          field(info.applicant, 'applicant', '', 'text', { attrs: 'required placeholder="例如：计调-孙"' }) +
           field('出团用途说明', 'purpose', '', 'text', { attrs: 'placeholder="选填"' });
       } else {
         fields.innerHTML = field(info.applicant, 'applicant', '', 'text', { attrs: 'required placeholder="领用人姓名"' }) +
@@ -753,11 +814,15 @@
     $('[data-hq-save]', m.root).onclick = function () {
       var b = this, f = $('#hq-rq-form', m.root); if (!f.reportValidity()) return;
       var v = formValues(f), rows = attachItemId(ed.get());
+      // 团号必填（用户 2026-11-25 定稿）：直播礼品、出团物料必须填
+      var needTour = chainOf(v.category).key === 'live_plan' || chainOf(v.category).key === 'tour';
+      if (needTour && !String(v.tour_no || '').trim()) { toast('团号必填，请先填写团号再保存', 'err'); return; }
       if (!rows.length) { toast('请至少填写一行领用明细', 'err'); return; }
       // 明细归属统一跟随所选用途归属（便于按归属切换筛选与链路判定）
       rows.forEach(function (r) { r.category = v.category; });
       var info = chainOf(v.category);
       var remarkBits = ['归属：' + v.category];
+      if (v.tour_no) remarkBits.push('团号：' + String(v.tour_no).trim()); // 团号必填，零 DDL 落 remark 供全链路读取
       if (v.purpose) remarkBits.push((info.key === 'live_plan' ? '直播场次：' : '用途：') + v.purpose);
       if (v.remark) remarkBits.push(v.remark);
       var payload = {
@@ -778,16 +843,245 @@
             return r;
           })
         : SupaDB.createRequisition(payload);
-      Promise.resolve(task).then(function (r) { m.close(); toast('领用单已创建：' + (r && r.code || '') + (info.key === 'live_plan' ? '（主播拟出库·已锁定）' : '')); H.loadAll(); })
+      Promise.resolve(task).then(function (r) { m.close(); toast('申请已提交：' + (r && r.code || '') + (info.key === 'live_plan' ? '（主播申请·已锁定库存）' : '') + '，待下一岗位办理'); H.loadAll(); })
         .catch(function (e) { busy(b, null, false); toast('提交失败：' + (e && e.message || e), 'err'); });
     };
   }
-  function approveReq(id) {
+  // ---------- 六链路 · 中间环节办理（v6.12） ----------
+  // live   销售填写并邮寄：客户信息全部手动填写、一物可寄多客户、分配合计=本次数量；库存与锁定不动
+  // tour   仓库核对实拿：逐项登记导游实际拿走量，与计划量比对，差异须说明
+  // normal 仓库确定数量金额：金额 = 数量 × 单价（只展示留痕，零 DDL）
+  // 三个环节都只写「流程负载」+ 推进到合法状态 approved（降级 pending_outbound），由仓库在末端确定出库。
+  function handleReq(id) {
     var r = findIn(H.D.requisitions, id); if (!r) return;
-    confirmBox('审核领用单', '确认审核通过 ' + (r.code || '') + '？通过后该单可进入出库环节。', function () {
-      return SupaDB.approveRequisition(r.id, '总部后台审核通过');
-    }, { confirmText: '审核通过', okText: '审核已通过' });
+    var chain = chainOfReq(r);
+    if (chain === 'live') return handleLive(r);
+    if (chain === 'tour') return handleTour(r);
+    return handleNormal(r);
   }
+  function flowHead(r, extra) {
+    var tno = tourNoFromRemark(r);
+    return '<div class="hqf-grid" style="margin-bottom:10px">' +
+      field('团号（申请时填写 · 只读）', '_tno', tno || '未填写', 'text', { attrs: 'disabled' }) +
+      field(extra.label, '_ctx', extra.value || '—', 'text', { attrs: 'disabled' }) +
+      field('申请人', '_app', r.applicant || '—', 'text', { attrs: 'disabled' }) +
+      '</div>';
+  }
+  function saveHandled(req, payload, okMsg) {
+    return writeFlowPayload(req, payload)
+      .then(function () { return advanceHandled(req, payload.stepLabel + ' · ' + (payload.handledBy || '')); })
+      .then(function () { toast(okMsg); H.loadAll(); });
+  }
+
+  // ===== 领用1 直播礼品：销售填写并邮寄（客户信息手动、一物多客户） =====
+  function handleLive(r) {
+    var its = H.itemsOf(r);
+    var st = its.map(function (it) {
+      return { key: it.code || it.name, name: it.name, code: it.code, unit: it.unit || '',
+        plan: num(it.quantity), qty: num(it.quantity), on: true, cust: [] };
+    });
+    var active = 0;
+    var tno = tourNoFromRemark(r);
+    if (!tno) { toast('该单未填团号（必填），请由主播补填后再办理', 'err'); return; }
+    var m = openModal('销售填写并邮寄 · ' + (r.code || ''),
+      '<form id="hq-live-form">' +
+      '<div class="hq-notice">主播申请时已确定团号并锁定库存；本步只做客户管理与邮寄登记，<b>库存与锁定都不动</b>，由仓库在末端数据确认后出库。客户信息<b>全部手动填写</b>，一个物品可拆给多个客户。</div>' +
+      flowHead(r, { label: '直播场次', value: r.purpose || r.tour_name }) +
+      '<div class="hq-sec">本次邮寄物品（勾选并填本次数量）</div>' +
+      '<div class="tw"><table><thead><tr><th>办理</th><th>物品</th><th class="num">锁定量</th><th class="num">本次数量</th><th>单位</th><th>客户邮寄信息</th></tr></thead><tbody id="lv-body"></tbody></table></div>' +
+      '<div class="hq-sec" style="margin-top:14px">客户明细 · <span id="lv-active-name"></span>（手动填写，可增加多位客户）</div>' +
+      '<div id="lv-cust"></div>' +
+      '<div class="hqf-grid" style="margin-top:14px">' + field('销售 / 办理人', 'handledBy', '', 'text', { attrs: 'required placeholder="销售姓名"' }) + '</div>' +
+      '</form>',
+      '<button class="btn" data-hq-cancel>取消</button><button class="btn primary" data-hq-save>保存并邮寄 ›</button>');
+    function drawBody() {
+      $('#lv-body', m.root).innerHTML = st.map(function (it, i) {
+        var sum = it.cust.reduce(function (a, c) { return a + num(c.qty); }, 0);
+        var info = it.cust.length ? '<span class="lnk" style="color:#2d8659" data-lv-pick="' + i + '">已填 ' + it.cust.length + ' 位客户 · ' + sum + ' 件（预览/编辑）›</span>'
+          : '<span class="lnk" data-lv-pick="' + i + '">填写客户信息 ›</span>';
+        return '<tr><td><input type="checkbox" data-lv-on="' + i + '"' + (it.on ? ' checked' : '') + '></td>' +
+          '<td><b>' + esc(it.name) + '</b> <small style="color:#a09890">' + esc(it.code || '') + '</small></td>' +
+          '<td class="num">' + it.plan + '</td>' +
+          '<td><input type="number" min="0" max="' + it.plan + '" step="1" data-lv-qty="' + i + '" value="' + it.qty + '" style="width:78px"></td>' +
+          '<td>' + esc(it.unit) + '</td><td>' + (it.on ? info : '<small style="color:#a09890">未办理</small>') + '</td></tr>';
+      }).join('');
+    }
+    function drawCust() {
+      var it = st[active];
+      $('#lv-active-name', m.root).textContent = it ? it.name + '（本次 ' + it.qty + ' ' + it.unit + '）' : '';
+      $('#lv-cust', m.root).innerHTML = it ? (
+        '<div class="hq-msg" style="margin-bottom:8px;font-size:11.5px">分配合计须等于本次数量 <b>' + it.qty + '</b>；当前 <b id="lv-csum">' + it.cust.reduce(function (a, c) { return a + num(c.qty); }, 0) + '</b>。收件人 / 电话 / 地址 / 数量必填，快递单号可后补。</div>' +
+        (it.cust.length ? it.cust.map(function (c, j) {
+          return '<div style="border:1.5px solid #e8e2da;border-radius:8px;padding:9px 10px;margin-bottom:8px;background:#fdfcfa">' +
+            '<div style="font-weight:700;font-size:12px;margin-bottom:6px">客户 ' + (j + 1) + ' <button type="button" class="btn sm" data-lv-del="' + j + '" style="float:right;color:#c0392b">删除</button></div>' +
+            '<div class="hqf-grid">' +
+            field('收件人 *', '_n' + j, c.name, 'text', { attrs: 'placeholder="手动填写"' }) +
+            field('联系电话 *', '_p' + j, c.phone, 'text', { attrs: 'placeholder="手动填写"' }) +
+            field('数量 *', '_q' + j, c.qty, 'number', { attrs: 'min="1" step="1"' }) +
+            field('快递公司', '_c' + j, c.carrier, 'text', { attrs: 'placeholder="选填"' }) +
+            field('快递单号（可后补）', '_t' + j, c.track, 'text', { attrs: 'placeholder="选填"' }) +
+            field('备注', '_r' + j, c.remark, 'text', { attrs: 'placeholder="选填"' }) +
+            '</div>' + field('收件地址 *', '_a' + j, c.addr, 'text', { attrs: 'placeholder="手动填写完整地址"' }) + '</div>';
+        }).join('') : '<div class="hq-msg" style="padding:12px;text-align:center">尚未填写客户信息，点下方「增加客户明细」开始</div>') +
+        '<button type="button" class="btn sm" id="lv-add" style="margin-top:4px">+ 增加客户明细</button>'
+      ) : '';
+    }
+    function syncCust() {
+      var it = st[active]; if (!it) return;
+      it.cust.forEach(function (c, j) {
+        ['name', 'phone', 'qty', 'carrier', 'track', 'remark', 'addr'].forEach(function (f, k) {
+          var el = $('[name="_' + ['n', 'p', 'q', 'c', 't', 'r', 'a'][k] + j + '"]', m.root);
+          if (el) c[f] = (f === 'qty') ? num(el.value) : el.value;
+        });
+      });
+      var cs = $('#lv-csum', m.root);
+      if (cs) cs.textContent = String(it.cust.reduce(function (a, c) { return a + num(c.qty); }, 0));
+    }
+    function switchActive(i) { syncCust(); active = i; drawCust(); drawBody(); }
+    m.root.addEventListener('input', function (e) {
+      var t = e.target;
+      if (t.hasAttribute('data-lv-qty')) { st[Number(t.getAttribute('data-lv-qty'))].qty = Math.max(0, Math.min(num(t.value), st[Number(t.getAttribute('data-lv-qty'))].plan)); }
+      syncCust();
+    });
+    m.root.addEventListener('change', function (e) {
+      var t = e.target;
+      if (t.hasAttribute('data-lv-on')) { st[Number(t.getAttribute('data-lv-on'))].on = t.checked; drawBody(); }
+    });
+    m.root.addEventListener('click', function (e) {
+      var pk = e.target.closest('[data-lv-pick]');
+      if (pk) { switchActive(Number(pk.getAttribute('data-lv-pick'))); return; }
+      if (e.target.closest('#lv-add')) { syncCust(); st[active].cust.push({ name: '', phone: '', addr: '', carrier: '', track: '', qty: 1, remark: '' }); drawCust(); return; }
+      var dl = e.target.closest('[data-lv-del]');
+      if (dl) { syncCust(); st[active].cust.splice(Number(dl.getAttribute('data-lv-del')), 1); drawCust(); }
+    });
+    drawBody(); drawCust();
+    $('[data-hq-cancel]', m.root).onclick = m.close;
+    $('[data-hq-save]', m.root).onclick = function () {
+      var b = this, f = $('#hq-live-form', m.root); if (!f.reportValidity()) return;
+      syncCust();
+      var v = formValues(f);
+      var items = st.filter(function (it) { return it.on && it.qty > 0; });
+      if (!items.length) { toast('请至少勾选一件物品并填写本次数量', 'err'); return; }
+      for (var i = 0; i < items.length; i++) {
+        var it = items[i], sum = it.cust.reduce(function (a, c) { return a + num(c.qty); }, 0);
+        if (!it.cust.length) { toast('「' + it.name + '」尚未填写客户信息', 'err'); return; }
+        if (sum !== it.qty) { toast('「' + it.name + '」客户分配合计 ' + sum + ' 与本次数量 ' + it.qty + ' 不一致', 'err'); return; }
+        for (var j = 0; j < it.cust.length; j++) {
+          var c = it.cust[j];
+          if (!String(c.name || '').trim() || !String(c.phone || '').trim() || !String(c.addr || '').trim()) { toast('「' + it.name + '」第 ' + (j + 1) + ' 位客户的收件人/电话/地址必填', 'err'); return; }
+        }
+      }
+      var payload = {
+        step: 'handled', stepLabel: '销售填写并邮寄', chain: 'live', tourNo: tno,
+        session: r.purpose || r.tour_name || '', applicant: r.applicant || '',
+        handledBy: v.handledBy, handledAt: today(),
+        items: items.map(function (it) { return { key: it.key, name: it.name, code: it.code, unit: it.unit, plan: it.plan, qty: it.qty, customers: it.cust }; })
+      };
+      busy(b, '保存中', true);
+      saveHandled(r, payload, '已填写并邮寄 ' + (r.code || '') + '：' + items.reduce(function (a, x) { return a + x.customers.length; }, 0) + ' 条客户明细，待仓库确定出库')
+        .then(function () { m.close(); })
+        .catch(function (e) { busy(b, null, false); toast('保存失败：' + (e && e.message || e), 'err'); });
+    };
+  }
+
+  // ===== 领用2 出团物料：仓库核对导游实拿量与单据一致 =====
+  function handleTour(r) {
+    var its = H.itemsOf(r);
+    var tno = tourNoFromRemark(r);
+    if (!tno) { toast('该单未填团号（必填），请由计调补填后再办理', 'err'); return; }
+    var m = openModal('仓库核对导游实拿 · ' + (r.code || ''),
+      '<form id="hq-tour-form">' +
+      '<div class="hq-notice">导游线下实际拿走物料（不进系统），仓库按计调单据逐项核对<b>数量与物品是否一致</b>；一致方可确定出库，有差异须填写说明。本步<b>不扣库存</b>。</div>' +
+      flowHead(r, { label: '团期', value: r.tour_name }) +
+      '<div class="hq-sec">逐项实拿登记</div>' +
+      '<div class="tw"><table><thead><tr><th>物品</th><th class="num">计划量（计调单）</th><th class="num">导游实拿量</th><th>单位</th><th>核对</th></tr></thead><tbody>' +
+      its.map(function (it, i) {
+        return '<tr><td><b>' + esc(it.name) + '</b> <small style="color:#a09890">' + esc(it.code || '') + '</small></td>' +
+          '<td class="num">' + num(it.quantity) + '</td>' +
+          '<td><input type="number" min="0" max="' + num(it.quantity) + '" step="1" data-tr-qty="' + i + '" value="' + num(it.quantity) + '" style="width:82px"></td>' +
+          '<td>' + esc(it.unit || '') + '</td><td data-tr-diff="' + i + '">—</td></tr>';
+      }).join('') + '</tbody></table></div>' +
+      '<div class="hqf-grid" style="margin-top:12px">' +
+      field('仓库 / 核对人', 'handledBy', '', 'text', { attrs: 'required placeholder="仓库经办人"' }) +
+      '</div><div id="tr-diff-box" style="margin-top:8px"></div></form>',
+      '<button class="btn" data-hq-cancel>取消</button><button class="btn primary" data-hq-save>保存核对结果 ›</button>');
+    function recalc() {
+      var diff = false;
+      its.forEach(function (it, i) {
+        var q = num($('[data-tr-qty="' + i + '"]', m.root).value), d = q - num(it.quantity);
+        $('[data-tr-diff="' + i + '"]', m.root).innerHTML = d === 0 ? '<span class="tag g">一致 ✓</span>' : '<span class="tag r">差异 ' + (d > 0 ? '+' : '') + d + '</span>';
+        if (d !== 0) diff = true;
+      });
+      $('#tr-diff-box', m.root).innerHTML = diff
+        ? '<div class="hqf-grid">' + field('差异说明 *（由仓库核对人填写，不设复核角色）', 'diffNote', '', 'textarea', { attrs: 'placeholder="如：矿泉水少领 2 箱，已现场退回仓库，核对人现场确认"' }) + '</div>'
+        : '<div class="hq-msg" style="font-size:11.5px;color:#2d8659">全部一致，可直接确定出库。</div>';
+      return diff;
+    }
+    $('#hq-tour-form', m.root).addEventListener('input', recalc);
+    recalc();
+    $('[data-hq-cancel]', m.root).onclick = m.close;
+    $('[data-hq-save]', m.root).onclick = function () {
+      var b = this, f = $('#hq-tour-form', m.root); if (!f.reportValidity()) return;
+      var v = formValues(f), diff = false;
+      var items = its.map(function (it, i) {
+        var q = num($('[data-tr-qty="' + i + '"]', m.root).value), d = q - num(it.quantity);
+        if (d !== 0) diff = true;
+        return { key: it.code || it.name, name: it.name, code: it.code, unit: it.unit || '', plan: num(it.quantity), actual: q, diff: d, price: priceOfItem(it) };
+      });
+      if (diff && !String(v.diffNote || '').trim()) { toast('存在数量差异，请先填写差异说明', 'err'); return; }
+      var payload = {
+        step: 'handled', stepLabel: '仓库核对导游实拿', chain: 'tour', tourNo: tno,
+        session: r.tour_name || '', applicant: r.applicant || '',
+        handledBy: v.handledBy, handledAt: today(), diffNote: diff ? v.diffNote : '',
+        items: items
+      };
+      busy(b, '保存中', true);
+      saveHandled(r, payload, '已核对 ' + (r.code || '') + (diff ? '（含差异说明）' : '（全部一致）') + '，待仓库确定出库')
+        .then(function () { m.close(); })
+        .catch(function (e) { busy(b, null, false); toast('保存失败：' + (e && e.message || e), 'err'); });
+    };
+  }
+
+  // ===== 领用3 行政物料/总部仓库：仓库确定数量与金额 =====
+  function handleNormal(r) {
+    var its = H.itemsOf(r);
+    var m = openModal('仓库确定数量与金额 · ' + (r.code || ''),
+      '<form id="hq-normal-form">' +
+      '<div class="hq-notice">仓库核对领用数量与金额（金额 = 数量 × 单价，单价取库存物品 unit_price，<b>只展示留痕、不落新列</b>）；确定后由仓库在末端出库。</div>' +
+      flowHead(r, { label: '用途', value: r.purpose || r.tour_name || '常规领用' }) +
+      '<div class="hq-sec">数量与金额核对</div>' +
+      '<div class="tw"><table><thead><tr><th>物品</th><th class="num">申请数量</th><th class="num">单价</th><th class="num">金额</th><th>单位</th></tr></thead><tbody>' +
+      its.map(function (it) {
+        var p = priceOfItem(it), q = num(it.quantity);
+        return '<tr><td><b>' + esc(it.name) + '</b></td><td class="num">' + q + '</td><td class="num">¥' + p.toFixed(2) + '</td>' +
+          '<td class="num">¥' + (q * p).toFixed(2) + '</td><td>' + esc(it.unit || '') + '</td></tr>';
+      }).join('') + '</tbody></table></div>' +
+      '<div style="margin-top:10px;padding:9px 12px;background:#faf7f2;border:1.5px solid #e8e2da;border-radius:8px;font-size:12.5px">金额合计：<b style="color:#c23616">¥' +
+      its.reduce(function (a, it) { return a + num(it.quantity) * priceOfItem(it); }, 0).toFixed(2) + '</b></div>' +
+      '<div class="hqf-grid" style="margin-top:12px">' + field('仓库 / 确定人', 'handledBy', '', 'text', { attrs: 'required placeholder="仓库经办人"' }) + '</div></form>',
+      '<button class="btn" data-hq-cancel>取消</button><button class="btn primary" data-hq-save>保存确定结果 ›</button>');
+    $('[data-hq-cancel]', m.root).onclick = m.close;
+    $('[data-hq-save]', m.root).onclick = function () {
+      var b = this, f = $('#hq-normal-form', m.root); if (!f.reportValidity()) return;
+      var v = formValues(f);
+      var items = its.map(function (it) {
+        var q = num(it.quantity), p = priceOfItem(it);
+        return { key: it.code || it.name, name: it.name, code: it.code, unit: it.unit || '', plan: q, qty: q, price: p, amount: q * p };
+      });
+      var payload = {
+        step: 'handled', stepLabel: '仓库确定数量金额', chain: 'normal', tourNo: '',
+        session: r.purpose || r.tour_name || '', applicant: r.applicant || '',
+        handledBy: v.handledBy, handledAt: today(),
+        totalAmount: items.reduce(function (a, x) { return a + x.amount; }, 0), items: items
+      };
+      busy(b, '保存中', true);
+      saveHandled(r, payload, '已确定数量与金额 ' + (r.code || '') + '（¥' + payload.totalAmount.toFixed(2) + '），待仓库确定出库')
+        .then(function () { m.close(); })
+        .catch(function (e) { busy(b, null, false); toast('保存失败：' + (e && e.message || e), 'err'); });
+    };
+  }
+
+  // ===== 末端：仓库确定出库（三段链路共用，扣库存 / 释放锁定 / 生成出库单） =====
   function outReq(id, btn) {
     var r = findIn(H.D.requisitions, id); if (!r) { toast('找不到领用单', 'err'); return; }
     var its = H.itemsOf(r);
@@ -796,36 +1090,58 @@
       if (String(s.requisition_id) !== String(r.id)) return;
       H.itemsOf(s).forEach(function (x) { var k = x.code || x.name; done[k] = (done[k] || 0) + num(x.quantity); });
     });
-    var chain = chainOf(r.category_name || (its[0] || {}).category);
-    var isLive = chain.key === 'live_plan';
-    var m = openModal((isLive ? '销售实际出库 · ' : '领用出库 · ') + (r.code || ''),
-      '<form id="hq-out-form"><div class="hqf-grid">' +
+    var chain = chainOfReq(r), fp = readFlowPayload(r);
+    var tno = tourNoFromRemark(r);
+    var summary = '';
+    if (fp) {
+      if (chain === 'live') {
+        var nc = fp.items.reduce(function (a, x) { return a + (x.customers || []).length; }, 0);
+        summary = '已填 ' + nc + ' 位客户 · ' + fp.items.reduce(function (a, x) { return a + num(x.qty); }, 0) + ' 件（团号 ' + esc(fp.tourNo || '—') + '）';
+      } else if (chain === 'tour') {
+        summary = '导游实拿合计 ' + fp.items.reduce(function (a, x) { return a + num(x.actual); }, 0) + ' 件' + (fp.diffNote ? ' · <b style="color:#c77f0a">差异说明：' + esc(fp.diffNote) + '</b>' : ' · 核对一致');
+      } else {
+        summary = '金额合计 ¥' + num(fp.totalAmount).toFixed(2);
+      }
+    } else summary = '（该单未经过中间办理，按申请量出库）';
+    var chainLabel = chain === 'live' ? '领用1 直播礼品' : (chain === 'tour' ? '领用2 出团物料' : '领用3 常规领用');
+    var m = openModal('仓库确定出库 · ' + (r.code || ''),
+      '<form id="hq-out-form">' +
+      '<div class="hq-notice"><b>' + chainLabel + '</b> · 末端由<b>仓库</b>做数据确认后出库：确认即按实出数量扣库存、释放锁定、生成出库单。' +
+      (tno ? '<br>团号：<b>' + esc(tno) + '</b>（申请时确定，全链路只读）。' : '') +
+      '<br>上一步结果：' + summary + '</div>' +
+      '<div class="hqf-grid">' +
       field('出库日期', 'stockout_date', today(), 'date') +
-      field(isLive ? '出库销售' : '出库经办人', 'operator', '', 'text', { attrs: 'required placeholder="' + (isLive ? '销售姓名' : '经办人姓名') + '"' }) +
-      '</div>' + (isLive ? '<div class="hq-notice">直播链路第二段：主播已拟出库并锁定库存，此处由销售确认实际出库，锁定自动释放。</div>' : '') +
-      '<div class="hq-sec">本次出库数量</div>' +
+      field('仓库 / 确定人', 'operator', '', 'text', { attrs: 'required placeholder="仓库经办人"' }) +
+      '</div><div class="hq-sec">本次确定出库数量</div>' +
       its.map(function (it, i) {
         var k = it.code || it.name, d = done[k] || 0, left = Math.max(0, num(it.quantity) - d);
+        var preset = left;
+        if (fp && fp.items) {
+          var hit = fp.items.find(function (x) { return x.key === k || x.name === it.name; });
+          if (hit) preset = Math.min(left, num(chain === 'tour' ? hit.actual : hit.qty));
+        }
         return '<div class="hq-line"><span style="flex:1 1 130px;font-size:12px">' + esc(it.name) + ' <small style="color:#a09890">申请 ' + num(it.quantity) + ' · 已出 ' + d + '</small></span>' +
-          '<input data-out-i="' + i + '" type="number" min="0" max="' + left + '" step="1" value="' + left + '" style="max-width:100px"></div>';
+          '<input data-out-i="' + i + '" type="number" min="0" max="' + left + '" step="1" value="' + preset + '" style="max-width:100px"></div>';
       }).join('') + '</form>',
-      '<button class="btn" data-hq-cancel>取消</button><button class="btn primary" data-hq-save>确认出库</button>');
+      '<button class="btn" data-hq-cancel>取消</button><button class="btn primary" data-hq-save>确认出库 ›</button>');
     $('[data-hq-cancel]', m.root).onclick = m.close;
     $('[data-hq-save]', m.root).onclick = function () {
       var b = this, v = formValues($('#hq-out-form', m.root));
       var lines = [];
       its.forEach(function (it, i) {
         var q = num($('[data-out-i="' + i + '"]', m.root).value);
-        if (q > 0) lines.push({ name: it.name, code: it.code, category: it.category, unit: it.unit, quantity: q, requested_quantity: num(it.quantity), item_id: it.inventory_item_id, price: num(it.price) });
+        if (q > 0) lines.push({ name: it.name, code: it.code, category: it.category, unit: it.unit, quantity: q, requested_quantity: num(it.quantity), item_id: it.inventory_item_id, price: num(it.price) || priceOfItem(it) });
       });
       if (!lines.length) { toast('请至少填写一个出库数量', 'err'); return; }
-      if (!v.operator) { toast('请填写' + (isLive ? '出库销售' : '出库经办人'), 'err'); return; }
+      if (!v.operator) { toast('请填写仓库确定人', 'err'); return; }
       busy(b, '出库处理中', true);
-      Promise.resolve(SupaDB.confirmStockOut(r.id, { stockout_date: v.stockout_date, confirmed_by: v.operator, items: lines, total_quantity: lines.reduce(function (a, x) { return a + x.quantity; }, 0) }))
+      // 未办理的单（status 仍为 pending_approval）先推进到合法状态，绕过 confirmStockOut 门禁
+      var pre = (r.status === 'pending_approval' || r.status === 'pending') ? advanceHandled(r, '仓库直接确定出库') : Promise.resolve();
+      Promise.resolve(pre)
+        .then(function () { return SupaDB.confirmStockOut(r.id, { stockout_date: v.stockout_date, confirmed_by: v.operator, items: lines, total_quantity: lines.reduce(function (a, x) { return a + x.quantity; }, 0) }); })
         .then(function (res) {
-          // 直播：win_register 锁定已在拟出库时登记，实际出库用 prize_ship 解锁(locked -1 / physical -1)
-          postLedger(isLive ? 'prize_ship' : 'tour_signoff', lines, (lines[0] || {}).category, v.stockout_date, res && res.code);
-          m.close(); toast('出库完成：' + (res && res.code || '')); H.loadAll();
+          postLedger(chain === 'live' ? 'prize_ship' : 'tour_signoff', lines, (lines[0] || {}).category, v.stockout_date, res && res.code);
+          m.close(); toast('仓库已确定出库：' + (res && res.code || '')); H.loadAll();
         })
         .catch(function (e) { busy(b, null, false); toast('出库失败：' + (e && e.message || e), 'err'); });
     };
@@ -835,57 +1151,44 @@
     var its = H.itemsOf(r);
     var rows = its.map(function (it) { return '<tr><td>' + esc(it.name) + '</td><td>' + esc(it.category || '未分类') + '</td><td class="num">' + num(it.quantity) + '</td><td>' + esc(it.unit || '') + '</td></tr>'; }).join('');
     var m = openModal('领用单 · ' + (r.code || ''),
-      '<div class="hq-detail"><b>申请日期：</b>' + esc(r.apply_date || '—') + '　<b>领用人：</b>' + esc(r.applicant || '—') + '<br><b>团期：</b>' + esc(r.tour_name || '—') + '　<b>状态：</b>' + esc(r.status || '—') + '</div>' +
+      '<div class="hq-detail"><b>申请日期：</b>' + esc(r.apply_date || '—') + '　<b>申请人：</b>' + esc(r.applicant || '—') + '<br>' +
+      '<b>团号：</b>' + esc(tourNoFromRemark(r) || '—') + '　<b>团期：</b>' + esc(r.tour_name || '—') + '　<b>状态：</b>' + esc(r.status || '—') +
+      (function () { var fp = readFlowPayload(r); if (!fp) return '';
+        var extra = fp.chain === 'live' ? ('客户明细 ' + fp.items.reduce(function (a, x) { return a + (x.customers || []).length; }, 0) + ' 条')
+          : fp.chain === 'tour' ? ('实拿合计 ' + fp.items.reduce(function (a, x) { return a + num(x.actual); }, 0) + ' 件' + (fp.diffNote ? ' · 差异：' + esc(fp.diffNote) : ''))
+          : ('金额合计 ¥' + num(fp.totalAmount).toFixed(2));
+        return '<br><b>办理结果：</b>' + esc(fp.stepLabel || '—') + ' · ' + esc(fp.handledBy || '—') + ' · ' + esc(fp.handledAt || '') + ' · ' + extra; })() +
+      '</div>' +
       '<div class="hq-sec">明细 ' + its.length + ' 项</div><div class="tw"><table><thead><tr><th>名称</th><th>归属</th><th class="num">数量</th><th>单位</th></tr></thead><tbody>' + (rows || '<tr><td colspan="4">无明细</td></tr>') + '</tbody></table></div>',
       '<button class="btn" data-hq-cancel>关闭</button>');
     $('[data-hq-cancel]', m.root).onclick = m.close;
   }
 
-  // ---------- 邮寄出库 ----------
+  // ---------- 填写并邮寄（领用1 直播礼品的中间环节入口） ----------
+  // v6.12：邮寄必须关联主播已锁定库存的直播礼品领用单（团号在申请时确定、全链路只读），
+  // 不再独立建档；客户信息由销售在 handleLive() 中全部手动填写，仓库在末端确定出库。
   function mailOut(btn) {
-    var m = openModal('邮寄出库（直播礼品中奖）',
-      '<form id="hq-mail-form"><div class="hqf-grid">' +
-      field('收件人', 'applicant', '', 'text', { attrs: 'required placeholder="中奖人姓名"' }) +
-      field('快递公司', 'carrier', '顺丰速运') +
-      field('快递单号', 'tracking_no', '') +
-      field('出库日期', 'stockout_date', today(), 'date') +
-      '</div><div class="hq-sec">邮寄明细</div><div id="hq-mail-lines"></div>' +
-      '<div class="hqf-grid" style="margin-top:14px">' + field('备注', 'remark', '', 'textarea') + '</div></form>',
-      '<button class="btn" data-hq-cancel>取消</button><button class="btn primary" data-hq-save>确认邮寄出库</button>');
-    var ed = linesEditor($('#hq-mail-lines', m.root), [{ name: '', code: '', category: '直播礼品', quantity: '', unit: '个' }], false);
+    var pend = (H.D.requisitions || []).filter(function (r) {
+      var st = String(r.status || '');
+      if (st === 'outbound_completed' || st === 'withdrawn' || st === 'rejected') return false;
+      if (/HQ_HANDLED/.test(String(r.remark || ''))) return false; // 已办理过的不再重复填写
+      return chainOfReq(r) === 'live';
+    });
+    if (!pend.length) { toast('当前没有待销售填写并邮寄的直播礼品领用单，请先由主播提交申请（团号必填）', 'err'); return; }
+    if (pend.length === 1) { handleLive(pend[0]); return; }
+    var opts = pend.map(function (r) {
+      return { v: r.id, t: (r.code || '') + ' · ' + (r.applicant || '') + ' · 团号 ' + (tourNoFromRemark(r) || '—') };
+    });
+    var m = openModal('销售填写并邮寄 · 选择单据',
+      '<form id="hq-pick-mail"><div class="hqf-grid">' + field('选择直播礼品领用单', 'reqId', pend[0].id, 'select', { options: opts }) + '</div>' +
+      '<div class="hq-notice">邮寄必须关联主播已锁定库存的领用单；团号在申请时确定、本步只读。客户信息<b>全部手动填写</b>，一个物品可拆给多位客户，保存后待仓库确定出库。</div></form>',
+      '<button class="btn" data-hq-cancel>取消</button><button class="btn primary" data-hq-next>下一步 ›</button>');
     $('[data-hq-cancel]', m.root).onclick = m.close;
-    $('[data-hq-save]', m.root).onclick = function () {
-      var b = this, f = $('#hq-mail-form', m.root); if (!f.reportValidity()) return;
-      var v = formValues(f), rows = attachItemId(ed.get());
-      if (!rows.length) { toast('请至少填写一行邮寄明细', 'err'); return; }
-      busy(b, '邮寄出库处理中', true);
-      // 邮寄走领用出库链路建档 → 审核 → 出库 → 回写邮寄字段，全程落库可追溯
-      SupaDB.createRequisition({
-        apply_date: v.stockout_date, tour_date: v.stockout_date, tour_name: '中奖邮寄',
-        scenario: '邮寄出库', applicant: v.applicant, remark: (v.remark || '') + ' / 快递 ' + v.carrier + ' ' + v.tracking_no,
-        total_quantity: rows.reduce(function (a, r) { return a + num(r.quantity); }, 0),
-        items: rows.map(function (r) { return { item_id: r.item_id, name: r.name, code: r.code, category: r.category, unit: r.unit, quantity: num(r.quantity) }; })
-      }).then(function (req) {
-        // 线上若未放宽状态约束，createRequisition 会降级为 pending_outbound，此时无需再审核
-        var st = req.status || '';
-        if (st !== 'pending_approval' && st !== 'pending') return req;
-        return SupaDB.approveRequisition(req.id, '邮寄出库自动审核')
-          .catch(function () { return null; }).then(function () { return req; });
-      }).then(function (req) {
-        return SupaDB.confirmStockOut(req.id, {
-          stockout_date: v.stockout_date,
-          items: rows.map(function (r) { return { item_id: r.item_id, name: r.name, code: r.code, category: r.category, unit: r.unit, quantity: num(r.quantity), price: num(r.price) }; }),
-          total_quantity: rows.reduce(function (a, r) { return a + num(r.quantity); }, 0)
-        });
-      }).then(function (so) {
-        var sb = getSupabase();
-        return sb.from('stock_out_records').update({ out_type: 'mail', tracking_no: v.tracking_no || '待填写', remark: v.carrier + ' / ' + v.remark })
-          .eq('id', so.id).then(function () { return so; });
-      }).then(function (so) {
-        postLedger('prize_ship', rows, '直播礼品', v.stockout_date, so && so.code);
-        m.close(); toast('邮寄出库完成：' + (so && so.code || '')); H.loadAll();
-      })
-        .catch(function (e) { busy(b, null, false); toast('邮寄出库失败：' + (e && e.message || e), 'err'); });
+    $('[data-hq-next]', m.root).onclick = function () {
+      var id = formValues($('#hq-pick-mail', m.root)).reqId;
+      var r = findIn(H.D.requisitions, id);
+      m.close();
+      if (r) handleLive(r);
     };
   }
   function viewSO(id) {
@@ -936,7 +1239,7 @@
       field('申请人', 'applicant', '', 'text', { attrs: 'required placeholder="退回经办人"' }) +
       field('退回原因', 'reason', '', 'text', { attrs: 'required placeholder="例如：团后剩余物料退回"' }) +
       '</div>' +
-      '<div class="hq-notice">退回单提交后为「待审核」，审核通过才回补库存；入库成本按物品当前加权均价计，均价不变。</div></form>',
+      '<div class="hq-notice">退回单提交后为「待仓库确定」，仓库确定退回实物后才回补库存；入库成本按物品当前加权均价计，均价不变。</div></form>',
       '<button class="btn" data-hq-cancel>取消</button><button class="btn primary" data-hq-save>提交退回单</button>');
     var f = $('#hq-return-form', m.root);
     var modeSel = $('[name="mode"]', f), catSel = $('[name="category"]', f);
@@ -1051,29 +1354,29 @@
       Promise.all(jobs.map(function (j) {
         return SupaDB.createNonPurchaseStockIn({ code: j.code, name: j.name, category: j.category, unit: j.unit, qty: j.qty, reason: j.reason, price: 0 });
       })).then(function (rs) {
-        m.close(); toast('退回单已提交 ' + rs.length + ' 张（待审核）'); H.loadAll();
+        m.close(); toast('退回单已提交 ' + rs.length + ' 张（待仓库确定）'); H.loadAll();
       }).catch(function (e) { busy(b, null, false); toast('提交失败：' + (e && e.message || e), 'err'); });
     };
   }
   function findReturn(id) { return findIn(H.D.returns || [], id); }
   function approveReturn(id) {
     var rr = findReturn(id); if (!rr) return;
-    confirmBox('审核退回入库', '确认将 ' + (rr.code || '') + ' · ' + esc(rr.name || '') + ' × ' + num(rr.qty) + ' 审核入库？审核后回补库存。', function () {
-      return SupaDB.approveNonPurchaseStockIn(rr.id, '总部审核退回入库').then(function () {
+    confirmBox('仓库确定退回入库', '确认将 ' + (rr.code || '') + ' · ' + esc(rr.name || '') + ' × ' + num(rr.qty) + ' 确定入库？确定后回补库存。', function () {
+      return SupaDB.approveNonPurchaseStockIn(rr.id, '总部仓库确定退回入库').then(function () {
         postLedger('recovery_acceptance', [{ name: rr.name, code: rr.item_code || rr.code, category: rr.category_name || rr.category, quantity: num(rr.qty), item_id: null }],
           rr.category_name || rr.category, today(), rr.code);
       });
-    }, { confirmText: '审核入库', okText: '已回补库存' });
+    }, { confirmText: '仓库确定入库', okText: '已回补库存' });
   }
   function rejectReturn(id) {
     var rr = findReturn(id); if (!rr) return;
     confirmBox('驳回退回单', '确认驳回 ' + (rr.code || '') + '？驳回后不会回补库存。', function () {
-      return SupaDB.rejectNonPurchaseStockIn(rr.id, '总部审核驳回');
+      return SupaDB.rejectNonPurchaseStockIn(rr.id, '总部仓库驳回');
     }, { danger: true, confirmText: '确认驳回', okText: '已驳回' });
   }
   function viewReturn(id) {
     var rr = findReturn(id); if (!rr) return;
-    var stMap = { pending: '待审核', approved: '已入库', rejected: '已驳回' };
+    var stMap = { pending: '待仓库确定', approved: '已回补', rejected: '已驳回' };
     var m = openModal('退回入库单 · ' + (rr.code || ''),
       '<div class="hq-detail"><b>物品：</b>' + esc(rr.name || '—') + '　<b>编码：</b>' + esc(rr.item_code || rr.code || '—') + '<br>' +
       '<b>归属：</b>' + esc(rr.category_name || rr.category || '—') + '　<b>数量：</b>' + num(rr.qty) + ' ' + esc(rr.unit || '') + '<br>' +
@@ -1362,7 +1665,7 @@
       });
     } else if (kind === 'returned') {
       title = '退回入库明细 · ' + own;
-      note = '领用/邮寄后剩余物料退回，审核通过已回补库存的流水。';
+      note = '领用/邮寄后剩余物料退回，仓库确定后已回补库存的流水。';
       (H.D.returns || []).filter(function (r) { return r.status === 'approved'; }).forEach(function (r) {
         if (ownerKey && (r.category_name || r.category) !== own) return;
         rows.push({ cells: [esc(r.code || ''), esc((r.created_at || '').slice(5, 10)), esc(r.name || ''), esc(r.reason || '—'), num(r.qty).toFixed(0), esc(r.applicant_name || '—'), esc(r.remark || '—')] });
@@ -1399,7 +1702,8 @@
     'po-view': function (id) { viewPO(id); },
     'po-stockin': function (id, b) { acceptStockIn(id, b); },
     'si-accept': function (id, b) { acceptStockIn(id, b); },
-    'rq-approve': function (id) { approveReq(id); },
+    'rq-handle': function (id) { handleReq(id); },
+    'rq-approve': function (id) { handleReq(id); }, // 兼容旧缓存的 data-act
     'rq-out': function (id, b) { outReq(id, b); },
     'rq-view': function (id) { viewReq(id); },
     'so-view': function (id) { viewSO(id); },
@@ -1426,6 +1730,9 @@
     if (!btn) return;
     if (btn.id === 'btn-inv-template') { downloadInvTemplate(); return; }
     if (btn.id === 'btn-inv-import') { importInventory(btn); return; }
+    // 弹窗内按钮已由各自 openModal 的 [data-hq-*] 单独绑定；全局「按文字分发」必须排除，
+    // 否则弹窗里出现「填写并邮寄 ›」「仓库确定出库 ›」等字样会被冒泡再次触发（v6.12）。
+    if (btn.closest('#hq-modal-root')) return;
     var txt = (btn.textContent || '').trim();
     var m0 = $('.mod:not(.hidden)'); var mod = m0 ? m0.id.replace('mod-', '') : '';
     if (txt.indexOf('新增物品') >= 0) editItem(null, btn);
@@ -1434,8 +1741,8 @@
     else if (txt.indexOf('导入Excel') >= 0) importPO(btn);
     else if (txt.indexOf('新建领用单') >= 0) newReq(btn);
     else if (txt.indexOf('新建退回单') >= 0) newReturn(btn);
-    else if (txt.indexOf('邮寄出库') >= 0) mailOut(btn);
-    else if (txt.indexOf('领用出库') >= 0 && mod === 'stockout') outReqPrompt(btn);
+    else if (txt.indexOf('邮寄出库') >= 0 || txt.indexOf('填写并邮寄') >= 0) mailOut(btn);
+    else if ((txt.indexOf('领用出库') >= 0 || txt.indexOf('仓库确定出库') >= 0) && mod === 'stockout') outReqPrompt(btn);
     else if (txt.indexOf('导出') >= 0) exportCSV(mod);
     else if (txt.indexOf('查询') >= 0 && mod === 'reports') queryReports();
     else if (txt.indexOf('展开全部') >= 0) expandAll(btn);
@@ -1443,10 +1750,10 @@
   });
   function outReqPrompt(btn) {
     var pend = (H.D.requisitions || []).filter(function (r) { return r.status === 'approved' || r.status === 'pending_outbound' || r.status === 'partially_outbounded'; });
-    if (!pend.length) { toast('当前没有可出库的领用单，请先新建并审核领用单', 'err'); return; }
+    if (!pend.length) { toast('当前没有待仓库确定出库的单据，请先完成上一岗位办理', 'err'); return; }
     if (pend.length === 1) { outReq(pend[0].id, btn); return; }
     var opts = pend.map(function (r) { return { v: r.id, t: (r.code || '') + ' · ' + (r.applicant || '') + ' · ' + (r.tour_name || '—') }; });
-    var m = openModal('领用出库 · 选择单据',
+    var m = openModal('仓库确定出库 · 选择单据',
       '<form id="hq-pick-out"><div class="hqf-grid">' + field('选择领用单', 'reqId', pend[0].id, 'select', { options: opts }) + '</div></form>',
       '<button class="btn" data-hq-cancel>取消</button><button class="btn primary" data-hq-next>下一步</button>');
     $('[data-hq-cancel]', m.root).onclick = m.close;
@@ -1466,12 +1773,12 @@
       var sels = $$('#mod-requisition .filterbar .sel');
       if (sels[0] === el) filterRows('requisition', 5, el.value);
       else {
-        // 流程状态按当前高亮步骤匹配（审核 / 在途 / 核销）
-        var want = { '待审核': '审核', '在途': '在途', '已出库': '核销' }[el.value] || '';
+        // 流程状态按当前高亮节点匹配（申请 / 中间办理 / 仓库确定出库）
+        var want = { '待办理': '申请', '待仓库确定': '确定', '已出库': '出库' }[el.value] || '';
         $$('#mod-requisition tbody tr').forEach(function (tr) {
           var on = $('.flow .step.on', tr);
           var txt = on ? on.textContent.trim() : '';
-          tr.style.display = (!want || txt === want) ? '' : 'none';
+          tr.style.display = (!want || txt.indexOf(want) >= 0) ? '' : 'none';
         });
       }
     } else if (el.matches('#mod-stockout .filterbar .sel')) {
