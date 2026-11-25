@@ -36,6 +36,11 @@
     '#hq-modal-root .hq-line input[type=number]{max-width:92px}',
     '#hq-modal-root .hq-del{border:1.5px solid #e8e2da;background:#fff;color:#c0392b;border-radius:7px;width:27px;height:29px;cursor:pointer;font-size:15px;flex:0 0 27px}',
     '#hq-modal-root .hq-addline{border:1.5px dashed #a8a098;background:transparent;color:#5e554c;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;margin-top:4px;font-family:inherit}',
+    '#hq-modal-root .hq-pick{border:1.5px solid #c23616;background:#fff;color:#c23616;border-radius:7px;padding:5px 8px;cursor:pointer;font-size:11px;font-family:inherit;flex:0 0 auto;font-weight:700}',
+    '#hq-modal-root .hq-pick-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid #e8e2da;border-radius:9px;margin-bottom:7px;font-size:12.5px}',
+    '#hq-modal-root .hq-pick-row span:first-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '#hq-modal-root .hq-pick-row small{color:#a09890;font-size:11px}',
+    '#hq-modal-root .hq-pick-row .stk{color:#5e554c;white-space:nowrap}',
     '#hq-modal-root .hq-msg{font-size:13.5px;line-height:1.9;color:#5e554c}',
     '#hq-modal-root .hq-detail{font-size:12.5px;color:#5e554c;line-height:1.95}',
     '#hq-modal-root .hq-detail b{color:#2d2620}',
@@ -221,31 +226,95 @@
   }
 
   /** 可增删的明细编辑表，返回 get() 取当前行数组 */
+  /** 从库存选择已有物品（对齐列车 purchase.js 的 picker：分类筛选 + 关键字搜索 + 库存量展示） */
+  function openInvPicker(onPick) {
+    var inv = H.D.inventory || [];
+    var cats = [];
+    inv.forEach(function (x) { var c = x.category_name || x.category || '未分类'; if (cats.indexOf(c) < 0) cats.push(c); });
+    var m = openModal('从库存选择已有物品',
+      '<div class="hqf-grid">' +
+      field('用途归属', 'cat', '', 'select', { options: ['全部归属'].concat(cats) }) +
+      field('搜索（名称/编码/品牌/型号）', 'kw', '') +
+      '</div><div id="hq-inv-pick-list" style="margin-top:14px"></div>',
+      '<button class="btn" data-hq-cancel>关闭</button>');
+    var list = $('#hq-inv-pick-list', m.root);
+    function renderList() {
+      var cat = $('[name="cat"]', m.root).value;
+      var kw = String($('[name="kw"]', m.root).value || '').trim().toLowerCase();
+      var items = inv.filter(function (x) {
+        var c = x.category_name || x.category || '未分类';
+        if (cat !== '全部归属' && c !== cat) return false;
+        if (!kw) return true;
+        return [x.name, x.code, x.brand, x.model, c].some(function (v) { return String(v || '').toLowerCase().indexOf(kw) >= 0; });
+      });
+      list.innerHTML = items.length ? items.map(function (x) {
+        var c = x.category_name || x.category || '未分类';
+        return '<div class="hq-pick-row"><span><b>' + esc(x.name) + '</b> <small>' + esc(x.code || '无编码') +
+          ' · ' + esc(x.brand || '') + ' ' + esc(x.model || '') + ' · ' + esc(c) + '</small></span>' +
+          '<span class="stk">库存 ' + num(x.stock) + esc(x.unit || '') + '</span>' +
+          '<button type="button" class="btn" data-pick="' + esc(x.id) + '">添加</button></div>';
+      }).join('') : '<div class="hq-msg">未找到匹配的库存物品</div>';
+    }
+    $('[name="cat"]', m.root).onchange = renderList;
+    $('[name="kw"]', m.root).oninput = renderList;
+    list.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-pick]'); if (!btn) return;
+      var item = inv.find(function (x) { return String(x.id) === btn.getAttribute('data-pick'); });
+      if (item) { m.close(); onPick(item); }
+    });
+    renderList();
+  }
+
   function linesEditor(mount, initial, withPrice) {
     var rows = JSON.parse(JSON.stringify(initial || []));
+    var dlId = 'hq-inv-names-' + Math.random().toString(36).slice(2, 8);
+    function invByName(name) {
+      var n = String(name || '').trim().toLowerCase();
+      return (H.D.inventory || []).find(function (x) { return String(x.name || '').trim().toLowerCase() === n; });
+    }
+    function fillFromInv(row, item) {
+      if (!item || !row) return;
+      row.code = item.code || row.code || '';
+      row.brand = item.brand || row.brand || '';
+      row.model = item.model || row.model || '';
+      row.unit = item.unit || row.unit || '';
+      if (!row.category || row.category === '未分类') row.category = item.category_name || item.category || row.category;
+      if (withPrice && !row.price) row.price = item.unit_price || '';
+      row.item_id = item.id;
+    }
     function render() {
-      mount.innerHTML = rows.map(function (r, i) {
+      mount.innerHTML = '<datalist id="' + dlId + '">' + (H.D.inventory || []).map(function (x) {
+        return '<option value="' + esc(x.name) + '">';
+      }).join('') + '</datalist>' + rows.map(function (r, i) {
         return '<div class="hq-line" data-i="' + i + '">' +
-          '<input data-k="name" placeholder="物品名称" value="' + esc(r.name || '') + '">' +
+          '<input data-k="name" list="' + dlId + '" placeholder="物品名称（可搜索库存）" value="' + esc(r.name || '') + '">' +
+          '<button type="button" class="hq-pick" data-i="' + i + '" title="从库存选择">库存</button>' +
           '<input data-k="code" placeholder="编码" value="' + esc(r.code || '') + '">' +
+          '<input data-k="brand" placeholder="品牌" value="' + esc(r.brand || '') + '">' +
+          '<input data-k="model" placeholder="型号" value="' + esc(r.model || '') + '">' +
           '<select data-k="category">' + ownOpts(r.category || r.category_name) + '</select>' +
-          '<input data-k="quantity" type="number" min="0" step="1" placeholder="数量" value="' + esc(r.quantity == null ? '' : r.quantity) + '">' +
+          '<input data-k="quantity" type="number" min="0" step="0.01" placeholder="数量" value="' + esc(r.quantity == null ? '' : r.quantity) + '">' +
           '<input data-k="unit" placeholder="单位" value="' + esc(r.unit || '') + '">' +
           (withPrice ? '<input data-k="price" type="number" min="0" step="0.01" placeholder="单价" value="' + esc(r.price == null ? '' : r.price) + '">' : '') +
           '<button type="button" class="hq-del" data-i="' + i + '" title="删除该行">×</button></div>';
       }).join('') + '<button type="button" class="hq-addline">+ 添加明细行</button>';
     }
-    mount.addEventListener('input', function (e) {
-      var k = e.target.getAttribute('data-k'); if (!k) return;
-      rows[Number(e.target.parentNode.getAttribute('data-i'))][k] = e.target.value;
-    });
-    mount.addEventListener('change', function (e) {
-      var k = e.target.getAttribute('data-k'); if (!k) return;
-      rows[Number(e.target.parentNode.getAttribute('data-i'))][k] = e.target.value;
+    ['input', 'change'].forEach(function (evt) {
+      mount.addEventListener(evt, function (e) {
+        var k = e.target.getAttribute('data-k'); if (!k) return;
+        var i = Number(e.target.parentNode.getAttribute('data-i'));
+        if (!rows[i]) return;
+        rows[i][k] = e.target.value;
+        if (k === 'name' && evt === 'change') { fillFromInv(rows[i], invByName(e.target.value)); render(); }
+      });
     });
     mount.addEventListener('click', function (e) {
-      if (e.target.classList.contains('hq-addline')) { rows.push({ name: '', code: '', category: ownNames()[0], quantity: '', unit: '', price: '' }); render(); }
+      if (e.target.classList.contains('hq-addline')) { rows.push({ name: '', code: '', brand: '', model: '', category: ownNames()[0], quantity: '', unit: '', price: '' }); render(); }
       if (e.target.classList.contains('hq-del')) { rows.splice(Number(e.target.getAttribute('data-i')), 1); render(); }
+      if (e.target.classList.contains('hq-pick')) {
+        var i = Number(e.target.getAttribute('data-i'));
+        openInvPicker(function (item) { fillFromInv(rows[i], item); render(); });
+      }
     });
     render();
     return { get: function () { return rows.filter(function (r) { return String(r.name || '').trim(); }); } };
@@ -271,7 +340,8 @@
   // ---------- 库存物品 ----------
   function editItem(id, btn) {
     var it = id ? findIn(H.D.inventory, id) : null;
-    var m = openModal(it ? '编辑物品 · ' + (it.code || '') : '新增物品',
+    var oldStock = it ? num(it.stock) : 0;
+    var m = openModal(it ? '编辑物品 · ' + (it.code || '') : '新增物品（首次盘库）',
       '<form id="hq-item-form"><div class="hqf-grid">' +
       field('物品名称', 'name', it && it.name, 'text', { attrs: 'required' }) +
       field('编码（留空自动生成）', 'code', it && it.code) +
@@ -279,24 +349,41 @@
       field('规格 / 型号', 'model', it && it.model) +
       field('单位', 'unit', it && it.unit || '个') +
       field('单价（元）', 'unit_price', it && it.unit_price || 0, 'number', { attrs: 'min="0" step="0.01"' }) +
+      field('库存数量', 'stock', it ? num(it.stock) : 0, 'number', { attrs: 'min="0" step="0.01"' }) +
       field('安全库存', 'safety_stock', it && it.safety_stock || 10, 'number', { attrs: 'min="0" step="1"' }) +
       field('用途归属', 'category_name', it && (it.category_name || it.category), 'select', { options: ownNames() }) +
-      '</div><div class="hq-msg" style="margin-top:14px;font-size:11.5px">物品数量只能通过采购入库 / 领用出库 / 报损等单据变化，此处不直接改库存。</div></form>',
+      '</div><div class="hq-msg" style="margin-top:14px;font-size:11.5px">首次盘库可在此直接录入初始库存，也能修改物品全部字段。日常数量增减仍需走采购入库 / 领用出库 / 报损单据；手工改动会自动生成调整记录，全程可追溯。</div></form>',
       '<button class="btn" data-hq-cancel>取消</button><button class="btn primary" data-hq-save>' + (it ? '保存修改' : '创建物品') + '</button>');
     $('[data-hq-cancel]', m.root).onclick = m.close;
     $('[data-hq-save]', m.root).onclick = function () {
       var b = this, f = $('#hq-item-form', m.root);
       if (!f.reportValidity()) return;
       var v = formValues(f);
+      var newStock = num(v.stock), delta = newStock - oldStock;
       var payload = {
         name: v.name, code: v.code, brand: v.brand, model: v.model, unit: v.unit,
-        unit_price: num(v.unit_price), safety_stock: num(v.safety_stock), category_name: v.category_name
+        unit_price: num(v.unit_price), stock: newStock,
+        safety_stock: num(v.safety_stock), category_name: v.category_name
       };
       if (!payload.code) delete payload.code;
-      if (it) payload.stock = num(it.stock);
       busy(b, '保存中', true);
-      var task = it ? SupaDB.updateInventoryItem(it.id, payload) : SupaDB.createInventoryItem(payload);
-      Promise.resolve(task).then(function () { m.close(); toast(it ? '物品已更新' : '物品已创建'); H.loadAll(); })
+      Promise.resolve(it ? SupaDB.updateInventoryItem(it.id, payload) : SupaDB.createInventoryItem(payload))
+        .then(function (saved) {
+          // 库存有变动就写调整记录（复用列车同款 SupaDB.createInventoryAdjustment，自动带审计日志）
+          if (Math.abs(delta) < 0.0001 || !SupaDB.createInventoryAdjustment) return saved;
+          var adj = {
+            inventory_item_id: it ? it.id : (saved && saved.id),
+            item_code: payload.code || (saved && saved.code) || v.name,
+            delta: delta, new_stock: newStock,
+            reason: it ? '总部手工调整（盘库/修正）' : '首次盘库建账',
+            created_by: (typeof currentUser !== 'undefined' && currentUser && currentUser.name) || 'system'
+          };
+          if (!adj.inventory_item_id) return saved;
+          return Promise.resolve(SupaDB.createInventoryAdjustment(adj))
+            .catch(function (e) { console.warn('[HQ] 调整记录落库失败', e.message); })
+            .then(function () { return saved; });
+        })
+        .then(function () { m.close(); toast(it ? '物品已更新（库存变动已记账）' : '物品已创建'); H.loadAll(); })
         .catch(function (e) { busy(b, null, false); toast('保存失败：' + (e && e.message || e), 'err'); });
     };
   }
@@ -347,24 +434,32 @@
   // ---------- 采购单 ----------
   function editPO(id, btn) {
     var p = id ? findIn(H.D.purchase, id) : null;
-    var its = p ? H.itemsOf(p).map(function (x) { return { name: x.name, code: x.code, category: x.category, quantity: x.quantity, unit: x.unit, price: x.price }; }) : [];
+    var its = p ? H.itemsOf(p).map(function (x) { return { name: x.name, code: x.code, brand: x.brand, model: x.model, category: x.category, quantity: x.quantity, unit: x.unit, price: x.price, item_id: x.item_id || x.inventory_item_id }; }) : [];
     var m = openModal(p ? '编辑采购单 · ' + (p.code || '') : '新建采购单',
       '<form id="hq-po-form"><div class="hqf-grid">' +
       field('采购日期', 'purchase_date', p && p.purchase_date || today(), 'date') +
       field('采购人', 'purchaser', p && p.purchaser || '') +
-      '</div><div class="hq-sec">采购明细</div><div id="hq-po-lines"></div>' +
+      '</div><div class="hq-sec">采购明细 <small style="font-weight:400;color:#a09890">新商品直接填；已有商品点「库存」选择，自动带出品牌 / 型号 / 编码</small></div><div id="hq-po-lines"></div>' +
       '<div class="hqf-grid" style="margin-top:14px">' + field('备注', 'remark', p && p.remark, 'textarea') + '</div></form>',
       '<button class="btn" data-hq-cancel>取消</button><button class="btn primary" data-hq-save>' + (p ? '保存修改' : '创建采购单') + '</button>');
-    var ed = linesEditor($('#hq-po-lines', m.root), its.length ? its : [{ name: '', code: '', category: ownNames()[0], quantity: '', unit: '', price: '' }], true);
+    var ed = linesEditor($('#hq-po-lines', m.root), its.length ? its : [{ name: '', code: '', brand: '', model: '', category: ownNames()[0], quantity: '', unit: '', price: '' }], true);
     $('[data-hq-cancel]', m.root).onclick = m.close;
     $('[data-hq-save]', m.root).onclick = function () {
       var b = this, f = $('#hq-po-form', m.root); if (!f.reportValidity()) return;
       var v = formValues(f), rows = attachItemId(ed.get());
       if (!rows.length) { toast('请至少填写一行采购明细', 'err'); return; }
+      // 编码唯一化（对齐列车 reconcileItemCodes）：重复编码自动加 -2/-3 后缀，防撞号
+      var seen = {}, seq = {};
+      rows.forEach(function (r) {
+        var base = String(r.code || '').trim();
+        if (!base || !seen[base]) { if (base) seen[base] = true; return; }
+        var n = (seq[base] = (seq[base] || 1) + 1);
+        r.code = base + '-' + n;
+      });
       var payload = {
         purchase_date: v.purchase_date, purchaser: v.purchaser, remark: v.remark, suppliers: [],
         items: rows.map(function (r) {
-          return { name: r.name, code: r.code, category: r.category, quantity: num(r.quantity), unit: r.unit, price: num(r.price), amount: Number((num(r.quantity) * num(r.price)).toFixed(2)), item_id: r.item_id };
+          return { name: r.name, code: r.code, brand: r.brand, model: r.model, category: r.category, quantity: num(r.quantity), unit: r.unit, price: num(r.price), amount: Number((num(r.quantity) * num(r.price)).toFixed(2)), item_id: r.item_id };
         })
       };
       payload.total_amount = payload.items.reduce(function (a, i) { return a + i.amount; }, 0);
@@ -399,16 +494,37 @@
       '<form id="hq-si-form"><div class="hqf-grid">' +
       field('入库日期', 'stockin_date', today(), 'date') +
       field('批次号', 'batch_code', 'B' + String(Date.now()).slice(-8)) +
-      '</div><div class="hq-sec">本次实收数量</div>' +
+      '</div><div class="hq-sec">本次实收数量 <small style="font-weight:400;color:#a09890">数量或「不入库」变化会实时重算金额</small></div>' +
+      '<div class="tw"><table><thead><tr><th>名称</th><th>品牌/型号</th><th class="num">订购</th><th class="num">已收</th><th class="num">剩余</th><th class="num">实收</th><th>单位</th><th class="num">单价</th><th class="num">金额</th><th>不入库</th></tr></thead><tbody>' +
       its.map(function (it, i) {
         var key = it.code || it.name, done = received[key] || 0;
-        var left = Math.max(0, num(it.quantity) - done);
-        return '<div class="hq-line"><span style="flex:1 1 130px;font-size:12px">' + esc(it.name) + ' <small style="color:#a09890">订购 ' + num(it.quantity) + ' · 已收 ' + done + '</small></span>' +
-          '<input data-si-i="' + i + '" type="number" min="0" max="' + left + '" step="1" value="' + left + '" style="max-width:100px">' +
-          '<label style="font-size:11px;color:#5e554c"><input data-skip-i="' + i + '" type="checkbox"> 不入库</label></div>';
-      }).join('') +
+        var left = Math.max(0, num(it.quantity) - done), price = num(it.price);
+        return '<tr data-si-row="' + i + '"><td>' + esc(it.name) + '</td><td>' + esc(it.brand || '') + ' ' + esc(it.model || '') + '</td>' +
+          '<td class="num">' + num(it.quantity) + '</td><td class="num">' + done + '</td><td class="num">' + left + '</td>' +
+          '<td><input data-si-i="' + i + '" type="number" min="0" max="' + left + '" step="0.01" value="' + left + '" style="width:76px"></td>' +
+          '<td>' + esc(it.unit || '') + '</td><td class="num">¥' + price.toFixed(2) + '</td>' +
+          '<td class="num si-amt">¥' + (left * price).toFixed(2) + '</td>' +
+          '<td><input data-skip-i="' + i + '" type="checkbox"></td></tr>';
+      }).join('') + '</tbody></table></div>' +
+      '<div style="margin-top:10px;padding:9px 12px;background:#faf7f2;border:1.5px solid #e8e2da;border-radius:8px;font-size:12.5px;color:#5e554c">实收合计：<b id="si-sum-qty" style="color:#2d2620">0</b>　金额：<b id="si-sum-amt" style="color:#c23616">¥0.00</b></div>' +
       '<div class="hqf-grid" style="margin-top:14px">' + field('备注', 'remark', '', 'textarea') + '</div></form>',
       '<button class="btn" data-hq-cancel>取消</button><button class="btn primary" data-hq-save>确认入库</button>');
+    function recalcSI() {
+      var q = 0, a = 0;
+      its.forEach(function (it, i) {
+        var skip = $('[data-skip-i="' + i + '"]', m.root), inp = $('[data-si-i="' + i + '"]', m.root);
+        var n = skip && skip.checked ? 0 : num(inp && inp.value), price = num(it.price);
+        var amt = $('[data-si-row="' + i + '"] .si-amt', m.root);
+        if (amt) amt.textContent = '¥' + (n * price).toFixed(2);
+        q += n; a += n * price;
+      });
+      var sq = $('#si-sum-qty', m.root), sa = $('#si-sum-amt', m.root);
+      if (sq) sq.textContent = String(q);
+      if (sa) sa.textContent = '¥' + a.toFixed(2);
+    }
+    $('#hq-si-form', m.root).addEventListener('input', recalcSI);
+    $('#hq-si-form', m.root).addEventListener('change', recalcSI);
+    recalcSI();
     $('[data-hq-cancel]', m.root).onclick = m.close;
     $('[data-hq-save]', m.root).onclick = function () {
       var b = this, v = formValues($('#hq-si-form', m.root));
@@ -416,8 +532,8 @@
       its.forEach(function (it, i) {
         var skip = $('[data-skip-i="' + i + '"]', m.root);
         var q = num($('[data-si-i="' + i + '"]', m.root) && $('[data-si-i="' + i + '"]', m.root).value);
-        if (skip && skip.checked) { lines.push({ name: it.name, code: it.code, category: it.category, quantity: num(it.quantity), actual_quantity: 0, price: num(it.price), unit: it.unit, is_skipped: true }); return; }
-        if (q > 0) lines.push({ name: it.name, code: it.code, category: it.category, quantity: num(it.quantity), actual_quantity: q, price: num(it.price), unit: it.unit, item_id: it.inventory_item_id });
+        if (skip && skip.checked) { lines.push({ name: it.name, code: it.code, brand: it.brand, model: it.model, category: it.category, quantity: num(it.quantity), actual_quantity: 0, price: num(it.price), unit: it.unit, is_skipped: true }); return; }
+        if (q > 0) lines.push({ name: it.name, code: it.code, brand: it.brand, model: it.model, category: it.category, quantity: num(it.quantity), actual_quantity: q, price: num(it.price), unit: it.unit, item_id: it.item_id || it.inventory_item_id });
       });
       var positive = lines.filter(function (x) { return !x.is_skipped; });
       if (!positive.length && !lines.some(function (x) { return x.is_skipped; })) { toast('请至少填写一个实收数量或勾选不入库', 'err'); return; }
