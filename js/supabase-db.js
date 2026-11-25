@@ -177,8 +177,10 @@ async function getNextCode(seqType, prefix, padLen) {
   // v5.93：hq 主体的序列类型加前缀，保证与 train 完全独立的编号段
   const subj = (typeof getCurrentSubject === 'function') ? getCurrentSubject() : 'train';
   const scopedType = (subj && subj !== 'train') ? (subj + '_' + seqType) : seqType;
+  // v6.3：非 train 主体的编号字符串也加主体前缀，序列与字符串双重隔离，杜绝跨主体撞单
+  const scopedPrefix = (subj && subj !== 'train') ? ('HQ' + prefix) : prefix;
   const { data, error } = await sb.rpc('next_code', {
-    seq_type: scopedType, prefix: prefix, pad_len: padLen, p_subject: subj
+    seq_type: scopedType, prefix: scopedPrefix, pad_len: padLen, p_subject: subj
   });
   if (error) throw new Error('编码生成失败: ' + error.message);
   return data;
