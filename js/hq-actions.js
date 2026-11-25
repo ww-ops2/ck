@@ -951,6 +951,18 @@
       });
       return mp;
     }
+    // 已退回量按领用单号关联（退回单 reason 里带「领用单 HQRQ…」），驳回的不算。
+    function returnedMap(reqCode) {
+      var mp = {};
+      (H.D.returns || []).forEach(function (rr) {
+        if (rr.status === 'rejected') return;
+        if (!reqCode || String(rr.reason || '').indexOf(reqCode) < 0) return;
+        var k = rr.item_code || rr.code || rr.name;
+        if (!k) return;
+        mp[k] = (mp[k] || 0) + num(rr.qty);
+      });
+      return mp;
+    }
     function rebuildTours() {
       var tours = {};
       (H.D.requisitions || []).forEach(function (r) {
@@ -982,15 +994,16 @@
     }
     function renderPreview() {
       var r = selectedReq; if (!r) return;
-      var its = H.itemsOf(r), outed = outedMap(r.id);
+      var its = H.itemsOf(r), outed = outedMap(r.id), returned = returnedMap(r.code);
       if (!its.length) { preview.innerHTML = '该领用单无明细'; return; }
       preview.innerHTML = '<div style="font-weight:700;color:#2d2620;margin-bottom:8px">领用单 ' + esc(r.code) + ' · ' + esc(r.tour_name || r.applicant || '') + ' · 明细预览</div>' +
-        '<table style="width:100%;font-size:11.5px;border-collapse:collapse"><thead><tr style="background:#f0e9df"><th style="text-align:left;padding:5px">退?</th><th style="text-align:left;padding:5px">物品</th><th style="padding:5px">领用</th><th style="padding:5px">已出库</th><th style="padding:5px">可退回</th><th style="padding:5px">退回数量</th></tr></thead><tbody>' +
+        '<div style="font-size:11px;color:#8a8278;margin-bottom:6px">可退回 = 已出库 − 已退回（只有带出去没用完的才能退；领了但没出库的仍在库存里，不需退）</div>' +
+        '<table style="width:100%;font-size:11.5px;border-collapse:collapse"><thead><tr style="background:#f0e9df"><th style="text-align:left;padding:5px">退?</th><th style="text-align:left;padding:5px">物品</th><th style="padding:5px">领用</th><th style="padding:5px">已出库</th><th style="padding:5px">已退回</th><th style="padding:5px">可退回</th><th style="padding:5px">退回数量</th></tr></thead><tbody>' +
         its.map(function (it, i) {
-          var total = num(it.quantity), od = outed[it.code || it.name] || 0, left = Math.max(0, total - od);
+          var k = it.code || it.name, total = num(it.quantity), od = outed[k] || 0, rt = returned[k] || 0, left = Math.max(0, od - rt);
           return '<tr><td style="padding:4px"><input type="checkbox" data-retck="' + i + '"' + (left > 0 ? '' : ' disabled') + '></td>' +
             '<td style="padding:4px">' + esc(it.name) + '</td><td style="text-align:center;padding:4px">' + total + '</td>' +
-            '<td style="text-align:center;padding:4px">' + od + '</td><td style="text-align:center;padding:4px">' + left + '</td>' +
+            '<td style="text-align:center;padding:4px">' + od + '</td><td style="text-align:center;padding:4px;color:#2d8659">' + rt + '</td><td style="text-align:center;padding:4px;font-weight:700">' + left + '</td>' +
             '<td style="padding:4px"><input type="number" data-retqty="' + i + '" min="0" max="' + left + '" step="0.01" value="' + left + '" style="width:74px;border:1px solid #d4cdc4;border-radius:6px;padding:4px"></td></tr>';
         }).join('') + '</tbody></table>';
     }
@@ -1019,13 +1032,13 @@
       var jobs = [];
       if (linked) {
         if (!selectedReq) { toast('请选择要退回的领用单', 'err'); return; }
-        var its = H.itemsOf(selectedReq), outed = outedMap(selectedReq.id), picked = 0;
+        var its = H.itemsOf(selectedReq), outed = outedMap(selectedReq.id), returned = returnedMap(selectedReq.code), picked = 0;
         its.forEach(function (it, i) {
           var ck = $('[data-retck="' + i + '"]', preview), qi = $('[data-retqty="' + i + '"]', preview);
           if (!ck || !ck.checked) return;
-          var q = num(qi && qi.value), total = num(it.quantity), od = outed[it.code || it.name] || 0, left = Math.max(0, total - od);
+          var k = it.code || it.name, q = num(qi && qi.value), od = outed[k] || 0, rt = returned[k] || 0, left = Math.max(0, od - rt);
           if (q <= 0) return;
-          if (q > left) { toast(it.name + ' 退回数量超过可退回量 ' + left, 'err'); return; }
+          if (q > left) { toast(it.name + ' 退回数量超过可退回量 ' + left + '（已出库 ' + od + ' − 已退回 ' + rt + '）', 'err'); return; }
           picked++;
           jobs.push({ code: it.code, name: it.name, category: catSel.value, unit: it.unit, qty: q, reason: '团期物料退回 / 领用单 ' + selectedReq.code + (v.reason ? ' / ' + v.reason : '') + ' / 申请人：' + v.applicant });
         });
