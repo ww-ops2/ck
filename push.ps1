@@ -108,6 +108,12 @@ $filesToPush = @(
     "打开库存管理系统.bat"
 )
 
+# ===== 增量推送（v6.13）：设置 INV_ONLY_FILES 只推本次改动文件，避免全量 47 个文件来回往返 =====
+if ($env:INV_ONLY_FILES) {
+    $filesToPush = @($env:INV_ONLY_FILES -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+    Write-Host "  [INCREMENTAL] files: $($filesToPush.Count)" -ForegroundColor Yellow
+}
+
 # ===== 编码：必须使用 UTF-8 BOM =====
 # 参考 V3 docs/ENCODING_FIX.md：
 # Get-Content/Set-Content 会破坏中文，必须用 [System.IO.File]::ReadAllText
@@ -141,7 +147,7 @@ foreach ($relPath in $filesToPush) {
         $cloudSha = $resp.sha
     } catch {}
 
-    $msg = "v6.12 " + $(if ($cloudSha) { "update" } else { "add" }) + " $relPath"
+    $msg = "v6.13 " + $(if ($cloudSha) { "update" } else { "add" }) + " $relPath"
     $body = @{
         message = $msg
         content = $b64
@@ -182,7 +188,7 @@ Write-Host "========================================" -ForegroundColor $(if ($fa
 Write-Host "Pages: https://$owner.github.io/$repo/" -ForegroundColor Cyan
 Write-Host "Requesting Pages rebuild..." -ForegroundColor Yellow
 try {
-    Invoke-RestMethod -Uri "$apiBase/pages/main" -Headers $headers -Method Post -ErrorAction Stop | Out-Null
+    Invoke-RestMethod -Uri "$apiBase/pages/builds" -Headers $headers -Method Post -ErrorAction Stop | Out-Null
     Write-Host "  Pages rebuild requested" -ForegroundColor Green
 } catch {
     $statusCode = $_.Exception.Response.StatusCode.value__
