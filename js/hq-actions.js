@@ -1681,11 +1681,19 @@
         '</tbody></table></div>'
       : '<div class="hq-msg" style="text-align:center;padding:24px 0">暂无' + esc(title.replace(/明细.*/, '')) + '记录</div>';
     var foot = '<button class="btn" data-hq-cancel>关闭</button>';
+    if (kind === 'locked') foot = '<button class="btn" data-hq-goto-stockout style="margin-right:auto">前往出库管理办理 ›</button>' + foot;
     if (kind === 'out' || kind === 'returned') foot = '<button class="btn" data-hq-goto-monthly style="margin-right:auto">查看出入库明细 ›</button>' + foot;
     var m = openModal(title,
       '<div class="hq-notice">' + esc(note) + '</div>' + body,
       foot);
     $('[data-hq-cancel]', m.root).onclick = m.close;
+    var gs = $('[data-hq-goto-stockout]', m.root);
+    if (gs) gs.onclick = function () {
+      m.close();
+      if (window.HQApp && HQApp.setStockOutOwner) HQApp.setStockOutOwner(ownerKey || 'live');
+      var nav = document.querySelector('.nav-item[data-mod="stockout"]');
+      if (nav) nav.click();
+    };
     var go = $('[data-hq-goto-monthly]', m.root);
     if (go) go.onclick = function () {
       m.close();
