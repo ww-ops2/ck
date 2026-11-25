@@ -226,10 +226,10 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .hidden{display:none}
 </style>
 <!-- 数据层：本地 supabase-js + 主体隔离数据访问层（复用列车，自动按 subject=hq 过滤） -->
-<script src="js/vendor/supabase.min.js?v=6.5"></script>
-<script src="js/supabase-db.js?v=6.5"></script>
-<script src="js/toast.js?v=6.5"></script>
-<script src="js/hq-foundation.js?v=6.5"></script>
+<script src="js/vendor/supabase.min.js?v=6.6"></script>
+<script src="js/supabase-db.js?v=6.6"></script>
+<script src="js/toast.js?v=6.6"></script>
+<script src="js/hq-foundation.js?v=6.6"></script>
 </head>
 <body>
 <div class="app">
@@ -250,6 +250,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
         <div class="nav-section-title">业务流程</div>
         <div class="nav-item" data-mod="purchase"><span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg></span>采购单管理<span class="badge">3</span></div>
         <div class="nav-item" data-mod="stockin"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>入库管理</div>
+        <div class="nav-item" data-mod="specialin"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><polyline points="3 3 3 8 8 8"/><path d="M12 8v4l3 2"/></svg></span>特殊入库<span class="badge">退回</span></div>
         <div class="nav-item" data-mod="requisition"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>领用单管理<span class="badge">2</span></div>
         <div class="nav-item" data-mod="stockout"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span>出库管理</div>
       </div>
@@ -450,6 +451,27 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
         </div>
       </section>
 
+      <!-- ===== 特殊入库（库存退回） ===== -->
+      <section class="mod hidden" id="mod-specialin">
+        <div class="kpis" id="spt-kpis">
+          <div class="kpi y"><div class="k">待审核退回</div><div class="v yel">0 <small>单</small></div></div>
+          <div class="kpi g"><div class="k">已入库</div><div class="v">0 <small>单</small></div></div>
+          <div class="kpi"><div class="k">退回总量</div><div class="v">0 <small>件</small></div></div>
+          <div class="kpi b"><div class="k">直播礼品退回</div><div class="v blu">0 <small>件</small></div></div>
+        </div>
+        <div class="panel">
+          <div class="ph"><div class="pt"><span class="bar"></span>退回入库列表 <span style="font-size:11px;color:var(--text-muted);font-weight:400">· 领用/邮寄后剩余物料退回，审核后回补库存（成本均价不变）</span></div>
+            <div class="pa"><button class="btn primary" type="button">+ 新建退回单</button></div></div>
+          <div class="filterbar"> 归属：<select class="sel"><option>全部</option><option>直播礼品</option><option>出团物料</option><option>行政物料</option><option>总部仓库</option></select>  状态：<select class="sel"><option>全部状态</option><option>待审核</option><option>已入库</option><option>已驳回</option></select></div>
+          <div class="tw"><table>
+            <thead><tr><th>退回单号</th><th>日期</th><th>物品</th><th>用途归属</th><th class="num">数量</th><th>申请人</th><th>退回原因</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody id="spt-body">
+              <tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:26px 0">暂无退回入库单</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </section>
+
       <!-- ===== 领用单管理===== -->
       <section class="mod hidden" id="mod-requisition">
         <div class="kpis" id="rq-kpis">
@@ -460,7 +482,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
         </div>
         <div class="panel">
           <div class="ph"><div class="pt"><span class="bar"></span>领用单列表</div><div class="pa"><button class="btn primary">+ 新建领用单</button></div></div>
-          <div class="filterbar"> 归属：<select class="sel"><option>全部</option><option>出团物料</option><option>行政物料</option></select>  状态：<select class="sel"><option>全部状态</option><option>待审核</option><option>在途</option><option>已出库</option></select></div>
+          <div class="filterbar"> 归属：<select class="sel"><option>全部</option><option>直播礼品</option><option>出团物料</option><option>行政物料</option><option>总部仓库</option></select>  状态：<select class="sel"><option>全部状态</option><option>待审核</option><option>在途</option><option>已出库</option></select></div>
           <div class="tw"><table>
             <thead><tr><th>领用单号</th><th>日期</th><th>领用人</th><th>团期/用途</th><th>物品数</th><th>用途归属</th><th>流程状态</th><th>操作</th></tr></thead>
             <tbody id="rq-body">
@@ -663,7 +685,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 (function(){
   var titles={
     dashboard:'仪表盘',inventory:'库存概览',categories:'品类管理（用途归属）',
-    purchase:'采购单管理',stockin:'入库管理',requisition:'领用单管理',stockout:'出库管理',
+    purchase:'采购单管理',stockin:'入库管理',specialin:'特殊入库（库存退回）',requisition:'领用单管理',stockout:'出库管理',
     monthly:'出入库明细',reports:'团期使用报表',analytics:'数据分析',history:'操作记录',
     adminuser:'账号管理',adminset:'系统设置'
   };
@@ -688,8 +710,8 @@ function toggleTour(headEl){
 }
 </script>
 <!-- 真实数据驱动：从 SupaDB 拉取 hq 主体数据并填充全部模块（空库显示引导，不造假） -->
-<script src="js/hq-app.js?v=6.5"></script>
+<script src="js/hq-app.js?v=6.6"></script>
 <!-- 操作层：所有按钮/弹窗/写库（依赖 hq-app.js 暴露的 HQApp） -->
-<script src="js/hq-actions.js?v=6.5"></script>
+<script src="js/hq-actions.js?v=6.6"></script>
 </body>
 </html>
