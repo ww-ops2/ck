@@ -221,7 +221,9 @@
     });
     D.requisitions.forEach(function (r) {
       if (r.status === 'outbound_completed' || r.status === 'withdrawn') return;
-      var isLivePlan = r.scenario === 'live_plan';
+      // 口径与 aggregate() 一致：scenario=live_plan 或「明细只有直播礼品」都算主播拟出库锁定，
+      // 兼容既有 scenario='live' 的历史单，避免库存概览锁定列少算。
+      var isLivePlan = r.scenario === 'live_plan' || (itemsOf(r).length === 1 && itemsOf(r)[0].category === '直播礼品');
       if (!isLivePlan) return;
       var outed = outedByReq[String(r.id)] || 0;
       itemsOf(r).forEach(function (it) {
