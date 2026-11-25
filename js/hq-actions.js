@@ -44,7 +44,36 @@
     '.hq-spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.45);border-top-color:#fff;border-radius:50%;animation:hqSpin .7s linear infinite;vertical-align:-2px}',
     '@keyframes hqSpin{to{transform:rotate(360deg)}}',
     '.hq-toast{position:fixed;left:50%;top:20px;transform:translateX(-50%);background:#2d2620;color:#fff;padding:10px 20px;border-radius:9px;z-index:9999;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.18);max-width:80vw;text-align:center}',
-    '.hq-toast.err{background:#c0392b}'
+    '.hq-toast.err{background:#c0392b}',
+    // 列车 toast.js 组件样式：独立页无 style.css，这里补等价视觉基座（不依赖 CSS 变量）
+    '#toast-container{position:fixed;top:24px;right:24px;z-index:99999;display:flex;flex-direction:column;gap:10px;pointer-events:none;max-width:400px}',
+    '#toast-container .toast{display:flex;align-items:flex-start;gap:10px;padding:13px 16px;background:#fff;border:1.5px solid #d4cdc4;border-radius:11px;box-shadow:0 8px 24px rgba(45,38,32,.16);pointer-events:auto;opacity:0;transform:translateX(40px);transition:opacity .3s,transform .3s;min-width:260px}',
+    '#toast-container .toast.show{opacity:1;transform:translateX(0)}',
+    '#toast-container .toast.hide{opacity:0;transform:translateX(40px)}',
+    '#toast-container .toast-icon{flex-shrink:0;width:20px;height:20px;display:flex;align-items:center;justify-content:center;margin-top:1px}',
+    '#toast-container .toast-success{border-left:3px solid #16a34a}',
+    '#toast-container .toast-success .toast-icon{color:#16a34a}',
+    '#toast-container .toast-error{border-left:3px solid #c0392b}',
+    '#toast-container .toast-error .toast-icon{color:#c0392b}',
+    '#toast-container .toast-warning{border-left:3px solid #d97706}',
+    '#toast-container .toast-warning .toast-icon{color:#d97706}',
+    '#toast-container .toast-info{border-left:3px solid #2563eb}',
+    '#toast-container .toast-info .toast-icon{color:#2563eb}',
+    '#toast-container .toast-message{flex:1;font-size:13px;line-height:1.5;color:#2d2620;word-break:break-word}',
+    '#toast-container .toast-close{flex-shrink:0;background:none;border:none;font-size:16px;color:#a09890;cursor:pointer;padding:0;line-height:1}',
+    '#custom-confirm-overlay{position:fixed;inset:0;z-index:99998;background:rgba(45,38,32,.34);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .2s}',
+    '#custom-confirm-overlay.show{opacity:1}',
+    '#custom-confirm-overlay .confirm-dialog{background:#fff;border:1.5px solid #d4cdc4;border-radius:13px;box-shadow:0 12px 40px rgba(45,38,32,.25);padding:26px 30px 22px;max-width:400px;width:90%;text-align:center;transform:scale(.94);transition:transform .25s}',
+    '#custom-confirm-overlay.show .confirm-dialog{transform:scale(1)}',
+    '#custom-confirm-overlay .confirm-icon{color:#d97706;margin-bottom:12px}',
+    '#custom-confirm-overlay .confirm-message{font-size:14px;line-height:1.7;color:#2d2620;margin-bottom:20px}',
+    '#custom-confirm-overlay .confirm-actions{display:flex;gap:10px;justify-content:center}',
+    '#custom-confirm-overlay .confirm-actions .btn{padding:8px 20px;border-radius:8px;cursor:pointer;font-size:13px;border:1.5px solid #d4cdc4;background:#fff;color:#2d2620}',
+    '#custom-confirm-overlay .confirm-actions .btn-danger{background:#c0392b;border-color:#c0392b;color:#fff}',
+    '#custom-confirm-overlay .prompt-input{width:100%;padding:9px 11px;border:1.5px solid #d4cdc4;border-radius:8px;margin-bottom:18px;font-size:13px;font-family:inherit}',
+    '.btn-loading{position:relative;pointer-events:none;opacity:.85}',
+    '.btn-loading .spinner{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:hqBtnSpin .6s linear infinite;vertical-align:-2px;margin-right:6px}',
+    '@keyframes hqBtnSpin{to{transform:rotate(360deg)}}'
   ].join('\n');
 
   function ensureModal() {
@@ -66,7 +95,9 @@
     mask.addEventListener('mousedown', function (e) { if (e.target === mask) close(); });
     return { root: root, body: $('.hqm-body', root), foot: $('.hqm-foot', root), close: close };
   }
+  // 通用 UI 直接复用列车 toast.js：showToast / showButtonLoading / hideButtonLoading / showConfirm
   function toast(msg, kind) {
+    if (typeof showToast === 'function') return showToast(msg, kind === 'err' ? 'error' : 'success');
     var old = $('.hq-toast'); if (old) old.remove();
     var t = document.createElement('div');
     t.className = 'hq-toast' + (kind === 'err' ? ' err' : ''); t.textContent = msg;
@@ -75,6 +106,10 @@
   }
   function busy(btn, text, on) {
     if (!btn) return;
+    if (typeof showButtonLoading === 'function' && typeof hideButtonLoading === 'function') {
+      if (on) showButtonLoading(btn, text || '处理中'); else hideButtonLoading(btn);
+      return;
+    }
     if (on) {
       if (btn.dataset._html === undefined) btn.dataset._html = btn.innerHTML;
       btn.disabled = true; btn.innerHTML = '<span class="hq-spin"></span> ' + (text || '处理中');
@@ -85,6 +120,23 @@
   }
   function confirmBox(title, msg, onOk, opts) {
     opts = opts || {};
+    if (typeof showConfirm === 'function') {
+      // 列车统一确认弹窗：onConfirm 返回 Promise 时自带等待动画并在完成后自动关闭
+      showConfirm('<b>' + esc(title) + '</b><br>' + esc(msg).replace(/\n/g, '<br>'), function () {
+        return Promise.resolve().then(onOk).then(function () {
+          toast(opts.okText || '已完成'); H.loadAll();
+        }).catch(function (e) {
+          toast('操作失败：' + (e && e.message || e), 'err');
+        });
+      });
+      var okBtn = $('#confirm-ok-btn');
+      if (okBtn) {
+        if (opts.confirmText) okBtn.textContent = opts.confirmText;
+        if (opts.danger) okBtn.classList.add('btn-danger');
+      }
+      return;
+    }
+    // 兜底：toast.js 未加载时保留原有自建弹窗
     var m = openModal(title, '<div class="hq-msg">' + esc(msg).replace(/\n/g, '<br>') + '</div>',
       '<button class="btn" data-hq-cancel>取消</button><button class="btn primary" data-hq-ok>' + esc(opts.confirmText || '确认') + '</button>');
     $('[data-hq-cancel]', m.root).onclick = m.close;
@@ -127,6 +179,45 @@
   }
   function ownOpts(sel) {
     return ownNames().map(function (n) { return '<option' + (String(sel) === n ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('');
+  }
+
+  // 归属名 → 台账 usage_code（与 20261123_hq_foundation.sql 预置一致）
+  var USAGE_CODE = { '直播礼品': 'live_gift', '出团物料': 'tour_material', '行政物料': 'admin_material', '总部仓库': 'warehouse' };
+  function usageCodeOf(cat) {
+    if (!cat) return 'warehouse';
+    if (USAGE_CODE[cat]) return USAGE_CODE[cat];
+    var hit = (H.D.categories || []).find(function (c) { return c.name === cat || c.code === cat; });
+    return hit && hit.code ? hit.code : 'warehouse';
+  }
+  /**
+   * 业务单据落库后同步过账到总部台账：复用列车已做好的 HQFoundation.postDocument，
+   * 自动单号 / 幂等 / 平衡公式 / 流水全部由地基引擎负责。台账异常只告警，不阻断业务。
+   */
+  function postLedger(docType, lines, category, dateStr, bizDocNo) {
+    if (!window.HQFoundation || typeof HQFoundation.postDocument !== 'function') return Promise.resolve([]);
+    var period = String(dateStr || today()).slice(0, 7);
+    var jobs = (lines || []).map(function (x, i) {
+      var qty = num(x.actual_quantity != null ? x.actual_quantity : x.quantity);
+      if (qty <= 0) return null;
+      return HQFoundation.postDocument({
+        doc_type: docType,
+        period: period,
+        usage_code: usageCodeOf(x.category || category),
+        item: { item_id: x.item_id || x.inventory_item_id || null, sku: x.code || null, name: x.name },
+        qty: qty,
+        // 业务单号+行号做台账单号：天然幂等，且红冲可按业务单号前缀反查
+        doc_no: bizDocNo ? bizDocNo + '-' + (i + 1) : undefined,
+        meta: { source: 'hq-app', biz_doc: bizDocNo || null }
+      });
+    }).filter(Boolean);
+    if (!jobs.length) return Promise.resolve([]);
+    return Promise.all(jobs.map(function (p) {
+      return Promise.resolve(p).catch(function (e) { return { ok: false, error: String(e && e.message || e) }; });
+    })).then(function (rs) {
+      var bad = rs.filter(function (r) { return r && r.ok === false; });
+      if (bad.length) console.warn('[HQ台账] 过账未完全成功（业务单据已落库）', bad);
+      return rs;
+    });
   }
 
   /** 可增删的明细编辑表，返回 get() 取当前行数组 */
@@ -341,6 +432,7 @@
             var hit = (p.purchase_order_items || []).find(function (poi) { return (x.code && poi.item_code === x.code) || poi.name === x.name; });
             if (hit && hit.id) SupaDB.setPurchaseOrderItemSkipped(hit.id, true).catch(function () {});
           });
+          postLedger('purchase_acceptance', positive, (positive[0] || {}).category, v.stockin_date, r && r.code);
           m.close(); toast('验收入库完成：' + (r && r.code || '')); H.loadAll();
         })
         .catch(function (e) { busy(b, null, false); toast('入库失败：' + (e && e.message || e), 'err'); });
@@ -406,7 +498,10 @@
       if (!lines.length) { toast('请至少填写一个出库数量', 'err'); return; }
       busy(b, '出库处理中', true);
       Promise.resolve(SupaDB.confirmStockOut(r.id, { stockout_date: v.stockout_date, items: lines, total_quantity: lines.reduce(function (a, x) { return a + x.quantity; }, 0) }))
-        .then(function (res) { m.close(); toast('出库完成：' + (res && res.code || '')); H.loadAll(); })
+        .then(function (res) {
+          postLedger('tour_signoff', lines, (lines[0] || {}).category, v.stockout_date, res && res.code);
+          m.close(); toast('出库完成：' + (res && res.code || '')); H.loadAll();
+        })
         .catch(function (e) { busy(b, null, false); toast('出库失败：' + (e && e.message || e), 'err'); });
     };
   }
@@ -461,7 +556,10 @@
         var sb = getSupabase();
         return sb.from('stock_out_records').update({ out_type: 'mail', tracking_no: v.tracking_no || '待填写', remark: v.carrier + ' / ' + v.remark })
           .eq('id', so.id).then(function () { return so; });
-      }).then(function (so) { m.close(); toast('邮寄出库完成：' + (so && so.code || '')); H.loadAll(); })
+      }).then(function (so) {
+        postLedger('prize_ship', rows, '直播礼品', v.stockout_date, so && so.code);
+        m.close(); toast('邮寄出库完成：' + (so && so.code || '')); H.loadAll();
+      })
         .catch(function (e) { busy(b, null, false); toast('邮寄出库失败：' + (e && e.message || e), 'err'); });
     };
   }
@@ -472,8 +570,18 @@
     var m = openModal('出库单 · ' + (s.code || ''),
       '<div class="hq-detail"><b>出库日期：</b>' + esc(s.stockout_date || '—') + '　<b>状态：</b>' + esc(s.status || '—') + '<br><b>快递单号：</b>' + esc(s.tracking_no || '—') + '　<b>领用单：</b>' + esc(s.requisition_code || '—') + '</div>' +
       '<div class="hq-sec">明细 ' + its.length + ' 项</div><div class="tw"><table><thead><tr><th>名称</th><th>归属</th><th class="num">数量</th></tr></thead><tbody>' + (rows || '<tr><td colspan="3">无明细</td></tr>') + '</tbody></table></div>',
+      '<button class="btn" data-hq-reverse style="margin-right:auto;color:#c0392b">红冲台账</button>' +
       '<button class="btn" data-hq-cancel>关闭</button>');
     $('[data-hq-cancel]', m.root).onclick = m.close;
+    $('[data-hq-reverse]', m.root).onclick = function () {
+      confirmBox('红冲台账', '确认对出库单 ' + (s.code || '') + ' 的台账流水做红冲？将生成冲销流水，原单保留可追溯。', function () {
+        if (!window.HQFoundation || typeof HQFoundation.reverseDocument !== 'function') throw new Error('过账引擎未加载');
+        return HQFoundation.reverseDocument(s.code, '总部后台台账红冲').then(function (r) {
+          if (r && r.ok === false) throw new Error(r.error || '红冲失败');
+          m.close();
+        });
+      }, { danger: true, confirmText: '确认红冲', okText: '台账已红冲' });
+    };
   }
 
   // ---------- 账号 ----------
