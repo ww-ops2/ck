@@ -227,6 +227,17 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .flow .step{padding:3px 9px;border-radius:var(--sketch-sm);background:var(--bg-elevated);color:var(--text-muted)}
 .flow .step.on{background:var(--accent-glow);color:var(--accent);font-weight:700}
 .flow .arw{color:var(--border-hover)}
+.flow-role{display:flex;align-items:center;gap:3px;font-size:11px;flex-wrap:wrap}
+.flow-role .fr-node{display:inline-flex;flex-direction:column;align-items:center;gap:1px;padding:3px 6px;border:1px solid var(--border,#e3ddd4);border-radius:var(--sketch-sm);background:var(--bg-elevated);color:var(--text-muted);line-height:1.15;white-space:nowrap}
+.flow-role .fr-node em{font-style:normal;font-size:11px}
+.flow-role .fr-node small{font-size:9px;opacity:.75}
+.flow-role .fr-node.done{background:#f0f7f0;color:#2f7a4f;border-color:#bcdcc7}
+.flow-role .fr-node.cur{background:var(--accent-glow);color:var(--accent);border-color:var(--accent);font-weight:700}
+.flow-role .fr-node.cur small{color:var(--accent);opacity:.85}
+.flow-role .arw{color:var(--border-hover)}
+.fr-blocker{margin-top:4px;font-size:10px;color:var(--accent);font-weight:700}
+.fr-blocker.mine{color:#c2410c}
+.fr-blocker.done{color:#2f7a4f;font-weight:600}
 
 .hidden{display:none}
 </style>
@@ -738,8 +749,8 @@ function toggleTour(headEl){
 }
 </script>
 <!-- 真实数据驱动：从 SupaDB 拉取 hq 主体数据并填充全部模块（空库显示引导，不造假） -->
-<script src="js/hq-app.js?v=6.10"></script>
+<script src="js/hq-app.js?v=6.11"></script>
 <!-- 操作层：所有按钮/弹窗/写库（依赖 hq-app.js 暴露的 HQApp） -->
-<script src="js/hq-actions.js?v=6.10"></script>
+<script src="js/hq-actions.js?v=6.11"></script>
 </body>
 </html>
