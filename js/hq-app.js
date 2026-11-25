@@ -1,5 +1,5 @@
 /**
- * HQ App - 遇见美好总部正式系统（v6.12 · 六链路流程流转）
+ * HQ App - 遇见美好总部正式系统（v6.13 · 六链路流程流转 + 出库分类作业台落地）
  * 设计稿 hq-clone-preview.html 的真实数据驱动版。
  * 固定 subject=hq，复用 supabase-db.js 的 SupaDB（自动按主体隔离），列车主体零影响。
  * 空库显示引导，不造假数据。列车已有 no Realtime：30s 同步 + 切回刷新，这里照搬。
@@ -435,25 +435,212 @@
     }).join('');
   }
 
-  // ---------- 渲染：出库 ----------
+  // ---------- 渲染：出库单列表（分类作业台下半区，9 列） ----------
   function renderStockOut() {
     var body = $('so-body');
     if (!body) return;
-    if (!D.stockout.length) { body.innerHTML = emptyRow(7, '暂无出库单，请新建领用出库或邮寄出库'); return; }
-    body.innerHTML = D.stockout.map(function (s) {
+    var fo = ($('so-f-own') && $('so-f-own').value) || '全部';
+    var ft = ($('so-f-type') && $('so-f-type').value) || '全部类型';
+    var fs = ($('so-f-status') && $('so-f-status').value) || '全部状态';
+    var fk = String(($('so-f-key') && $('so-f-key').value) || '').trim().toLowerCase();
+    var list = (D.stockout || []).filter(function (s) {
+      var its = itemsOf(s);
+      var isMail = s.out_type === 'mail' || s.is_mail || (s.remark || '').indexOf('邮寄') >= 0;
+      var cat = its[0] ? catOf(its[0]) : '未分类';
+      var st = s.status || '';
+      var stTxt = (st === 'shipped' || st === 'pending_ship') ? '在途未签收' : (st === 'completed' ? '已签收' : '');
+      if (fo !== '全部' && cat !== fo) return false;
+      if (ft !== '全部类型' && ((ft === '邮寄出库') !== isMail)) return false;
+      if (fs !== '全部状态' && stTxt !== fs) return false;
+      if (fk) {
+        var hay = [s.code, s.tracking_no, s.remark, s.requisition_code].concat(its.map(function (i) { return i.name; })).join(' ').toLowerCase();
+        if (hay.indexOf(fk) < 0) return false;
+      }
+      return true;
+    });
+    if (!list.length) { body.innerHTML = emptyRow(9, '暂无出库单，请新建领用出库或邮寄出库'); return; }
+    body.innerHTML = list.map(function (s) {
       var its = itemsOf(s);
       var isMail = s.out_type === 'mail' || s.is_mail || (s.remark || '').indexOf('邮寄') >= 0;
       var typeTag = isMail ? '<span class="tag p">邮寄出库</span>' : '<span class="tag b">领用出库</span>';
-      var cat = its[0] ? its[0].category : '未分类';
+      var cat = its[0] ? catOf(its[0]) : '未分类';
       var qty = its.reduce(function (a, i) { return a + i.quantity; }, 0);
       var stMap = isMail
         ? { pending: '待邮寄', pending_ship: '待邮寄', shipped: '在途', completed: '已签收' }
         : { pending: '待出库', pending_ship: '待出库', shipped: '已出库', completed: '已出库' };
       var st = stMap[s.status] || s.status || '—';
       var stCls = st === '在途' ? 'b' : (st === '已签收' || st === '已出库') ? 'g' : 'y';
-      return '<tr><td class="lnk">' + esc(s.code) + '</td><td>' + typeTag + '</td><td>' + esc(its.map(function (i) { return i.name; }).join('、')) + '</td>' +
-        '<td class="num">' + qty + '</td><td>' + esc(s.tracking_no || (isMail ? '待填写' : '—')) + '</td><td>' + ownBadge(cat) + '</td><td><span class="tag ' + stCls + '">' + esc(st) + '</span> <button class="row-act" data-act="so-view" data-id="' + esc(s.id) + '">查看</button></td></tr>';
+      var tnoM = String(s.remark || '').match(/团号[:：]\s*([^\s/，,]+)/);
+      var tno = tnoM ? tnoM[1] : '';
+      return '<tr><td class="lnk">' + esc(s.code) + '</td><td>' + typeTag + '</td>' +
+        '<td>' + (tno ? '<span class="so-tno">' + esc(tno) + '</span>' : '<span class="so-tno empty">—</span>') + '</td>' +
+        '<td>' + esc(its.map(function (i) { return i.name; }).join('、')) + '</td>' +
+        '<td class="num">' + qty + '</td><td>' + ownBadge(cat) + '</td>' +
+        '<td>' + esc(s.tracking_no || (isMail ? '待填写' : '—')) + '</td>' +
+        '<td><span class="tag ' + stCls + '">' + esc(st) + '</span></td>' +
+        '<td><button class="row-act" data-act="so-view" data-id="' + esc(s.id) + '">查看</button></td></tr>';
     }).join('');
+  }
+
+  // ---------- 渲染：出库管理 · 分类作业台（设计稿 v5 落地，真实数据驱动） ----------
+  var SO_OWNERS = [{ key: 'all', name: '全部归属' }].concat(OWNERS);
+  var soOwner = 'live';
+  function soTourNo(r) {
+    if (!r) return '';
+    if (r.tour_no) return String(r.tour_no);
+    var m = String(r.remark || '').match(/团号[:：]\s*([^\s/，,]+)/);
+    return m ? m[1] : '';
+  }
+  function soOwnerOf(r) {
+    var its = itemsOf(r), cats = [];
+    its.forEach(function (i) { var c = catOf(i); if (cats.indexOf(c) < 0) cats.push(c); });
+    if (String(r.scenario || '') === 'live_plan' || (cats.length === 1 && cats[0] === '直播礼品')) return 'live';
+    if (cats.indexOf('出团物料') >= 0) return 'tour';
+    if (cats.indexOf('行政物料') >= 0) return 'admin';
+    if (cats.indexOf('总部仓库') >= 0) return 'wh';
+    return 'live';
+  }
+  function soHandled(r) { return /HQ_HANDLED/.test(String(r.remark || '')); }
+  function soCustInfo(r) {
+    var rm = String((r && r.remark) || ''), i = rm.indexOf('HQ_FLOW2:');
+    if (i < 0) return { n: 0, qty: 0 };
+    try {
+      var tail = rm.slice(i + 9), end = tail.indexOf(' / HQ_');
+      var b64 = (end >= 0 ? tail.slice(0, end) : tail).trim();
+      var p = JSON.parse(decodeURIComponent(escape(atob(b64))));
+      var nC = 0, q = 0;
+      (p.items || []).forEach(function (it) {
+        (it.customers || []).forEach(function (c) { nC++; q += n(c.qty); });
+      });
+      return { n: nC, qty: q };
+    } catch (e) { return { n: 0, qty: 0 }; }
+  }
+  function soTodoRows() {
+    return (D.requisitions || []).filter(function (r) {
+      var st = String(r.status || '');
+      return st !== 'outbound_completed' && st !== 'withdrawn' && st !== 'rejected';
+    });
+  }
+  function soBindFilters() {
+    ['so-f-own', 'so-f-type', 'so-f-status', 'so-f-key', 'so-status-filter'].forEach(function (id) {
+      var el = $(id);
+      if (!el || el._soBound) return;
+      el._soBound = true;
+      el.addEventListener('change', function () {
+        if (id === 'so-status-filter') renderStockOutBoard(); else renderStockOut();
+      });
+      if (id === 'so-f-key') el.addEventListener('input', function () { renderStockOut(); });
+    });
+    var rs = $('so-role-switch');
+    if (rs && !rs._soBound) {
+      rs._soBound = true;
+      rs.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-role]'); if (!b) return;
+        rs.querySelectorAll('button').forEach(function (x) { x.classList.remove('on'); });
+        b.classList.add('on');
+        var note = $('so-role-note');
+        var map = { sales: '销售 · 填写并邮寄', planner: '计调 · 录入团期物料', warehouse: '仓库 · 数据确认与出库' };
+        if (note) note.textContent = '当前：' + (map[b.getAttribute('data-role')] || '');
+      });
+    }
+    var ej = $('so-entry-jump');
+    if (ej && !ej._soBound) {
+      ej._soBound = true;
+      ej.addEventListener('click', function () {
+        soOwner = 'live'; renderStockOutBoard();
+        var p = $('so-todo-panel'); if (p && p.scrollIntoView) p.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  }
+  function renderStockOutBoard() {
+    var kp = $('so-board-kpis'); if (!kp) return;
+    soBindFilters();
+    var all = soTodoRows();
+    var scoped = soOwner === 'all' ? all : all.filter(function (r) { return soOwnerOf(r) === soOwner; });
+    var qtyOf = function (r) { return itemsOf(r).reduce(function (x, i) { return x + n(i.quantity); }, 0); };
+    var locked = scoped.reduce(function (a, r) { return a + qtyOf(r); }, 0);
+    var pending = scoped.filter(soHandled).length;
+    var transit = (D.stockout || []).filter(function (s) { return s.status === 'shipped' || s.status === 'pending_ship'; }).length;
+    var ym = new Date().toISOString().slice(0, 7);
+    var done = (D.stockout || []).filter(function (s) { return String(s.stockout_date || s.created_at || '').slice(0, 7) === ym; }).length;
+    kp.innerHTML = kpiCard('待办理（锁定未出）', locked + ' <small>件</small>', '已锁定、实际尚未出库', 'r') +
+      kpiCard('待仓库确定', pending + ' <small>单</small>', '中间办理完成，等仓库数据确认', 'y') +
+      kpiCard('在途未签收', transit + ' <small>笔</small>', '仓库已发货，快递在途', 'b') +
+      kpiCard('本月已出库', done + ' <small>笔</small>', '含领用出库与邮寄出库', 'g');
+
+    var tabs = $('so-own-tabs');
+    if (tabs) {
+      tabs.innerHTML = SO_OWNERS.map(function (o) {
+        var list = o.key === 'all' ? all : all.filter(function (r) { return soOwnerOf(r) === o.key; });
+        var cnt = list.reduce(function (a, r) { return a + qtyOf(r); }, 0);
+        return '<button type="button" class="os' + (soOwner === o.key ? ' on' : '') + '" data-so-own="' + o.key + '">' +
+          esc(o.name) + ' <span class="so-n">' + (o.key === 'all' ? list.length + ' 单' : cnt + ' 件') + '</span></button>';
+      }).join('');
+      tabs.querySelectorAll('[data-so-own]').forEach(function (b) {
+        b.onclick = function () { soOwner = b.getAttribute('data-so-own'); renderStockOutBoard(); };
+      });
+    }
+
+    var isTour = soOwner === 'tour';
+    var flow = $('so-flow-bar');
+    if (flow) {
+      var steps = isTour
+        ? ['1 计调录入团期物料（此时填团号）', '2 导游线下拿走 · 仓库代登记实拿量', '3 仓库按单盘点核对，一致后确定', '4 确定出库 · 释放锁定']
+        : ['1 主播领用锁定（此时填团号）', '2 销售填写并邮寄 · 逐物品分配客户', '3 仓库确定出库（填快递单号）', '4 在途 / 签收 · 释放锁定'];
+      flow.innerHTML = steps.map(function (s, i) {
+        return '<span class="so-fn ' + ((i === 1 || i === 2) ? 'hot' : '') + '">' + s + '</span>' + (i < 3 ? '<span class="so-fa">›</span>' : '');
+      }).join('');
+    }
+    var cal = $('so-cal-note');
+    if (cal) cal.innerHTML = isTour
+      ? '<b>口径：</b>计调在领用单模块录入团期物料与<b>团号（必填）</b>，状态「待办理」（锁定、实物未动）；导游线下实际拿走物料（不进系统），由仓库代登记实拿量与领走时间；仓库按计调单据逐项盘点比对计划量与实拿量，一致才确定；确定后扣库存、释放锁定、生成出库单；不一致由仓库盘点人填写差异说明后确定（<b>不设复核角色</b>）。'
+      : '<b>口径：</b>主播领用锁定时<b>必须填团号（必填）</b>；销售逐物品<b>手动填写</b>客户邮寄明细（不接客户库，一个物品可寄多个客户），填写并邮寄生成交接单（状态：待仓库确定），库存与锁定不动；仓库确定（填快递单号）后才扣库存、释放锁定、生成出库单。';
+    var foot = $('so-foot-note');
+    if (foot) foot.innerHTML = isTour
+      ? '<b>出团物料链路：</b>计调录入（团号必填）→ 导游线下实际拿走（不进系统，仓库代登记实拿量）→ 仓库按单盘点核对 → 一致确定出库。<br>每一步留痕：录入人/时间、导游姓名/领走时间/实拿量、盘点人/核对结果/差异说明。团号在计调录入时确定，贯穿出库单与团期报表。'
+      : '<b>直播礼品链路：</b>主播申请（填团号，必填）→ 销售逐物品手动填写客户信息、填写并邮寄 → 仓库确定出库 → 在途/签收。<b>行政物料 / 总部仓库</b>＝领用人申请 → 仓库确定数量金额 → 出库。<br>团号由主播在领用锁定时填写，贯穿交接单 → 出库单 → 团期报表，销售端只读不可改；客户信息全部手动录入，不接客户库。';
+    var ttl = $('so-todo-title');
+    if (ttl) {
+      var cur = SO_OWNERS.filter(function (o) { return o.key === soOwner; })[0];
+      ttl.textContent = '待办明细 · ' + (cur ? cur.name : '全部归属');
+    }
+
+    var want = ($('so-status-filter') && $('so-status-filter').value) || '全部状态';
+    var list = scoped.filter(function (r) {
+      if (want === '待办理') return !soHandled(r);
+      if (want === '待仓库确定') return soHandled(r);
+      return true;
+    });
+    var body = $('so-todo-body');
+    if (body) {
+      if (!list.length) { body.innerHTML = emptyRow(9, '当前归属暂无待办理单据'); }
+      else body.innerHTML = list.map(function (r) {
+        var its = itemsOf(r);
+        var qty = its.reduce(function (a, i) { return a + n(i.quantity); }, 0);
+        var tno = soTourNo(r);
+        var ci = soCustInfo(r);
+        var handled = soHandled(r);
+        var status = handled ? '<span class="tag o">待仓库确定</span>' : '<span class="tag y">待办理</span>';
+        var info = ci.n
+          ? '<span class="so-cinfo"><span class="filled">已填 ' + ci.n + ' 位客户 · ' + ci.qty + ' 件（预览）</span></span>'
+          : '<span class="so-cinfo"><span class="empty">未填写</span></span>';
+        var act = handled
+          ? '<button class="row-act" data-act="rq-out" data-id="' + esc(r.id) + '">确定出库 ›</button>'
+          : '<button class="row-act" data-act="rq-handle" data-id="' + esc(r.id) + '">办理 ›</button>';
+        return '<tr><td class="lnk">' + esc(r.code || '') + '</td>' +
+          '<td>' + (tno ? '<span class="so-tno">' + esc(tno) + '</span>' : '<span class="so-tno empty">未填</span>') + '</td>' +
+          '<td>' + esc(r.purpose || r.tour_name || '—') + '</td>' +
+          '<td>' + esc(r.applicant || '—') + '</td>' +
+          '<td>' + esc(its.map(function (i) { return i.name; }).join('、') || '—') + '（' + its.length + ' 项）</td>' +
+          '<td class="num">' + qty + '</td>' +
+          '<td>' + info + '</td><td>' + status + '</td><td>' + act + '</td></tr>';
+      }).join('');
+    }
+    var liveLocked = all.filter(function (r) { return soOwnerOf(r) === 'live'; })
+      .reduce(function (a, r) { return a + qtyOf(r); }, 0);
+    var en = $('so-entry-num'), lb = $('so-lock-big');
+    if (en) en.textContent = liveLocked;
+    if (lb) lb.textContent = liveLocked;
   }
 
   // ---------- 渲染：出入库明细（按归属切换，真实单据勾稽） ----------
@@ -730,6 +917,7 @@
     renderSpecialIn();
     renderRequisition();
     renderStockOut();
+    renderStockOutBoard();
     renderMonthly(currentOwner);
     renderReports();
     renderHistory();
@@ -802,7 +990,8 @@
     D: D, OWNERS: OWNERS, ICONS: ICONS,
     ico: ico, esc: esc, n: n, money: money, itemsOf: itemsOf, catOf: catOf, ownBadge: ownBadge,
     loadAll: loadAll, renderAll: renderAll, aggregate: aggregate,
-    setOwner: function (key) { currentOwner = key; renderMonthly(key); }
+    setOwner: function (key) { currentOwner = key; renderMonthly(key); },
+    setStockOutOwner: function (key) { soOwner = key; renderStockOutBoard(); }
   };
 
   // 设计稿的内联脚本已处理模块切换/展开，这里只补数据。等 DOM 就绪。
