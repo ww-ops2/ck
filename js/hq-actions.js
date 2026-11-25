@@ -19,7 +19,7 @@
   // ---------- 模态框基座 ----------
   var STYLE = [
     '#hq-modal-root .hqm-mask{position:fixed;inset:0;background:rgba(45,38,32,.42);z-index:9000;display:flex;align-items:flex-start;justify-content:center;padding:5vh 16px;overflow:auto}',
-    '#hq-modal-root .hqm{background:#fff;border:1.5px solid #d4cdc4;border-radius:17px 8px 19px 9px/9px 19px 8px 17px;width:min(820px,100%);box-shadow:0 18px 50px rgba(45,38,32,.22);animation:hqmA .16s ease-out}',
+    '#hq-modal-root .hqm{background:#fff;border:1.5px solid #d4cdc4;border-radius:17px 8px 19px 9px/9px 19px 8px 17px;width:min(1080px,100%);box-shadow:0 18px 50px rgba(45,38,32,.22);animation:hqmA .16s ease-out}',
     '@keyframes hqmA{from{transform:translateY(9px);opacity:.4}to{transform:none;opacity:1}}',
     '#hq-modal-root .hqm-head{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1.5px solid #e8e2da;font-size:15px;font-weight:800}',
     '#hq-modal-root .hqm-x{border:none;background:none;font-size:22px;line-height:1;cursor:pointer;color:#a09890}',
@@ -44,8 +44,10 @@
     '#hq-modal-root .hq-msg{font-size:13.5px;line-height:1.9;color:#5e554c}',
     '#hq-modal-root .hq-notice{font-size:12px;line-height:1.7;color:#8a5a12;background:#fff9e6;border:1.5px solid #f0d9a8;border-radius:8px;padding:9px 12px;margin:12px 0}',
     '#hq-modal-root .hqf-grid>select,#hq-modal-root .hqf-grid>input{border:1.5px solid #d4cdc4;border-radius:8px;padding:8px 10px;font-size:12.5px;font-family:inherit;color:#2d2620;background:#fff;width:100%}',
-    '#hq-modal-root .po-group select,#hq-modal-root .po-group input[type=text],#hq-modal-root .po-group input:not([type]){border:1.5px solid #d4cdc4;border-radius:6px;padding:5px 7px;font-size:11.5px;font-family:inherit;width:100%;box-sizing:border-box;background:#fff;color:#2d2620}',
-    '#hq-modal-root .po-group input[type=number]{border:1.5px solid #d4cdc4;border-radius:6px;padding:5px 5px;font-size:11.5px;font-family:inherit;width:100%;box-sizing:border-box;background:#fff;color:#2d2620}',
+    '#hq-modal-root .po-group select,#hq-modal-root .po-group input[type=text],#hq-modal-root .po-group input:not([type]){border:1.5px solid #d4cdc4;border-radius:6px;padding:7px 8px;font-size:12.5px;font-family:inherit;width:100%;min-width:0;height:34px;box-sizing:border-box;background:#fff;color:#2d2620}',
+    '#hq-modal-root .po-group input[type=number]{border:1.5px solid #d4cdc4;border-radius:6px;padding:7px 6px;font-size:12.5px;font-family:inherit;width:100%;min-width:0;height:34px;box-sizing:border-box;background:#fff;color:#2d2620}',
+    '#hq-modal-root .po-group th{font-size:11.5px;white-space:nowrap;padding:8px 6px}',
+    '#hq-modal-root .po-group td{padding:6px}',
     '#hq-modal-root .hq-detail{font-size:12.5px;color:#5e554c;line-height:1.95}',
     '#hq-modal-root .hq-detail b{color:#2d2620}',
     '.row-act{background:none;border:none;color:#c23616;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;padding:0 2px}',
@@ -187,7 +189,9 @@
     return names;
   }
   function ownOpts(sel) {
-    return ownNames().map(function (n) { return '<option' + (String(sel) === n ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('');
+    return ownNames().map(function (n) {
+      return '<option value="' + esc(n) + '"' + (String(sel) === n ? ' selected' : '') + '>' + esc(n) + '</option>';
+    }).join('');
   }
 
   // 归属名 → 台账 usage_code（与 20261123_hq_foundation.sql 预置一致）
@@ -492,7 +496,7 @@
           '<button type="button" class="btn" data-delg="' + gi + '" style="padding:3px 10px;color:#c0392b">删除</button></div>' +
           '<input class="supplier-name" value="' + esc(g.supplier || '') + '" placeholder="请输入供应商名称（可不填）" style="width:100%;box-sizing:border-box;border:1.5px solid #d4cdc4;border-radius:7px;padding:7px 10px;font-size:12px;margin-bottom:10px">' +
           '<datalist id="hq-po-names">' + (H.D.inventory || []).map(function (x) { return '<option value="' + esc(x.name) + '">'; }).join('') + '</datalist>' +
-          '<div class="tw"><table style="width:100%"><thead><tr><th>类别</th><th>物品名称</th><th>品牌</th><th>型号</th><th class="num">数量</th><th>单位</th><th class="num">单价(元)</th><th class="num">金额(元)</th><th>操作</th></tr></thead><tbody>' + body + '</tbody>' +
+          '<div class="tw"><table style="width:100%;min-width:900px;table-layout:fixed"><colgroup><col style="width:110px"><col style="width:170px"><col style="width:110px"><col style="width:110px"><col style="width:85px"><col style="width:70px"><col style="width:95px"><col style="width:95px"><col style="width:55px"></colgroup><thead><tr><th>类别</th><th>物品名称</th><th>品牌</th><th>型号</th><th class="num">数量</th><th>单位</th><th class="num">单价(元)</th><th class="num">金额(元)</th><th>操作</th></tr></thead><tbody>' + body + '</tbody>' +
           '<tfoot><tr style="background:#f0e9df;font-weight:700"><td colspan="7" style="text-align:right">小计</td><td class="num po-subtotal">' + subtotal.toFixed(2) + '</td><td></td></tr></tfoot></table></div>' +
           '<div style="display:flex;gap:8px;margin-top:9px">' +
           '<button type="button" class="btn" data-addrow="' + gi + '">+ 添加新物品</button>' +
@@ -505,7 +509,13 @@
       var k = tr.getAttribute('data-k'); // handled by input listener below via target
     }
     host.addEventListener('input', function (e) {
-      var t = e.target, tr = t.closest('tr[data-g]'); if (!tr || !t.hasAttribute('data-k')) return;
+      var t = e.target;
+      if (t.classList && t.classList.contains('supplier-name')) {
+        var gr0 = t.closest('.po-group');
+        if (gr0 && groups[Number(gr0.getAttribute('data-gi'))]) groups[Number(gr0.getAttribute('data-gi'))].supplier = t.value;
+        return;
+      }
+      var tr = t.closest('tr[data-g]'); if (!tr || !t.hasAttribute('data-k')) return;
       var gi = Number(tr.getAttribute('data-g')), ri = Number(tr.getAttribute('data-r'));
       groups[gi].items[ri][t.getAttribute('data-k')] = t.value;
       if (t.getAttribute('data-k') === 'quantity' || t.getAttribute('data-k') === 'price') {
@@ -1156,6 +1166,109 @@
     };
     inp.click();
   }
+  // 库存概览批量导入：模板下载 + 逐行校验 + 首次盘库建账（对齐采购导入的解析/落库范式）
+  var INV_TPL_HEAD = ['编码', '名称', '品牌', '型号', '单位', '单价', '安全库存', '用途归属', '初始库存'];
+  function downloadInvTemplate() {
+    var btn = $('#btn-inv-template');
+    busy(btn, '生成中', true);
+    loadScript('js/vendor/xlsx.full.min.js').then(function () {
+      var ws = XLSX.utils.aoa_to_sheet([
+        INV_TPL_HEAD,
+        ['示例-001', '示例物品（导入前请删除本行）', '示例品牌', '示例型号', '个', 10, 10, '直播礼品', 0]
+      ]);
+      ws['!cols'] = [16, 30, 14, 14, 8, 10, 12, 14, 12].map(function (w) { return { wch: w }; });
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '库存导入');
+      XLSX.writeFile(wb, '总部库存导入模板.xlsx');
+      busy(btn, null, false); toast('模板已下载');
+    }).catch(function () { busy(btn, null, false); toast('本地 Excel 解析库加载失败', 'err'); });
+  }
+  function importInventory(btn) {
+    var inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.xlsx,.xls,.csv';
+    inp.onchange = function () {
+      var f = inp.files && inp.files[0]; if (!f) return;
+      busy(btn, '解析中', true);
+      loadScript('js/vendor/xlsx.full.min.js').then(function () {
+        var reader = new FileReader();
+        reader.onload = function (ev) {
+          try {
+            var wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+            var data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
+            if (data.length < 2) throw new Error('表格没有数据行');
+            var head = data[0].map(function (x) { return String(x).trim(); });
+            function col(aliases, fallback) {
+              for (var i = 0; i < head.length; i++) {
+                if (aliases.some(function (a) { return head[i].indexOf(a) >= 0; })) return i;
+              }
+              return fallback;
+            }
+            var ci = {
+              code: col(['编码'], 0), name: col(['名称', '物品'], 1), brand: col(['品牌'], 2),
+              model: col(['型号', '规格'], 3), unit: col(['单位'], 4), price: col(['单价'], 5),
+              safety: col(['安全库存'], 6), cat: col(['用途归属', '归属', '分类'], 7), stock: col(['初始库存', '库存'], 8)
+            };
+            var validCats = ownNames(), seenCode = {}, seenName = {}, rows = [], errs = [];
+            (H.D.inventory || []).forEach(function (x) {
+              if (x.code) seenCode[String(x.code).trim().toLowerCase()] = 1;
+              if (x.name) seenName[String(x.name).trim().toLowerCase()] = 1;
+            });
+            data.slice(1).forEach(function (r, idx) {
+              var line = idx + 2, name = String(r[ci.name] || '').trim();
+              if (!name || name.indexOf('示例') >= 0) return;
+              var code = String(r[ci.code] || '').trim();
+              var cat = String(r[ci.cat] || '').trim() || '未分类';
+              var stock = num(r[ci.stock]), price = num(r[ci.price]), safety = num(r[ci.safety]);
+              if (validCats.indexOf(cat) < 0) { errs.push('第' + line + '行：用途归属「' + cat + '」不是有效分类'); return; }
+              if (stock < 0 || price < 0 || safety < 0) { errs.push('第' + line + '行：单价/安全库存/初始库存不能为负数'); return; }
+              var ck = code.toLowerCase(), nk = name.toLowerCase();
+              if (code && seenCode[ck]) { errs.push('第' + line + '行：编码「' + code + '」重复'); return; }
+              if (seenName[nk]) { errs.push('第' + line + '行：物品名称「' + name + '」已存在'); return; }
+              if (code) seenCode[ck] = 1;
+              seenName[nk] = 1;
+              rows.push({ code: code, name: name, brand: String(r[ci.brand] || '').trim(), model: String(r[ci.model] || '').trim(),
+                unit: String(r[ci.unit] || '个').trim(), unit_price: price, safety_stock: safety || 10,
+                category_name: cat, stock: stock });
+            });
+            if (!rows.length && !errs.length) throw new Error('未读到有效数据行（示例行会被自动跳过）');
+            if (errs.length) {
+              busy(btn, null, false);
+              var mm = openModal('导入校验未通过 · ' + errs.length + ' 处问题',
+                '<div class="hq-msg">' + errs.slice(0, 20).map(esc).join('<br>') + (errs.length > 20 ? '<br>…' : '') + '</div>',
+                '<button class="btn primary" data-hq-close>知道了</button>');
+              $('[data-hq-close]', mm.root).onclick = mm.close;
+              return;
+            }
+            var i = 0, ok = 0, fail = [];
+            function next() {
+              if (i >= rows.length) {
+                busy(btn, null, false);
+                toast('导入完成：成功 ' + ok + ' 行' + (fail.length ? '，失败 ' + fail.length + ' 行：' + fail.join('；') : ''));
+                H.loadAll(); return;
+              }
+              var r = rows[i++];
+              var payload = { name: r.name, brand: r.brand, model: r.model, unit: r.unit, unit_price: r.unit_price,
+                stock: r.stock, safety_stock: r.safety_stock, category_name: r.category_name };
+              if (r.code) payload.code = r.code;
+              var savedId = null, savedCode = null;
+              Promise.resolve(SupaDB.createInventoryItem(payload)).then(function (saved) {
+                savedId = saved && saved.id; savedCode = payload.code || (saved && saved.code) || r.name;
+                ok++;
+                if (r.stock > 0 && SupaDB.createInventoryAdjustment && savedId) {
+                  return Promise.resolve(SupaDB.createInventoryAdjustment({
+                    inventory_item_id: savedId, item_code: savedCode, delta: r.stock, new_stock: r.stock,
+                    reason: 'Excel 批量导入·首次盘库建账', created_by: 'hq-import'
+                  })).catch(function (e) { console.warn('[HQ导入] 调整记录失败', e.message); });
+                }
+              }).catch(function (e) { fail.push(r.name + '：' + (e && e.message || e)); }).then(next);
+            }
+            next();
+          } catch (e) { busy(btn, null, false); toast('解析失败：' + (e && e.message || e), 'err'); }
+        };
+        reader.readAsArrayBuffer(f);
+      }).catch(function () { busy(btn, null, false); toast('本地 Excel 解析库加载失败', 'err'); });
+    };
+    inp.click();
+  }
   function exportCSV(mod) {
     var table = $('#mod-' + mod + ' table'); if (!table) { toast('当前模块没有可导出的表格', 'err'); return; }
     var lines = $$('tr', table).map(function (tr) {
@@ -1298,6 +1411,8 @@
 
     var btn = e.target.closest('button');
     if (!btn) return;
+    if (btn.id === 'btn-inv-template') { downloadInvTemplate(); return; }
+    if (btn.id === 'btn-inv-import') { importInventory(btn); return; }
     var txt = (btn.textContent || '').trim();
     var m0 = $('.mod:not(.hidden)'); var mod = m0 ? m0.id.replace('mod-', '') : '';
     if (txt.indexOf('新增物品') >= 0) editItem(null, btn);
