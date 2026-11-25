@@ -184,9 +184,9 @@
           '<div><span>库存额</span><b>' + shortMoney(b.value) + '</b></div>' +
         '</div>' +
         '<div class="oc-foot">' +
-          '<span class="st"><i style="background:var(--accent)"></i>实际出库 <b>' + b.outQty + '</b></span>' +
-          '<span class="st"><i style="background:var(--warning)"></i>锁定待出 <b>' + b.locked + '</b></span>' +
-          '<span class="st"><i style="background:var(--success)"></i>退回入库 <b>' + b.returnedQty + '</b></span>' +
+          '<button type="button" class="st st-btn" data-drill="out" data-own="' + o.key + '" title="点击查看实际出库明细"><i style="background:var(--accent)"></i>实际出库 <b>' + b.outQty + '</b></button>' +
+          '<button type="button" class="st st-btn" data-drill="locked" data-own="' + o.key + '" title="点击查看锁定明细"><i style="background:var(--warning)"></i>锁定待出 <b>' + b.locked + '</b></button>' +
+          '<button type="button" class="st st-btn" data-drill="returned" data-own="' + o.key + '" title="点击查看退回入库明细"><i style="background:var(--success)"></i>退回入库 <b>' + b.returnedQty + '</b></button>' +
         '</div></div>';
     }).join('');
 
@@ -398,7 +398,7 @@
     }).join('');
   }
 
-  // ---------- 渲染：出入库明细（按归属切换，数据来自库存按分类） ----------
+  // ---------- 渲染：出入库明细（按归属切换，真实单据勾稽） ----------
   function renderMonthly(ownerKey) {
     var body = $('monthBody');
     if (!body) return;
@@ -408,11 +408,30 @@
       var o = OWNERS.find(function (x) { return x.key === key; });
       return o && catOf(it) === o.name;
     });
-    if (!list.length) { body.innerHTML = emptyRow(7, '该用途归属下暂无物品明细'); return; }
+    if (!list.length) { body.innerHTML = emptyRow(8, '该用途归属下暂无物品明细'); return; }
+    // 按物品编码/名称汇总：本月入库、出库、退库
+    var inMap = {}, outMap = {}, retMap = {};
+    (D.stockin || []).forEach(function (s) {
+      itemsOf(s).forEach(function (i) { var k = i.code || i.name; inMap[k] = (inMap[k] || 0) + n(i.actual_quantity || i.quantity); });
+    });
+    (D.stockout || []).forEach(function (s) {
+      itemsOf(s).forEach(function (i) { var k = i.code || i.name; outMap[k] = (outMap[k] || 0) + n(i.quantity); });
+    });
+    (D.returns || []).filter(function (r) { return r.status === 'approved'; }).forEach(function (r) {
+      var k = r.item_code || r.code || r.name; retMap[k] = (retMap[k] || 0) + n(r.qty);
+      retMap[r.name] = (retMap[r.name] || 0) + n(r.qty);
+    });
     body.innerHTML = list.map(function (it) {
       var cat = catOf(it);
+      var iv = inMap[it.code] || inMap[it.name] || 0;
+      var ov = outMap[it.code] || outMap[it.name] || 0;
+      var rv = retMap[it.code] || retMap[it.name] || 0;
+      var inCell = iv ? '<span class="num in">+' + iv + '</span>' : '<span class="num">—</span>';
+      var outCell = ov ? '<span class="num out">-' + ov + '</span>' : '<span class="num">—</span>';
+      var retCell = rv ? '<span class="tag g">已退库 +' + rv + '</span>' : '<span class="num">—</span>';
+      var opening = n(it.stock) + ov - iv - rv;
       return '<tr data-own="' + (ownCls(cat)) + '"><td>' + esc(it.code) + '</td><td>' + esc(it.name) + '</td><td>' + ownBadge(cat) + '</td>' +
-        '<td class="num">—</td><td class="num in">—</td><td class="num out">—</td><td class="num">' + n(it.stock) + '</td></tr>';
+        '<td class="num">' + opening + '</td><td class="num">' + inCell + '</td><td class="num">' + outCell + '</td><td>' + retCell + '</td><td class="num">' + n(it.stock) + '</td></tr>';
     }).join('');
   }
 
