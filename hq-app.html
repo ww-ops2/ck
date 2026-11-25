@@ -4,6 +4,38 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>遇见美好总部 · 库存管理系统</title>
+<script>
+  // hq 版本自检（v6.13 补）：根治「刷新还是旧页面」——浏览器缓存了旧 hq-app.html 时，
+  // 用云端 version.json（no-store）做权威比对，不一致就强制硬刷新到带 _relver= 的新 URL。
+  // 与列车 index.html 的自检相互独立（localStorage 键不同），互不触发。
+  (function () {
+    var APP_VERSION = '6.13';
+    var reloading = false;
+    function forceReload() {
+      if (reloading) return;
+      if (window.location.href.indexOf('_relver=') >= 0) return;
+      if (window.location.href.indexOf('file://') >= 0) return;
+      reloading = true;
+      var url = window.location.href.split('#')[0];
+      var sep = url.indexOf('?') >= 0 ? '&' : '?';
+      try { localStorage.setItem('hq_app_version', APP_VERSION); } catch (e) {}
+      window.location.replace(url + sep + '_relver=' + Date.now());
+    }
+    function checkVersion() {
+      if (typeof fetch !== 'function') return;
+      fetch('version.json', { cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (j) { if (j && j.version && j.version !== APP_VERSION) forceReload(); })
+        .catch(function () { /* 离线：下次再检 */ });
+    }
+    try { localStorage.setItem('hq_app_version', APP_VERSION); } catch (e) {}
+    checkVersion();
+    setInterval(checkVersion, 3 * 60 * 1000);
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') checkVersion();
+    });
+  })();
+</script>
 <style>
 /* ===== 完全照搬列车系统的暖色手绘设计语言 ===== */
 :root{
@@ -240,12 +272,45 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .fr-blocker.done{color:#2f7a4f;font-weight:600}
 
 .hidden{display:none}
+
+/* ===== 出库管理 · 分类作业台（设计稿 v5 落地 2026-11-25；作用域限定 #mod-stockout，其他模块与列车主体零影响） ===== */
+#mod-stockout .so-entry{background:var(--bg-card);border:1.5px solid var(--border);border-radius:var(--sketch-r1);padding:13px 16px;margin-bottom:14px;display:flex;align-items:center;gap:13px;flex-wrap:wrap}
+#mod-stockout .so-entry .ic{width:36px;height:36px;flex:0 0 36px;border-radius:var(--sketch-sm);background:var(--accent-glow);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:17px}
+#mod-stockout .so-entry .tx{flex:1;min-width:220px}
+#mod-stockout .so-entry .tx b{font-size:13px}
+#mod-stockout .so-entry .tx div{font-size:11.5px;color:var(--text-secondary);margin-top:2px}
+#mod-stockout .so-entry .jump{margin-left:auto;display:flex;align-items:baseline;gap:6px;cursor:pointer;padding:4px 10px;border-radius:8px}
+#mod-stockout .so-entry .jump:hover{background:var(--accent-glow)}
+#mod-stockout .so-entry .jump b{font-size:25px;color:var(--accent)}
+#mod-stockout .so-entry .jump span{font-size:11.5px;color:var(--text-muted)}
+#mod-stockout .so-flow{background:var(--bg-card);border:1.5px solid var(--border);border-radius:var(--sketch-sm);padding:10px 14px;margin-bottom:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px}
+#mod-stockout .so-fn{padding:4px 10px;border-radius:20px;background:var(--bg-elevated);color:var(--text-secondary);white-space:nowrap}
+#mod-stockout .so-fn.hot{background:var(--warning-bg);color:var(--warning);font-weight:700}
+#mod-stockout .so-fa{color:var(--text-muted)}
+#mod-stockout .so-role-wrap{display:flex;align-items:center;gap:12px;margin-bottom:13px;flex-wrap:wrap}
+#mod-stockout .so-role{display:flex;border:1.5px solid var(--border);border-radius:var(--sketch-sm);overflow:hidden;background:var(--bg-card)}
+#mod-stockout .so-role button{border:none;background:none;padding:6px 14px;font-size:12px;cursor:pointer;color:var(--text-secondary);font-family:inherit}
+#mod-stockout .so-role button.on{background:var(--accent);color:#fff;font-weight:700}
+#mod-stockout .so-role-note{font-size:11.5px;color:var(--text-muted)}
+#mod-stockout .so-cal{background:var(--warning-bg);border-radius:8px;padding:9px 12px;font-size:11.5px;color:var(--text-secondary);margin-bottom:11px;line-height:1.7}
+#mod-stockout .so-cal b{color:var(--warning)}
+#mod-stockout .so-foot{font-size:11px;color:var(--text-muted);margin-top:11px;line-height:1.75;border-top:1px dashed var(--border);padding-top:10px}
+#mod-stockout .so-tno{font-family:Consolas,monospace;background:var(--bg-secondary);border-radius:5px;padding:2px 6px;font-size:11px}
+#mod-stockout .so-tno.empty{color:var(--text-muted);background:none;padding:0}
+#mod-stockout .so-cinfo{font-size:10.5px;line-height:1.5}
+#mod-stockout .so-cinfo .filled{color:var(--success);font-weight:700}
+#mod-stockout .so-cinfo .empty{color:var(--text-muted)}
+#mod-stockout .so-n{background:var(--bg-elevated);border-radius:9px;padding:0 6px;font-size:10px;color:var(--text-secondary);margin-left:5px}
+#mod-stockout .os.on .so-n{background:var(--accent);color:#fff}
+#mod-stockout .so-panel-hl{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
+#mod-stockout .tag.gray{background:var(--bg-elevated);color:var(--text-secondary)}
+#mod-stockout .tag.o{background:var(--warning-bg);color:var(--warning)}
 </style>
 <!-- 数据层：本地 supabase-js + 主体隔离数据访问层（复用列车，自动按 subject=hq 过滤） -->
-<script src="js/vendor/supabase.min.js?v=6.12"></script>
-<script src="js/supabase-db.js?v=6.12"></script>
-<script src="js/toast.js?v=6.12"></script>
-<script src="js/hq-foundation.js?v=6.12"></script>
+<script src="js/vendor/supabase.min.js?v=6.13"></script>
+<script src="js/supabase-db.js?v=6.13"></script>
+<script src="js/toast.js?v=6.13"></script>
+<script src="js/hq-foundation.js?v=6.13"></script>
 </head>
 <body>
 <div class="app">
@@ -509,28 +574,60 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
         </div>
       </section>
 
-      <!-- ===== 出库管理===== -->
+      <!-- ===== 出库管理 · 分类作业台（设计稿 v5 落地 2026-11-25）===== -->
       <section class="mod hidden" id="mod-stockout">
-        <div class="kpis" id="so-kpis">
-          <div class="kpi g"><div class="k">本月出库</div><div class="v">142 <small>笔</small></div></div>
-          <div class="kpi b"><div class="k">在途未签收 </div><div class="v blu">5 <small>笔</small></div></div>
-          <div class="kpi y"><div class="k">待邮寄 </div><div class="v yel">7 <small>笔</small></div></div>
-          <div class="kpi"><div class="k">已签收</div><div class="v">130 <small>笔</small></div></div>
+        <div class="so-entry">
+          <div class="ic">▣</div>
+          <div class="tx"><b>仪表盘入口</b><div>直播礼品卡 ·「锁定待出 <span id="so-entry-num">0</span> 件」→ 点击直接到出库管理「直播礼品」分类并定位待办明细</div></div>
+          <div class="jump" id="so-entry-jump" title="回到直播礼品待办"><b id="so-lock-big">0</b><span>件锁定待出 ›</span></div>
         </div>
-        <div class="panel">
-          <div class="ph"><div class="pt"><span class="bar"></span>出库列表</div>
+
+        <div class="so-cal" style="margin-bottom:12px">
+          <b>岗位口径（2026-11-25 定稿）：</b>行政 / 库存 / 仓库为<b>同一岗位</b>，系统统一记为「仓库」，末端「数据确认 / 确定出库」均由该岗位办理；<b>全流程无审核、无核销节点</b>。团号必填、客户信息手动填写；角色切换仅用于演示流程步骤，暂不做权限拦截。
+        </div>
+
+        <div class="so-flow" id="so-flow-bar"></div>
+
+        <div class="so-role-wrap">
+          <div class="so-role" id="so-role-switch">
+            <button type="button" class="on" data-role="sales">销售</button>
+            <button type="button" data-role="planner">计调</button>
+            <button type="button" data-role="warehouse">仓库</button>
+          </div>
+          <span class="so-role-note" id="so-role-note">当前：销售 · 填写并邮寄</span>
+        </div>
+
+        <div class="kpis" id="so-board-kpis"></div>
+
+        <div class="ownswitch" id="so-own-tabs"></div>
+
+        <div class="panel so-panel-hl" id="so-todo-panel">
+          <div class="ph">
+            <div class="pt"><span class="bar"></span><span id="so-todo-title">待办明细 · 直播礼品</span><small>锁定量 = 拟出库量 − 已出库量</small></div>
             <div class="pa">
-              <button class="btn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v13"/></svg>仓库确定出库</button>
-              <button class="btn primary"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2.5L10.5 13.5"/><path d="M21.5 2.5l-6.8 19-4.2-8-8-4.2z"/></svg>填写并邮寄</button>
-            </div></div>
-          <div class="filterbar"> 归属：<select class="sel"><option>全部</option><option>直播礼品</option><option>出团物料</option></select> 类型：<select class="sel"><option>全部类型</option><option>领用出库</option><option>邮寄出库</option></select></div>
+              <select class="sel" id="so-status-filter"><option>全部状态</option><option>待办理</option><option>待仓库确定</option></select>
+              <button class="btn primary" type="button">填写并邮寄 ›</button>
+            </div>
+          </div>
+          <div class="so-cal" id="so-cal-note"></div>
           <div class="tw"><table>
-            <thead><tr><th>出库单号</th><th>类型</th><th>物品</th><th class="num">数量</th><th>快递单号</th><th>用途归属</th><th>状态</th></tr></thead>
-            <tbody id="so-body">
-              <tr><td>SO00031</td><td><span class="tag p">邮寄出库</span></td><td>定制保温杯</td><td class="num">2</td><td>SF1234567890</td><td><span class="own live">直播礼品</span></td><td><span class="tag b">在途</span></td></tr>
-              <tr><td>SO00030</td><td><span class="tag b">领用出库</span></td><td>矿泉水</td><td class="num">10</td><td>—</td><td><span class="own tour">出团物料</span></td><td><span class="tag g">已签收</span></td></tr>
-              <tr><td>SO00029</td><td><span class="tag p">邮寄出库</span></td><td>文创帆布包</td><td class="num">1</td><td>待填写</td><td><span class="own live">直播礼品</span></td><td><span class="tag y">待邮寄</span></td></tr>
-            </tbody>
+            <thead><tr><th>领用单号</th><th>团号</th><th>场次 / 用途</th><th>申请人</th><th>物品（件数）</th><th class="num">锁定待出</th><th>客户邮寄信息</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody id="so-todo-body"></tbody>
+          </table></div>
+          <div class="so-foot" id="so-foot-note"></div>
+        </div>
+
+        <div class="panel">
+          <div class="ph"><div class="pt"><span class="bar"></span>出库单列表</div>
+            <div class="pa">
+              <button class="btn" type="button">领用出库 ›</button>
+              <button class="btn" type="button">+ 邮寄出库 ›</button>
+              <button class="btn primary" type="button">仓库确定出库 ›</button>
+            </div></div>
+          <div class="filterbar"> 归属：<select class="sel" id="so-f-own"><option>全部</option><option>直播礼品</option><option>出团物料</option><option>行政物料</option><option>总部仓库</option></select> 类型：<select class="sel" id="so-f-type"><option>全部类型</option><option>领用出库</option><option>邮寄出库</option></select> 状态：<select class="sel" id="so-f-status"><option>全部状态</option><option>在途未签收</option><option>已签收</option></select> <input class="sel" id="so-f-key" placeholder="搜索单号 / 团号 / 快递单号" style="width:190px"></div>
+          <div class="tw"><table>
+            <thead><tr><th>出库单号</th><th>类型</th><th>团号</th><th>物品</th><th class="num">数量</th><th>用途归属</th><th>快递公司 · 单号</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody id="so-body"></tbody>
           </table></div>
         </div>
       </section>
@@ -759,8 +856,8 @@ function toggleTour(headEl){
 }
 </script>
 <!-- 真实数据驱动：从 SupaDB 拉取 hq 主体数据并填充全部模块（空库显示引导，不造假） -->
-<script src="js/hq-app.js?v=6.12"></script>
+<script src="js/hq-app.js?v=6.13"></script>
 <!-- 操作层：所有按钮/弹窗/写库（依赖 hq-app.js 暴露的 HQApp） -->
-<script src="js/hq-actions.js?v=6.12"></script>
+<script src="js/hq-actions.js?v=6.13"></script>
 </body>
 </html>
