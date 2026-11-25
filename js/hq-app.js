@@ -185,7 +185,7 @@
         '<div class="oc-grid">' +
           '<div><span>物品</span><b>' + b.items + ' <i>种</i></b></div>' +
           '<div><span>库存</span><b>' + b.stock + ' <i>件</i></b></div>' +
-          '<div><span>' + midLabel + '</span><b class="' + midCls + '">' + midVal + ' <i>笔</i></b></div>' +
+          '<div' + (o.key === 'live' ? ' class="mid-drill" data-drill="locked" data-own="live" title="点击查看锁定明细并办理销售邮寄"' : '') + '><span>' + midLabel + '</span><b class="' + midCls + '">' + midVal + ' <i>笔</i></b></div>' +
           '<div><span>库存额</span><b>' + shortMoney(b.value) + '</b></div>' +
         '</div>' +
         '<div class="oc-foot">' +
