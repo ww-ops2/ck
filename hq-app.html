@@ -190,6 +190,9 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .oc-foot .st b{color:var(--text-primary);font-size:12px}
 .oc-foot .st-btn{background:none;border:none;padding:0;cursor:pointer;font-family:inherit}
 .oc-foot .st-btn:hover b{color:var(--accent);text-decoration:underline}
+.oc-grid .mid-drill{cursor:pointer;border-radius:6px;padding:2px 4px;margin:-2px -4px;transition:background .15s}
+.oc-grid .mid-drill:hover{background:rgba(231,0,11,.07)}
+.oc-grid .mid-drill:hover b{text-decoration:underline}
 
 /* 出入库明细-归属切换 */
 .ownswitch{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding-bottom:12px;border-bottom:1.5px solid var(--border-light)}
@@ -735,8 +738,8 @@ function toggleTour(headEl){
 }
 </script>
 <!-- 真实数据驱动：从 SupaDB 拉取 hq 主体数据并填充全部模块（空库显示引导，不造假） -->
-<script src="js/hq-app.js?v=6.9"></script>
+<script src="js/hq-app.js?v=6.10"></script>
 <!-- 操作层：所有按钮/弹窗/写库（依赖 hq-app.js 暴露的 HQApp） -->
-<script src="js/hq-actions.js?v=6.9"></script>
+<script src="js/hq-actions.js?v=6.10"></script>
 </body>
 </html>
