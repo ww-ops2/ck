@@ -47,7 +47,12 @@
           name: it.name || it.item_name,
           code: it.item_code || it.code,
           category: it.category_name || it.category,
-          quantity: n(it.quantity), unit: it.unit,
+          quantity: n(it.quantity),
+          // 实收量必须单独保留：线上 purchase_order_items 无 received_qty 列，
+          // 部分入库时若用 quantity 会把订购量当实收量，导致出入库明细虚增
+          actual_quantity: it.actual_quantity != null ? n(it.actual_quantity) : n(it.quantity),
+          received_qty: n(it.received_qty || 0),
+          unit: it.unit,
           price: n(it.price), amount: n(it.amount),
           brand: it.brand, model: it.model,
           inventory_item_id: it.inventory_item_id
@@ -298,21 +303,35 @@
   function renderStockIn() {
     var body = $('si-body');
     if (!body) return;
-    // 入库以采购单待入库明细为主
-    var rows = [];
-    D.purchase.forEach(function (p) {
-      if (p.status === 'stockin_completed') return;
-      itemsOf(p).forEach(function (it) {
-        var done = n(it.received_qty || it.actual_quantity || 0);
-        rows.push({ po: p.code || p.order_no, poId: p.id, it: it, done: done });
+    // 已收数量按「真实入库明细」反查聚合：purchase_order_items 无 received_qty 列，
+    // 只认 stock_in_items，才能正确显示已入库/部分入库/已完成
+    var receivedMap = {};
+    (D.stockin || []).forEach(function (s) {
+      var poKey = String(s.purchase_order_code || s.purchase_order_id || '');
+      (s.stock_in_items || []).forEach(function (si) {
+        var k = poKey + '|' + (si.item_code || si.name || '');
+        receivedMap[k] = (receivedMap[k] || 0) + n(si.actual_quantity != null ? si.actual_quantity : si.quantity);
       });
     });
-    if (!rows.length) { body.innerHTML = emptyRow(7, '暂无待入库明细'); return; }
+    // 入库管理展示全部采购明细：待入库 / 部分入库 / 已完成都要能看到，避免验收入库后记录"消失"
+    var rows = [];
+    D.purchase.forEach(function (p) {
+      var poKey = String(p.code || p.id);
+      itemsOf(p).forEach(function (it) {
+        var done = receivedMap[poKey + '|' + (it.code || it.name || '')] || 0;
+        var finished = p.status === 'stockin_completed' || (n(it.quantity) > 0 && done >= n(it.quantity));
+        rows.push({ po: p.code || p.order_no, poId: p.id, it: it, done: done, finished: finished });
+      });
+    });
+    if (!rows.length) { body.innerHTML = emptyRow(7, '暂无采购入库明细，请先新建采购单'); return; }
     body.innerHTML = rows.map(function (r) {
-      var st = r.done >= r.it.quantity ? '已完成' : r.done > 0 ? '部分入库' : '待入库';
+      var st = r.finished ? '已完成' : r.done > 0 ? '部分入库' : '待入库';
       var cls = st === '已完成' ? 'g' : st === '部分入库' ? 'b' : 'r';
+      var act = r.finished
+        ? '<button class="row-act" data-act="po-view" data-id="' + esc(r.poId) + '">查看</button>'
+        : '<button class="row-act" data-act="si-accept" data-id="' + esc(r.poId) + '">' + (r.done > 0 ? '继续入库' : '验收入库') + '</button>';
       return '<tr><td>' + esc(r.po) + '</td><td>' + esc(r.it.name) + '</td><td class="num">' + r.it.quantity + '</td><td class="num">' + r.done + '</td>' +
-        '<td>' + ownBadge(r.it.category) + '</td><td><span class="tag ' + cls + '">' + st + '</span></td><td class="lnk"><button class="row-act" data-act="si-accept" data-id="' + esc(r.poId) + '">' + (r.done > 0 ? '继续入库' : '验收入库') + '</button></td></tr>';
+        '<td>' + ownBadge(r.it.category) + '</td><td><span class="tag ' + cls + '">' + st + '</span></td><td class="lnk">' + act + '</td></tr>';
     }).join('');
   }
 
@@ -390,9 +409,11 @@
       var typeTag = isMail ? '<span class="tag p">邮寄出库</span>' : '<span class="tag b">领用出库</span>';
       var cat = its[0] ? its[0].category : '未分类';
       var qty = its.reduce(function (a, i) { return a + i.quantity; }, 0);
-      var stMap = { pending: '待邮寄', pending_ship: '待邮寄', shipped: '在途', completed: '已签收' };
+      var stMap = isMail
+        ? { pending: '待邮寄', pending_ship: '待邮寄', shipped: '在途', completed: '已签收' }
+        : { pending: '待出库', pending_ship: '待出库', shipped: '已出库', completed: '已出库' };
       var st = stMap[s.status] || s.status || '—';
-      var stCls = st === '在途' ? 'b' : st === '已签收' ? 'g' : 'y';
+      var stCls = st === '在途' ? 'b' : (st === '已签收' || st === '已出库') ? 'g' : 'y';
       return '<tr><td class="lnk">' + esc(s.code) + '</td><td>' + typeTag + '</td><td>' + esc(its.map(function (i) { return i.name; }).join('、')) + '</td>' +
         '<td class="num">' + qty + '</td><td>' + esc(s.tracking_no || (isMail ? '待填写' : '—')) + '</td><td>' + ownBadge(cat) + '</td><td><span class="tag ' + stCls + '">' + esc(st) + '</span> <button class="row-act" data-act="so-view" data-id="' + esc(s.id) + '">查看</button></td></tr>';
     }).join('');
@@ -446,9 +467,11 @@
       if (!byTour[tour]) byTour[tour] = { rows: [], status: s.status };
       itemsOf(s).forEach(function (it) { byTour[tour].rows.push(it); });
     });
-    // 也纳入领用单的团期（未出库）
+    // 也纳入领用单的团期（仅未出库部分）
+    // 口径铁律：已出库/部分出库的领用单已经在 D.stockout 里计入，这里必须排除，否则同一物料翻倍
     D.requisitions.forEach(function (r) {
       if (!r.tour_name) return;
+      if (r.status === 'outbound_completed' || r.status === 'partially_outbounded') return;
       var tour = r.tour_name.trim();
       if (!byTour[tour]) byTour[tour] = { rows: [], status: r.status };
       itemsOf(r).forEach(function (it) { byTour[tour].rows.push(it); });
