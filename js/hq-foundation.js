@@ -282,6 +282,12 @@
     var res = await sb.from('posting_journal').select('*')
       .eq('subject', SUBJECT).eq('doc_no', docNo).order('created_at', { ascending: true });
     if (res.error) return { ok: false, error: res.error.message };
+    // 台账单号 = 业务单号 + 行号（HQSO001-1 等），按业务单号红冲时回退前缀匹配
+    if (!res.data || !res.data.length) {
+      res = await sb.from('posting_journal').select('*')
+        .eq('subject', SUBJECT).like('doc_no', docNo + '-%').order('created_at', { ascending: true });
+      if (res.error) return { ok: false, error: res.error.message };
+    }
     if (!res.data || !res.data.length) return { ok: false, error: 'doc not found in journal: ' + docNo };
     var results = [];
     for (var i = 0; i < res.data.length; i++) {
