@@ -446,9 +446,13 @@
         total_quantity: rows.reduce(function (a, r) { return a + num(r.quantity); }, 0),
         items: rows.map(function (r) { return { item_id: r.item_id, name: r.name, code: r.code, category: r.category, unit: r.unit, quantity: num(r.quantity) }; })
       }).then(function (req) {
-        return SupaDB.approveRequisition(req.id, '邮寄出库自动审核').then(function () { return { req: req }; });
-      }).then(function (o) {
-        return SupaDB.confirmStockOut(o.req.id, {
+        // 线上若未放宽状态约束，createRequisition 会降级为 pending_outbound，此时无需再审核
+        var st = req.status || '';
+        if (st !== 'pending_approval' && st !== 'pending') return req;
+        return SupaDB.approveRequisition(req.id, '邮寄出库自动审核')
+          .catch(function () { return null; }).then(function () { return req; });
+      }).then(function (req) {
+        return SupaDB.confirmStockOut(req.id, {
           stockout_date: v.stockout_date,
           items: rows.map(function (r) { return { item_id: r.item_id, name: r.name, code: r.code, category: r.category, unit: r.unit, quantity: num(r.quantity), price: num(r.price) }; }),
           total_quantity: rows.reduce(function (a, r) { return a + num(r.quantity); }, 0)
