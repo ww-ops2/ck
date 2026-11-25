@@ -72,6 +72,7 @@ $filesToPush = @(
     "database/migrations/20260622_change_stock_to_numeric.sql",
     "database/migrations/20260807_nonpurchase_loss.sql",
     "database/migrations/20260821_po_locked.sql",
+    "database/migrations/20261125_hq_flow_columns.sql",
     "js/admin-bindings.js",
     "js/app.js",
     "js/hq-custom.js",
@@ -140,7 +141,7 @@ foreach ($relPath in $filesToPush) {
         $cloudSha = $resp.sha
     } catch {}
 
-    $msg = "v6.11 " + $(if ($cloudSha) { "update" } else { "add" }) + " $relPath"
+    $msg = "v6.12 " + $(if ($cloudSha) { "update" } else { "add" }) + " $relPath"
     $body = @{
         message = $msg
         content = $b64
