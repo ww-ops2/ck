@@ -107,6 +107,18 @@
     mask.addEventListener('mousedown', function (e) { if (e.target === mask) close(); });
     return { root: root, body: $('.hqm-body', root), foot: $('.hqm-foot', root), close: close };
   }
+  // ESC 关闭 hq 自建弹窗（列车 showConfirm / 主程序弹窗各自已有 ESC，互不干扰）
+  if (!window._hqModalEscBound) {
+    window._hqModalEscBound = true;
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      // 有统一确认弹窗时交给 toast.js 自己处理，避免一次 ESC 关掉两层
+      var cf = document.getElementById('custom-confirm-overlay');
+      if (cf && cf.classList.contains('show')) return;
+      var root = $('#hq-modal-root');
+      if (root && root.firstElementChild) root.innerHTML = '';
+    });
+  }
   // 通用 UI 直接复用列车 toast.js：showToast / showButtonLoading / hideButtonLoading / showConfirm
   function toast(msg, kind) {
     if (typeof showToast === 'function') return showToast(msg, kind === 'err' ? 'error' : 'success');
@@ -272,6 +284,7 @@
       if (item) { m.close(); onPick(item); }
     });
     renderList();
+    $('[data-hq-cancel]', m.root).onclick = m.close;
   }
 
   function linesEditor(mount, initial, withPrice) {
@@ -947,10 +960,25 @@
       var t = e.target;
       if (t.hasAttribute('data-lv-on')) { st[Number(t.getAttribute('data-lv-on'))].on = t.checked; drawBody(); }
     });
+    function addCustomer() {
+      var it = st[active]; if (!it) return;
+      syncCust();
+      // 默认数量取本次办理量，点一下即可直接填，不必再手工改数量凑合计
+      it.cust.push({ name: '', phone: '', addr: '', carrier: '', track: '', qty: it.qty > 0 ? it.qty : 1, remark: '' });
+      drawCust(); drawBody();
+      var first = $('[name="_n0"]', m.root); if (first) first.focus();
+    }
     m.root.addEventListener('click', function (e) {
       var pk = e.target.closest('[data-lv-pick]');
-      if (pk) { switchActive(Number(pk.getAttribute('data-lv-pick'))); return; }
-      if (e.target.closest('#lv-add')) { syncCust(); st[active].cust.push({ name: '', phone: '', addr: '', carrier: '', track: '', qty: 1, remark: '' }); drawCust(); return; }
+      if (pk) {
+        // 点击「填写客户信息」应直接进入可填状态，而不是只切换选中项（原来看着像死按钮）
+        syncCust(); active = Number(pk.getAttribute('data-lv-pick'));
+        var sel = st[active];
+        if (sel && !sel.cust.length) addCustomer(); else { drawCust(); drawBody(); }
+        var box = $('#lv-cust', m.root); if (box && box.scrollIntoView) box.scrollIntoView({ block: 'nearest' });
+        return;
+      }
+      if (e.target.closest('#lv-add')) { addCustomer(); return; }
       var dl = e.target.closest('[data-lv-del]');
       if (dl) { syncCust(); st[active].cust.splice(Number(dl.getAttribute('data-lv-del')), 1); drawCust(); }
     });
