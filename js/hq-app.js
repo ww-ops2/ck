@@ -1,5 +1,5 @@
 /**
- * HQ App - 遇见美好总部正式系统（v6.14 · 六链路流程流转 + 出库分类作业台 + 弹窗按钮修复）
+ * HQ App - 遇见美好总部正式系统（v6.15 · 出库管理按授权身份分工作台 + 原样退回）
  * 设计稿 hq-clone-preview.html 的真实数据驱动版。
  * 固定 subject=hq，复用 supabase-db.js 的 SupaDB（自动按主体隔离），列车主体零影响。
  * 空库显示引导，不造假数据。列车已有 no Realtime：30s 同步 + 切回刷新，这里照搬。
@@ -35,6 +35,67 @@
   function ownCls(cat) { return OWN_CLS[cat] || ''; }
   function ownBadge(cat) { var c = ownCls(cat); return '<span class="own ' + c + '">' + esc(cat || '未分类') + '</span>'; }
   function emptyRow(cols, msg) { return '<tr><td colspan="' + cols + '" style="text-align:center;color:var(--text-muted);padding:26px 0">' + esc(msg) + '</td></tr>'; }
+
+  // ---------- 账号与授权身份（v6.15）----------
+  // 线上 users.username = 手机号、name = 姓名；当前登录人从本地会话读（与 renderOperator 同源）。
+  // 授权身份存 user_permissions.permission = hq_role_anchor / hq_role_sales / hq_role_planner / hq_role_wh，
+  // 一个账号多条 = 多身份（零 DDL）。读不到授权时保留全身份，避免未配置账号白屏。
+  var HQ_ROLES = [
+    { key: 'anchor',  name: '主播', perm: 'hq_role_anchor' },
+    { key: 'sales',   name: '销售', perm: 'hq_role_sales' },
+    { key: 'planner', name: '计调', perm: 'hq_role_planner' },
+    { key: 'wh',      name: '仓库', perm: 'hq_role_wh' }
+  ];
+  var IDENTITY_NAME = { anchor: '主播', sales: '销售', planner: '计调', wh: '仓库' };
+  var IDENTITY_TIP = {
+    anchor:  '只看我申请的单据 · 可补充 / 提交销售 / 撤销',
+    sales:   '主播流转来的直播礼品单 · 可填邮寄 / 退回主播',
+    planner: '我录入的出团物料单 · 可办理 / 撤销',
+    wh:      '待确认实际出库的单 · 可确认出库 / 退回销售'
+  };
+  var myAccount = { id: null, username: '', name: '' };
+  var myRoles = ['anchor', 'sales', 'planner', 'wh'];
+  var curIdentity = 'anchor';
+
+  function readMyAccount() {
+    var who = null;
+    try { who = JSON.parse(localStorage.getItem('currentUser') || 'null'); } catch (e) {}
+    if (!who) { try { who = JSON.parse(sessionStorage.getItem('inv_session') || 'null'); } catch (e) {} }
+    myAccount = {
+      id: (who && who.id != null) ? who.id : null,
+      username: (who && (who.username || who.phone)) || '',
+      name: (who && who.name) || (who && who.username) || ''
+    };
+    return myAccount;
+  }
+  function accountIdOfName(nm) {
+    if (!nm) return null;
+    var u = (D.users || []).filter(function (x) { return (x.name || x.username) === nm; })[0];
+    return u ? u.id : null;
+  }
+  function accountNameOfId(id) {
+    if (id == null) return '';
+    var u = (D.users || []).filter(function (x) { return String(x.id) === String(id); })[0];
+    return u ? (u.name || u.username) : '';
+  }
+  function sameAccount(accId, nm) {
+    if (accId != null && myAccount.id != null) return String(accId) === String(myAccount.id);
+    return !!nm && nm === myAccount.name; // 旧单无账号 id 时用姓名兜底
+  }
+  async function loadMyRoles() {
+    var sb = (typeof getSupabase === 'function') ? getSupabase() : null;
+    if (!sb || myAccount.id == null) return;
+    try {
+      var res = await sb.from('user_permissions').select('permission').eq('user_id', myAccount.id);
+      if (res && !res.error && res.data && res.data.length) {
+        var ps = res.data.map(function (x) { return x.permission; });
+        var granted = HQ_ROLES.filter(function (r) {
+          return ps.indexOf(r.perm) >= 0 || ps.indexOf('all') >= 0;
+        }).map(function (r) { return r.key; });
+        if (granted.length) myRoles = granted;
+      }
+    } catch (e) {}
+  }
 
   // 明细归一化：SupaDB getter 返回原始行，明细在 xxx_items 键下
   function itemsOf(row) {
@@ -93,6 +154,8 @@
       D.audit = res[6] || [];
       D.users = res[7] || [];
       D.returns = res[8] || [];
+      await loadMyRoles();
+      if (myRoles.indexOf(curIdentity) < 0) curIdentity = myRoles[0];
       loaded = true;
       renderAll();
     } catch (e) {
@@ -444,6 +507,10 @@
     var fs = ($('so-f-status') && $('so-f-status').value) || '全部状态';
     var fk = String(($('so-f-key') && $('so-f-key').value) || '').trim().toLowerCase();
     var list = (D.stockout || []).filter(function (s) {
+      var ao = soOutAccOf(s);
+      var wantAcc = curIdentity === 'anchor' ? ao.applicant : curIdentity === 'sales' ? ao.sales : ao.wh;
+      if (wantAcc == null) return false; // 无账号归属的不进任何个人工作台
+      if (myAccount.id != null && String(wantAcc) !== String(myAccount.id)) return false;
       var its = itemsOf(s);
       var isMail = s.out_type === 'mail' || s.is_mail || (s.remark || '').indexOf('邮寄') >= 0;
       var cat = its[0] ? catOf(its[0]) : '未分类';
@@ -515,6 +582,100 @@
       return { n: nC, qty: q };
     } catch (e) { return { n: 0, qty: 0 }; }
   }
+  // ---- v6.15 身份工作台：流程阶段与账号归属 ----
+  function soFlow(r) {
+    var rm = String((r && r.remark) || ''), i = rm.indexOf('HQ_FLOW2:');
+    if (i < 0) return null;
+    var tail = rm.slice(i + 9), end = tail.indexOf(' / HQ_');
+    var b64 = (end >= 0 ? tail.slice(0, end) : tail).trim();
+    try { return JSON.parse(decodeURIComponent(escape(atob(b64)))); } catch (e) { return null; }
+  }
+  var STEP_STAGE = { anchor: 0, draft: 0, sales: 1, handled: 2, wh: 2 };
+  function soStep(r) {
+    var fp = soFlow(r);
+    if (fp && fp.step) return fp.step;
+    if (/HQ_HANDLED/.test(String((r && r.remark) || ''))) return 'handled';
+    return 'sales'; // 旧单（含已补团号的单）默认停在待销售，可直接办理
+  }
+  function soStage(r) {
+    if (!r) return 0;
+    if (r.status === 'outbound_completed') return 3;
+    return STEP_STAGE[soStep(r)] || 1;
+  }
+  function soStageTag(r) {
+    var st = soStage(r);
+    if (st === 0) return '<span class="tag y">待提交</span>';
+    if (st === 1) return '<span class="tag b">待销售填写</span>';
+    if (st === 2) return '<span class="tag" style="background:rgba(124,58,237,.08);color:#7c3aed">待仓库确定</span>';
+    return '<span class="tag g">已出库</span>';
+  }
+  function soApplicantAcc(r) {
+    var fp = soFlow(r);
+    return (fp && (fp.applicantAcc || fp.applicant_id)) || accountIdOfName(r && r.applicant);
+  }
+  function soApplicantName(r) {
+    var fp = soFlow(r);
+    return (fp && fp.applicantName) || (r && r.applicant) || '';
+  }
+  function soHandlerAcc(r) { var fp = soFlow(r); return (fp && (fp.handlerAcc || fp.handledAcc)) || null; }
+  function soWhAcc(r) { var fp = soFlow(r); return (fp && fp.whAcc) || accountIdOfName(r && r.confirmed_by); }
+  // 当前身份的待办匹配：主播看自己 stage0 直播礼品 / 计调看 stage0 出团物料 / 销售看 stage1 / 仓库看 stage2
+  function soTodoMatch(r) {
+    var stage = soStage(r), own = soOwnerOf(r);
+    if (curIdentity === 'anchor')  return stage === 0 && own === 'live' && sameAccount(soApplicantAcc(r), r.applicant);
+    if (curIdentity === 'planner') return stage === 0 && own === 'tour';
+    if (curIdentity === 'sales')   return stage === 1 && own === 'live';
+    return stage === 2; // wh
+  }
+  function soActOf(r) {
+    var id = esc(r.id), stage = soStage(r);
+    var ro = '<span style="color:#a09890;font-size:11px">';
+    if (curIdentity === 'anchor') {
+      if (stage === 0) return '<button class="row-act" data-act="rq-supplement" data-id="' + id + '">补充信息</button> · <button class="row-act" data-act="rq-submit" data-id="' + id + '">确定提交销售</button> · <button class="row-act" data-act="rq-withdraw" data-id="' + id + '">撤销</button>';
+      return ro + '已流转 · 本身份只读（要改由下游退回）</span>';
+    }
+    if (curIdentity === 'sales') {
+      if (stage === 1) return '<button class="row-act" data-act="rq-handle" data-id="' + id + '">填写并邮寄</button> · <button class="row-act" data-act="rq-back-anchor" data-id="' + id + '">退回主播</button>';
+      return ro + '已流转至仓库 · 本身份只读（要改由仓库退回）</span>';
+    }
+    if (curIdentity === 'planner') {
+      if (stage === 0) return '<button class="row-act" data-act="rq-handle" data-id="' + id + '">办理</button> · <button class="row-act" data-act="rq-withdraw" data-id="' + id + '">撤销</button>';
+      return ro + '已流转 · 本身份只读</span>';
+    }
+    if (stage === 2) return '<button class="row-act" data-act="rq-out" data-id="' + id + '">确认实际出库</button> · <button class="row-act" data-act="rq-back-sales" data-id="' + id + '">退回销售</button>';
+    return ro + '已确认出库 · 本身份只读</span>';
+  }
+  function soOutAccOf(s) {
+    var rid = s && s.requisition_id;
+    var req = (D.requisitions || []).filter(function (r) { return String(r.id) === String(rid); })[0];
+    var fp = req ? soFlow(req) : null;
+    return {
+      applicant: (fp && fp.applicantAcc) || (req && accountIdOfName(req.applicant)) || null,
+      sales: (fp && (fp.handlerAcc || fp.handledAcc)) || null,
+      wh: (fp && fp.whAcc) || accountIdOfName(s && s.confirmed_by) || null
+    };
+  }
+  function renderIdentitySwitch() {
+    var sw = $('so-identity-switch');
+    if (sw) {
+      sw.innerHTML = HQ_ROLES.filter(function (r) { return myRoles.indexOf(r.key) >= 0; }).map(function (r) {
+        return '<button type="button" data-identity="' + r.key + '" class="' + (curIdentity === r.key ? 'on' : '') + '">' + r.name + '</button>';
+      }).join('');
+      if (!sw._bound) {
+        sw._bound = true;
+        sw.addEventListener('click', function (e) {
+          var b = e.target.closest('[data-identity]'); if (!b) return;
+          curIdentity = b.getAttribute('data-identity');
+          renderStockOutBoard(); renderStockOut();
+        });
+      }
+    }
+    var note = $('so-identity-note');
+    if (note) note.textContent = '当前账号：' + (myAccount.name || myAccount.username || '未登录') + ' · ' + IDENTITY_NAME[curIdentity] + ' · ' + IDENTITY_TIP[curIdentity];
+    var ttl = $('so-todo-title'); if (ttl) ttl.textContent = '待办明细 · ' + IDENTITY_NAME[curIdentity] + '的工作台';
+    var sub = $('so-todo-sub'); if (sub) sub.textContent = IDENTITY_TIP[curIdentity];
+    var st = $('so-title'); if (st) st.textContent = '出库单列表 · ' + IDENTITY_NAME[curIdentity] + '经手且已出库的单据';
+  }
   function soTodoRows() {
     return (D.requisitions || []).filter(function (r) {
       var st = String(r.status || '');
@@ -531,18 +692,6 @@
       });
       if (id === 'so-f-key') el.addEventListener('input', function () { renderStockOut(); });
     });
-    var rs = $('so-role-switch');
-    if (rs && !rs._soBound) {
-      rs._soBound = true;
-      rs.addEventListener('click', function (e) {
-        var b = e.target.closest('[data-role]'); if (!b) return;
-        rs.querySelectorAll('button').forEach(function (x) { x.classList.remove('on'); });
-        b.classList.add('on');
-        var note = $('so-role-note');
-        var map = { sales: '销售 · 填写并邮寄', planner: '计调 · 录入团期物料', warehouse: '仓库 · 数据确认与出库' };
-        if (note) note.textContent = '当前：' + (map[b.getAttribute('data-role')] || '');
-      });
-    }
     var ej = $('so-entry-jump');
     if (ej && !ej._soBound) {
       ej._soBound = true;
@@ -555,16 +704,17 @@
   function renderStockOutBoard() {
     var kp = $('so-board-kpis'); if (!kp) return;
     soBindFilters();
+    renderIdentitySwitch();
     var all = soTodoRows();
-    var scoped = soOwner === 'all' ? all : all.filter(function (r) { return soOwnerOf(r) === soOwner; });
+    var scoped = all.filter(function (r) { return soTodoMatch(r) && (soOwner === 'all' || soOwnerOf(r) === soOwner); });
     var qtyOf = function (r) { return itemsOf(r).reduce(function (x, i) { return x + n(i.quantity); }, 0); };
     var locked = scoped.reduce(function (a, r) { return a + qtyOf(r); }, 0);
     var pending = scoped.filter(soHandled).length;
     var transit = (D.stockout || []).filter(function (s) { return s.status === 'shipped' || s.status === 'pending_ship'; }).length;
     var ym = new Date().toISOString().slice(0, 7);
     var done = (D.stockout || []).filter(function (s) { return String(s.stockout_date || s.created_at || '').slice(0, 7) === ym; }).length;
-    kp.innerHTML = kpiCard('待办理（锁定未出）', locked + ' <small>件</small>', '已锁定、实际尚未出库', 'r') +
-      kpiCard('待仓库确定', pending + ' <small>单</small>', '中间办理完成，等仓库数据确认', 'y') +
+    kp.innerHTML = kpiCard('待我处理', scoped.length + ' <small>单</small>', IDENTITY_NAME[curIdentity] + '工作台', 'r') +
+      kpiCard('待办涉及数量', locked + ' <small>件</small>', '按当前身份汇总', 'y') +
       kpiCard('在途未签收', transit + ' <small>笔</small>', '仓库已发货，快递在途', 'b') +
       kpiCard('本月已出库', done + ' <small>笔</small>', '含领用出库与邮寄出库', 'g');
 
@@ -607,8 +757,8 @@
 
     var want = ($('so-status-filter') && $('so-status-filter').value) || '全部状态';
     var list = scoped.filter(function (r) {
-      if (want === '待办理') return !soHandled(r);
-      if (want === '待仓库确定') return soHandled(r);
+      if (want === '待办理') return soStage(r) <= 1;
+      if (want === '待仓库确定') return soStage(r) === 2;
       return true;
     });
     var body = $('so-todo-body');
@@ -620,17 +770,15 @@
         var tno = soTourNo(r);
         var ci = soCustInfo(r);
         var handled = soHandled(r);
-        var status = handled ? '<span class="tag o">待仓库确定</span>' : '<span class="tag y">待办理</span>';
+        var status = soStageTag(r);
         var info = ci.n
           ? '<span class="so-cinfo"><span class="filled">已填 ' + ci.n + ' 位客户 · ' + ci.qty + ' 件（预览）</span></span>'
           : '<span class="so-cinfo"><span class="empty">未填写</span></span>';
-        var act = handled
-          ? '<button class="row-act" data-act="rq-out" data-id="' + esc(r.id) + '">确定出库 ›</button>'
-          : '<button class="row-act" data-act="rq-handle" data-id="' + esc(r.id) + '">办理 ›</button>';
+        var act = soActOf(r);
         return '<tr><td class="lnk">' + esc(r.code || '') + '</td>' +
           '<td>' + (tno ? '<span class="so-tno">' + esc(tno) + '</span>' : '<span class="so-tno empty">未填</span>') + '</td>' +
           '<td>' + esc(r.purpose || r.tour_name || '—') + '</td>' +
-          '<td>' + esc(r.applicant || '—') + '</td>' +
+          '<td>' + esc(soApplicantName(r) || '—') + (soApplicantAcc(r) != null ? '<small style="color:#a09890"> · ' + esc(accountNameOfId(soApplicantAcc(r))) + '</small>' : '') + '</td>' +
           '<td>' + esc(its.map(function (i) { return i.name; }).join('、') || '—') + '（' + its.length + ' 项）</td>' +
           '<td class="num">' + qty + '</td>' +
           '<td>' + info + '</td><td>' + status + '</td><td>' + act + '</td></tr>';
@@ -973,6 +1121,7 @@
   function boot() {
     // 首屏同步渲染一次（此时云端尚未回来），把 HTML 里的设计稿假数字全部覆盖为真实空态，
     // 避免"先闪几秒假数据、再变成无数据页"。随后 loadAll 云端数据覆盖。
+    readMyAccount();
     renderAll();
     bindOwnerSwitch();
     renderOperator();
@@ -995,7 +1144,12 @@
     ico: ico, esc: esc, n: n, money: money, itemsOf: itemsOf, catOf: catOf, ownBadge: ownBadge,
     loadAll: loadAll, renderAll: renderAll, aggregate: aggregate,
     setOwner: function (key) { currentOwner = key; renderMonthly(key); },
-    setStockOutOwner: function (key) { soOwner = key; renderStockOutBoard(); }
+    setStockOutOwner: function (key) { soOwner = key; renderStockOutBoard(); },
+    setIdentity: function (key) { if (myRoles.indexOf(key) >= 0) { curIdentity = key; renderStockOutBoard(); renderStockOut(); } },
+    getIdentity: function () { return curIdentity; },
+    getMyRoles: function () { return myRoles.slice(); },
+    getMyAccount: function () { return myAccount; },
+    soStage: soStage, soFlow: soFlow
   };
 
   // 设计稿的内联脚本已处理模块切换/展开，这里只补数据。等 DOM 就绪。
