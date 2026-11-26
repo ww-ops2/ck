@@ -1,5 +1,5 @@
 /**
- * HQ Actions - 遇见美好总部：按钮 / 附属弹窗页 / 真实写库（v6.3）
+ * HQ Actions - 遇见美好总部：按钮 / 附属弹窗页 / 真实写库（v6.15 · 身份工作台 + 原样退回）
  * 依赖：hq-app.js 暴露的 window.HQApp（同一份 D 数据与 renderAll 入口）
  * 所有写操作一律经 SupaDB.* 落 Supabase；所有删除/仓库确定走自定义确认弹窗。
  * v6.12：六链路流转，末端岗位统一「仓库」，全流程无审核、无核销节点（底层 API 名保留历史命名）。
@@ -712,8 +712,15 @@
     return m ? m[1] : '';
   }
   function writeFlowPayload(req, payload) {
-    var rm = String(req.remark || '').replace(/\s*\/\s*HQ_FLOW2:[^/]*/g, '').replace(/\s*\/\s*HQ_HANDLED/g, '').trim();
-    var pkg = 'HQ_HANDLED / ' + FLOW_TAG + _b64enc(JSON.stringify(payload));
+    // 按「 / 」分段过滤，避免 base64 内含 / 时被正则误截断（v6.15）
+    var segs = String(req.remark || '').split(/\s*\/\s*/).filter(function (x) {
+      return x && x.indexOf(FLOW_TAG) !== 0 && x !== 'HQ_HANDLED';
+    });
+    var rm = segs.join(' / ').trim();
+    // 只有中间办理完成(handled)/出库完成(done)才带 HQ_HANDLED；提交、退回阶段不带，
+    // 让领用单管理与出库工作台的「待办理 / 已办理」判定一致（v6.15）
+    var handled = payload.step === 'handled' || payload.step === 'done';
+    var pkg = (handled ? 'HQ_HANDLED / ' : '') + FLOW_TAG + _b64enc(JSON.stringify(payload));
     var next = rm ? rm + ' / ' + pkg : pkg;
     var sb = (typeof getSupabase === 'function') ? getSupabase() : null;
     if (!sb) return Promise.resolve();
@@ -849,6 +856,10 @@
         items: rows.map(function (r) { return { item_id: r.item_id, name: r.name, code: r.code, category: v.category, unit: r.unit, quantity: num(r.quantity), brand: r.brand, model: r.model }; })
       };
       busy(b, '提交中', true);
+      // v6.15：申请人账号归属写进 remark 的 HQ_FLOW2 负载（零 DDL，姓名仅展示）
+      var _me = curAcc();
+      var _fp = FLOW_TAG + _b64enc(JSON.stringify({ step: 'anchor', applicantAcc: _me.id, applicantName: v.applicant || _me.name, chain: info.key }));
+      payload.remark = payload.remark + ' / ' + _fp;
       var task = info.key === 'live_plan'
         ? SupaDB.createRequisition(payload).then(function (r) {
             // 直播链路：主播拟出库即锁定库存，走台账 win_register（locked +1）
@@ -1002,7 +1013,7 @@
       var payload = {
         step: 'handled', stepLabel: '销售填写并邮寄', chain: 'live', tourNo: tno,
         session: r.purpose || r.tour_name || '', applicant: r.applicant || '',
-        handledBy: v.handledBy, handledAt: today(),
+        handledBy: v.handledBy, handledAt: today(), handledAcc: curAcc().id, handledByName: v.handledBy,
         items: items.map(function (it) { return { key: it.key, name: it.name, code: it.code, unit: it.unit, plan: it.plan, qty: it.qty, customers: it.cust }; })
       };
       busy(b, '保存中', true);
@@ -1060,7 +1071,7 @@
       var payload = {
         step: 'handled', stepLabel: '仓库核对导游实拿', chain: 'tour', tourNo: tno,
         session: r.tour_name || '', applicant: r.applicant || '',
-        handledBy: v.handledBy, handledAt: today(), diffNote: diff ? v.diffNote : '',
+        handledBy: v.handledBy, handledAt: today(), handledAcc: curAcc().id, diffNote: diff ? v.diffNote : '',
         items: items
       };
       busy(b, '保存中', true);
@@ -1099,7 +1110,7 @@
       var payload = {
         step: 'handled', stepLabel: '仓库确定数量金额', chain: 'normal', tourNo: '',
         session: r.purpose || r.tour_name || '', applicant: r.applicant || '',
-        handledBy: v.handledBy, handledAt: today(),
+        handledBy: v.handledBy, handledAt: today(), handledAcc: curAcc().id,
         totalAmount: items.reduce(function (a, x) { return a + x.amount; }, 0), items: items
       };
       busy(b, '保存中', true);
@@ -1107,6 +1118,92 @@
         .then(function () { m.close(); })
         .catch(function (e) { busy(b, null, false); toast('保存失败：' + (e && e.message || e), 'err'); });
     };
+  }
+
+  // ===== v6.15 身份工作台：提交销售 / 原样退回 / 补充信息 / 撤销 =====
+  // 所有动作只改 remark 的 HQ_FLOW2 流程负载（零 DDL）；账号归属写 applicantAcc / handledAcc / whAcc。
+  function curAcc() { return (H.getMyAccount && H.getMyAccount()) || { id: null, name: '', username: '' }; }
+  function curRole() { return (H.getIdentity && H.getIdentity()) || 'sales'; }
+  function flowStep(r) { var fp = readFlowPayload(r); return fp ? (fp.step || '') : ''; }
+  function mergeFlow(r, patch) {
+    var fp = readFlowPayload(r) || {};
+    for (var k in patch) if (patch.hasOwnProperty(k)) fp[k] = patch[k];
+    return fp;
+  }
+  // 主播：确定提交销售（stage 0 → 1）。只写流程负载，不动 status（保持 pending_approval）。
+  function submitToSales(id) {
+    var r = findIn(H.D.requisitions, id); if (!r) return;
+    if (curRole() !== 'anchor') { toast('当前身份不是主播，无权提交', 'err'); return; }
+    var step = flowStep(r); if (step && step !== 'anchor') { toast('该单已流转，主播只读；要改需由下游退回', 'err'); return; }
+    var me = curAcc(), tno = tourNoFromRemark(r);
+    if (!tno) { toast('该单未填团号（必填），请先补充信息', 'err'); return; }
+    confirmBox('确定提交销售', '提交后单据进入「销售填写并邮寄」待办，主播身份将无法修改；如需修改只能由销售退回。请确认团号 ' + tno + ' 无误。', function () {
+      var p = mergeFlow(r, { step: 'sales', stepLabel: '主播提交销售', applicantAcc: me.id, applicantName: r.applicant || me.name, submittedBy: r.applicant || me.name, submittedAt: today() });
+      return writeFlowPayload(r, p);
+    }, { confirmText: '确定提交', okText: '已提交至销售' });
+  }
+  // 原样退回：销售退主播（stage1→0）/ 仓库退销售（stage2→1），不改单据内容，只记退回人+时间留痕。
+  function returnReq(id, to) {
+    var r = findIn(H.D.requisitions, id); if (!r) return;
+    var isAnchor = to === 'anchor';
+    var need = isAnchor ? 'sales' : 'wh';
+    if (curRole() !== need) { toast('当前身份无权执行此退回', 'err'); return; }
+    var step = flowStep(r);
+    if (isAnchor && step !== 'sales') { toast('该单不在销售待办，无法退回主播', 'err'); return; }
+    if (!isAnchor && step !== 'handled') { toast('该单不在仓库待办，无法退回销售', 'err'); return; }
+    var label = isAnchor ? '主播' : '销售';
+    var newStep = isAnchor ? 'anchor' : 'sales';
+    confirmBox('原样退回至' + label, '单据将原样退回' + label + '的待办池，不做任何修改；系统自动记录退回人与时间留痕。当前身份退回后即失去该单的编辑权。', function () {
+      var me = curAcc();
+      var fp = mergeFlow(r, { step: newStep, stepLabel: '原样退回至' + label });
+      fp.returns = (fp.returns || []).concat([{ from: curRole(), to: newStep, by: me.name || me.username, at: today() }]);
+      return writeFlowPayload(r, fp);
+    }, { confirmText: '确认退回', okText: '已退回至' + label });
+  }
+  // 主播 / 计调：补充信息（仅 stage0 草稿可改）
+  function supplementReq(id) {
+    var r = findIn(H.D.requisitions, id); if (!r) return;
+    if (['anchor', 'planner'].indexOf(curRole()) < 0) { toast('当前身份无权修改该单', 'err'); return; }
+    var fp = readFlowPayload(r) || {}, tno = tourNoFromRemark(r);
+    var step = fp.step || ''; if (step && step !== 'anchor') { toast('该单已流转，主播/计调只读；要改需由下游退回', 'err'); return; }
+    var m = openModal('补充信息 · ' + (r.code || ''),
+      '<form id="hq-sup-form"><div class="hq-notice">仅<b>未流转（草稿）</b>的单据可修改；流转后本身份只读，要改只能由下游退回。</div>' +
+      '<div class="hqf-grid">' +
+      field('团号（必填）', 'tour_no', tno, 'text', { attrs: 'required placeholder="团号"' }) +
+      field('用途 / 场次', 'purpose', r.purpose || r.tour_name || '', 'text', { attrs: 'placeholder="选填"' }) +
+      '</div></form>',
+      '<button class="btn" data-hq-cancel>取消</button><button class="btn primary" data-hq-save>保存</button>');
+    $('[data-hq-cancel]', m.root).onclick = m.close;
+    $('[data-hq-save]', m.root).onclick = function () {
+      var b = this, f = $('#hq-sup-form', m.root); if (!f.reportValidity()) return;
+      var v = formValues(f), t = String(v.tour_no || '').trim();
+      if (!t) { toast('团号必填', 'err'); return; }
+      busy(b, '保存中', true);
+      // 团号写回 remark（零 DDL），覆盖旧的「团号：xxx」片段；同时保留流程负载
+      var segs = String(r.remark || '').split(/\s*\/\s*/).filter(function (x) {
+        return x && x.indexOf(FLOW_TAG) !== 0 && x !== 'HQ_HANDLED' && x.indexOf('团号：') !== 0 && x.indexOf('团号:') !== 0;
+      });
+      var bits = segs.concat(['团号：' + t]);
+      if (v.purpose) bits.push('用途：' + v.purpose);
+      var fp2 = mergeFlow(r, { tourNo: t, step: 'anchor', stepLabel: '主播补充信息' });
+      var pkg = 'HQ_FLOW2:' + _b64enc(JSON.stringify(fp2));
+      var sb = (typeof getSupabase === 'function') ? getSupabase() : null;
+      if (!sb) { busy(b, null, false); toast('数据层未就绪', 'err'); return; }
+      var next = bits.join(' / ') + ' / ' + pkg;
+      Promise.resolve(sb.from('requisitions').update({ remark: next }).eq('id', r.id)).then(function (res) {
+        if (res && res.error) throw res.error;
+        m.close(); toast('已补充信息'); H.loadAll();
+      }).catch(function (e) { busy(b, null, false); toast('保存失败：' + (e && e.message || e), 'err'); });
+    };
+  }
+  // 主播 / 计调：撤销草稿单（复用合法 status withdrawn）
+  function withdrawReq(id) {
+    var r = findIn(H.D.requisitions, id); if (!r) return;
+    if (['anchor', 'planner'].indexOf(curRole()) < 0) { toast('当前身份无权撤销该单', 'err'); return; }
+    var step = flowStep(r); if (step && step !== 'anchor') { toast('该单已流转，不能撤销', 'err'); return; }
+    confirmBox('撤销单据', '确认撤销 ' + (r.code || '') + '？撤销后该单进入「已撤回」，不再出现在待办。本操作不可恢复。', function () {
+      return Promise.resolve(SupaDB.withdrawRequisition(r.id, '身份工作台撤销')).then(function () { toast('已撤销'); });
+    }, { danger: true, confirmText: '确认撤销', okText: '已撤销' });
   }
 
   // ===== 末端：仓库确定出库（三段链路共用，扣库存 / 释放锁定 / 生成出库单） =====
@@ -1169,6 +1266,12 @@
         .then(function () { return SupaDB.confirmStockOut(r.id, { stockout_date: v.stockout_date, confirmed_by: v.operator, items: lines, total_quantity: lines.reduce(function (a, x) { return a + x.quantity; }, 0) }); })
         .then(function (res) {
           postLedger(chain === 'live' ? 'prize_ship' : 'tour_signoff', lines, (lines[0] || {}).category, v.stockout_date, res && res.code);
+          // v6.15：写仓库确认账号归属，供下方「我经手且已出库」列表按账号过滤
+          var _me = curAcc();
+          var _pf = mergeFlow(r, { step: 'done', stepLabel: '仓库确定出库', whAcc: _me.id, whName: v.operator, confirmedAt: today() });
+          return writeFlowPayload(r, _pf).catch(function () { return null; }).then(function () { return res; });
+        })
+        .then(function (res) {
           m.close(); toast('仓库已确定出库：' + (res && res.code || '')); H.loadAll();
         })
         .catch(function (e) { busy(b, null, false); toast('出库失败：' + (e && e.message || e), 'err'); });
@@ -1184,8 +1287,12 @@
       (function () { var fp = readFlowPayload(r); if (!fp) return '';
         var extra = fp.chain === 'live' ? ('客户明细 ' + fp.items.reduce(function (a, x) { return a + (x.customers || []).length; }, 0) + ' 条')
           : fp.chain === 'tour' ? ('实拿合计 ' + fp.items.reduce(function (a, x) { return a + num(x.actual); }, 0) + ' 件' + (fp.diffNote ? ' · 差异：' + esc(fp.diffNote) : ''))
-          : ('金额合计 ¥' + num(fp.totalAmount).toFixed(2));
-        return '<br><b>办理结果：</b>' + esc(fp.stepLabel || '—') + ' · ' + esc(fp.handledBy || '—') + ' · ' + esc(fp.handledAt || '') + ' · ' + extra; })() +
+          : (fp.totalAmount != null ? ('金额合计 ¥' + num(fp.totalAmount).toFixed(2)) : '');
+        var out = '<br><b>流程阶段：</b>' + esc(fp.stepLabel || fp.step || '—');
+        if (fp.handledBy || fp.submittedBy) out += '<br><b>办理 / 提交人：</b>' + esc(fp.handledBy || fp.submittedBy || '—') + ' · ' + esc(fp.handledAt || fp.submittedAt || '');
+        if (extra) out += '<br><b>办理结果：</b>' + esc(extra);
+        if ((fp.returns || []).length) out += '<br><b>退回留痕：</b>' + fp.returns.map(function (x) { return esc(x.by || '') + ' ' + esc(x.at || '') + ' 原样退回至' + esc(x.to === 'anchor' ? '主播' : '销售'); }).join('；');
+        return out; })() +
       '</div>' +
       '<div class="hq-sec">明细 ' + its.length + ' 项</div><div class="tw"><table><thead><tr><th>名称</th><th>归属</th><th class="num">数量</th><th>单位</th></tr></thead><tbody>' + (rows || '<tr><td colspan="4">无明细</td></tr>') + '</tbody></table></div>',
       '<button class="btn" data-hq-cancel>关闭</button>');
@@ -1742,6 +1849,11 @@
     'rq-approve': function (id) { handleReq(id); }, // 兼容旧缓存的 data-act
     'rq-out': function (id, b) { outReq(id, b); },
     'rq-view': function (id) { viewReq(id); },
+    'rq-submit': function (id) { submitToSales(id); },
+    'rq-back-anchor': function (id) { returnReq(id, 'anchor'); },
+    'rq-back-sales': function (id) { returnReq(id, 'sales'); },
+    'rq-supplement': function (id) { supplementReq(id); },
+    'rq-withdraw': function (id) { withdrawReq(id); },
     'so-view': function (id) { viewSO(id); },
     'spt-approve': function (id) { approveReturn(id); },
     'spt-reject': function (id) { rejectReturn(id); },
