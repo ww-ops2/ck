@@ -1,5 +1,5 @@
 /**
- * HQ App - 遇见美好总部正式系统（v6.13 · 六链路流程流转 + 出库分类作业台落地）
+ * HQ App - 遇见美好总部正式系统（v6.14 · 六链路流程流转 + 出库分类作业台 + 弹窗按钮修复）
  * 设计稿 hq-clone-preview.html 的真实数据驱动版。
  * 固定 subject=hq，复用 supabase-db.js 的 SupaDB（自动按主体隔离），列车主体零影响。
  * 空库显示引导，不造假数据。列车已有 no Realtime：30s 同步 + 切回刷新，这里照搬。
@@ -952,15 +952,19 @@
   }
 
   function bindTopButtons() {
-    var ex = $('hq-btn-exit');
-    if (ex) ex.onclick = function () {
+    function logout() {
       try {
         localStorage.removeItem('currentUser');
         sessionStorage.removeItem('inv_session');
         sessionStorage.removeItem('inv_subject');
       } catch (e) {}
       window.location.href = 'index.html';
-    };
+    }
+    var ex = $('hq-btn-exit');
+    if (ex) ex.onclick = logout;
+    // 侧边栏底部「退出」原来没有任何绑定，点不动（v6.14 修）
+    var lo = $('.btn-logout');
+    if (lo) lo.onclick = logout;
     var rf = $('hq-btn-refresh');
     if (rf) rf.onclick = function () { loadAll(); };
   }
