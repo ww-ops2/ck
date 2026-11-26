@@ -9,7 +9,7 @@
   // 用云端 version.json（no-store）做权威比对，不一致就强制硬刷新到带 _relver= 的新 URL。
   // 与列车 index.html 的自检相互独立（localStorage 键不同），互不触发。
   (function () {
-    var APP_VERSION = '6.14';
+    var APP_VERSION = '6.15';
     var reloading = false;
     function forceReload() {
       if (reloading) return;
@@ -307,10 +307,10 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 #mod-stockout .tag.o{background:var(--warning-bg);color:var(--warning)}
 </style>
 <!-- 数据层：本地 supabase-js + 主体隔离数据访问层（复用列车，自动按 subject=hq 过滤） -->
-<script src="js/vendor/supabase.min.js?v=6.14"></script>
-<script src="js/supabase-db.js?v=6.14"></script>
-<script src="js/toast.js?v=6.14"></script>
-<script src="js/hq-foundation.js?v=6.14"></script>
+<script src="js/vendor/supabase.min.js?v=6.15"></script>
+<script src="js/supabase-db.js?v=6.15"></script>
+<script src="js/toast.js?v=6.15"></script>
+<script src="js/hq-foundation.js?v=6.15"></script>
 </head>
 <body>
 <div class="app">
@@ -583,18 +583,15 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
         </div>
 
         <div class="so-cal" style="margin-bottom:12px">
-          <b>岗位口径（2026-11-25 定稿）：</b>行政 / 库存 / 仓库为<b>同一岗位</b>，系统统一记为「仓库」，末端「数据确认 / 确定出库」均由该岗位办理；<b>全流程无审核、无核销节点</b>。团号必填、客户信息手动填写；角色切换仅用于演示流程步骤，暂不做权限拦截。
+          <b>岗位口径（2026-11-26 定稿）：</b>行政 / 库存 / 仓库为<b>同一岗位</b>，系统统一记为「仓库」；全流程无审核、无核销节点。<b>工作台按授权身份展示</b>：主播看自己申请的单、销售看流转来的直播礼品、仓库看待确认出库的单；一人可持多个身份，按账号授权切换。下方出库单列表结构不变，只按当前账号过滤「我经手且已出库」。团号必填、客户信息手动填写、退回原样不修改。
         </div>
 
         <div class="so-flow" id="so-flow-bar"></div>
 
         <div class="so-role-wrap">
-          <div class="so-role" id="so-role-switch">
-            <button type="button" class="on" data-role="sales">销售</button>
-            <button type="button" data-role="planner">计调</button>
-            <button type="button" data-role="warehouse">仓库</button>
-          </div>
-          <span class="so-role-note" id="so-role-note">当前：销售 · 填写并邮寄</span>
+          <span class="so-role-note" style="font-weight:600;color:var(--text-secondary)">我的身份（按账号授权）：</span>
+          <div class="so-role" id="so-identity-switch"></div>
+          <span class="so-role-note" id="so-identity-note"></span>
         </div>
 
         <div class="kpis" id="so-board-kpis"></div>
@@ -603,7 +600,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 
         <div class="panel so-panel-hl" id="so-todo-panel">
           <div class="ph">
-            <div class="pt"><span class="bar"></span><span id="so-todo-title">待办明细 · 直播礼品</span><small>锁定量 = 拟出库量 − 已出库量</small></div>
+            <div class="pt"><span class="bar"></span><span id="so-todo-title">待办明细</span><small id="so-todo-sub">按当前身份显示待处理单据</small></div>
             <div class="pa">
               <select class="sel" id="so-status-filter"><option>全部状态</option><option>待办理</option><option>待仓库确定</option></select>
               <button class="btn primary" type="button">填写并邮寄 ›</button>
@@ -618,7 +615,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
         </div>
 
         <div class="panel">
-          <div class="ph"><div class="pt"><span class="bar"></span>出库单列表</div>
+          <div class="ph"><div class="pt"><span class="bar"></span><span id="so-title">出库单列表</span></div>
             <div class="pa">
               <button class="btn" type="button">领用出库 ›</button>
               <button class="btn" type="button">+ 邮寄出库 ›</button>
@@ -856,8 +853,8 @@ function toggleTour(headEl){
 }
 </script>
 <!-- 真实数据驱动：从 SupaDB 拉取 hq 主体数据并填充全部模块（空库显示引导，不造假） -->
-<script src="js/hq-app.js?v=6.14"></script>
+<script src="js/hq-app.js?v=6.15"></script>
 <!-- 操作层：所有按钮/弹窗/写库（依赖 hq-app.js 暴露的 HQApp） -->
-<script src="js/hq-actions.js?v=6.14"></script>
+<script src="js/hq-actions.js?v=6.15"></script>
 </body>
 </html>
